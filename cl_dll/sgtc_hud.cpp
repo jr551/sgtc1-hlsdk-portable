@@ -507,15 +507,33 @@ static void SGTC_UpdatePortraitSlot( CHudSgtc *hud, int spr, float hpPct, int te
 	}
 }
 
-// ref FUN_100772f2 — portrait name, avatar, HP bar (abbreviated).
-static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, char dim )
+// ref FUN_10072923 — portrait sprite id (1..10) → hud sprite name.
+static const char *SGTC_PortraitAvatarSprite( int id )
 {
-	if( !hud->m_iPortraitSlotId[slot] )
-		return;
+	static const char *const kTable[] =
+	{
+		"oneill", "carter", "jackson", "tealc", "commander",
+		"systemlord", "anubis", "goauld3", "snakegoauld", "horus",
+	};
+	if( id < 1 || id > 10 )
+		return "inconnu";
+	return kTable[id - 1];
+}
 
-	const char *avatar = hud->m_szPortraitSlotName[slot];
-	if( !avatar[0] )
+// ref FUN_100772f2 — name @DrawHudString +0x48/+0xc, avatar @+9/+0x10, HP FillRGBA @+0x42/+0x44.
+static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, float flTime, char dimName )
+{
+	const int sprId = hud->m_iPortraitSlotId[slot];
+	const int ent = hud->m_iPortraitSlotEnt[slot];
+	const char *label = hud->m_szPortraitSlotName[slot];
+
+	if( !sprId || !ent || !label || !label[0] )
+	{
+		// ref @0x1007730d — "! ERROR !" when id/ent/name missing.
+		const char *err = CHudTextMessage::BufferedLocaliseTextString( "! ERROR !" );
+		gHUD.DrawHudString( px + 0x48, py + 0xc, ScreenWidth, err, 0, 0, 255 );
 		return;
+	}
 
 	int r = 168, g = 211, b = 255;
 	switch( hud->m_iPortraitSlotColor[slot] & 0x1f )
@@ -527,30 +545,62 @@ static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, char
 	case 5: r = 0; g = 255; b = 0; break;
 	default: break;
 	}
-	if( dim )
+	if( r + g + b == 0 )	// ref @0x10077604 default tint
+	{
+		r = 168;
+		g = 211;
+		b = 255;
+	}
+	if( dimName )	// ref @0x1007761c — ebp+0x3c nonzero → black text
 		r = g = b = 0;
 
-	DrawConsoleString( px, py - 12, avatar );
+	const char *text = CHudTextMessage::BufferedLocaliseTextString( label );
+	gHUD.DrawHudString( px + 0x48, py + 0x12, ScreenWidth, text, r, g, b );
+
+	const char *avatar = SGTC_PortraitAvatarSprite( sprId );
 	if( SGTC_Sprite( avatar, NULL ) )
 	{
 		wrect_t av;
 		SGTC_Sprite( avatar, &av );
 		SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( avatar ) ), r, g, b );
-		SPR_DrawAdditive( 0, px + 8, py, &av );
+		SPR_DrawAdditive( 0, px + 9, py + 0x10, &av );
 	}
+
+	// ref flash tick @0x10077792 — m_iPortraitSlotFlash[slot] when color class == 2.
+	if( ( hud->m_iPortraitSlotColor[slot] & 0x1f ) == 2 )
+	{
+		if( hud->m_iPortraitSlotFlash[slot] > 5 )
+		{
+			hud->m_iPortraitSlotFlash[slot]++;
+			if( hud->m_iPortraitSlotFlash[slot] > 10 )
+				hud->m_iPortraitSlotFlash[slot] = 0;
+		}
+	}
+	else if( hud->m_iPortraitSlotGray[slot] < 0x7d && flTime >= hud->m_flKeyTime )
+		hud->m_iPortraitSlotGray[slot] += 2;
+	else if( hud->m_iPortraitSlotGray[slot] > 0 && flTime < hud->m_flKeyTime )
+		hud->m_iPortraitSlotGray[slot] = 0;
 
 	float frac = hud->m_flPortraitSlotHpPct[slot] / 100.0f;
 	if( frac < 0.0f )
 		frac = 0.0f;
 	if( frac > 1.0f )
 		frac = 1.0f;
-	if( frac > 0.0f && !dim )
-	{
-		int barX = px + 8;
-		int barY = py + 56;
-		FillRGBA( barX, barY, 64, 4, 30, 30, 30, 255 );
-		FillRGBA( barX, barY, (int)( 64 * frac ), 4, 0, 130, 0, 255 );
-	}
+	if( frac <= 0.0f || dimName )
+		return;
+
+	const int barW = 0x40;	// ref mov [eax+8],0x40 @0x1007790d
+	const int barX = px + 0x42;
+	const int barY = py + 0x44;
+	FillRGBA( barX, barY, barW, 4, 0x1e, 0x1e, 0x1e, 255 );
+	FillRGBA( barX, barY, (int)( barW * frac ), 4, 0, 0x82, 0, 255 );
+
+	// ref segmented team HP markers @0x10077a99 (uses m_iPortraitSlotHp[0] class).
+	const int hpClass = hud->m_iPortraitSlotHp[slot][0];
+	if( hpClass == 1 )
+		FillRGBA( barX, py + 0x40, barW, 2, 255, 0, 0, 255 );
+	else if( hpClass == 2 )
+		FillRGBA( barX, py + 0x40, barW, 2, 0, 0x82, 0, 255 );
 }
 
 int CHudSgtc::Draw( float flTime )
@@ -640,8 +690,17 @@ int CHudSgtc::Draw( float flTime )
 
 			col++;
 			const int px = ScreenWidth - ( col * 0x50 + 0x10 );	// ref @0x10073c70
-			char dim = ( m_iPortraitSlotEnt[i] != m_iPortraitEnt ) ? 1 : 0;
-			SGTC_DrawPortraitCell( this, i, px, portY, dim );
+			// ref @0x10073c84 — gray cell backdrop before FUN_100772f2.
+			const char *graySpr = SGTC_PortraitAvatarSprite( m_iPortraitSlotId[i] );
+			if( SGTC_Sprite( graySpr, NULL ) )
+			{
+				wrect_t gr;
+				SGTC_Sprite( graySpr, &gr );
+				const int g = m_iPortraitSlotGray[i] & 0xff;
+				SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( graySpr ) ), g, g, g );
+				SPR_DrawAdditive( 0, px, portY, &gr );
+			}
+			SGTC_DrawPortraitCell( this, i, px, portY, flTime, 0 );
 			if( px <= 0 )
 				break;
 		}
