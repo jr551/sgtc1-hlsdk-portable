@@ -6,6 +6,7 @@
 #include "hud.h"
 
 #define SGTC_BLIP_SLOTS 28
+#define SGTC_RADAR_SLOTS 256
 
 // ref client.dll: SGTC HUD state on CHudSgtc (offsets from REA decompile).
 class CHudSgtc : public CHudBase
@@ -60,10 +61,14 @@ public:
 	int m_iArmorState;		// ref +0x1690
 	int m_iArmorParam;		// ref +0x168c
 
-	int m_iBlipCmd;			// ref +0x38
-	int m_iBlipSlots[SGTC_BLIP_SLOTS];
-	int m_iBlipTail;
-	int m_iBlipProgress;		// ref +0x1674
+	int m_iBlipProgress;		// ref +0x1674 (Progress msg cmd 0/100)
+
+	int m_iRadarFocusX;		// ref +0x169c (Blip type 0x32)
+	int m_iRadarFocusY;		// ref +0x16a0
+	int m_iRadarType[SGTC_RADAR_SLOTS];	// ref +0x564
+	int m_iRadarX[SGTC_RADAR_SLOTS];	// ref +0x960
+	int m_iRadarY[SGTC_RADAR_SLOTS];	// ref +0xd5c
+	int m_iRadarAlpha[SGTC_RADAR_SLOTS];	// ref +0x1158
 
 	int m_fZatTouchActive;		// ref +0x16f4
 	float m_flZatTouchTime;		// ref +0x16f8
@@ -86,7 +91,12 @@ public:
 	int m_iVoteMode;		// ref DAT_100babe4
 	float m_flRoundTime;		// ref +0x16ec
 	float m_flRoundStart;		// ref +0x16e8
-	int m_iTicketModeFlag;		// ref +0x58
+	int m_iTicketModeFlag;		// ref +0x58 (TicketMode msg)
+	int m_iHudInfoByte;		// ref +0x54 (HudInfoMode msg, FUN_10076bce)
+	int m_iProgress;		// ref +0x38 (Progress msg)
+	int m_iProgressIcon;		// ref DAT_100e1b94
+	int m_iProgressTeam[SGTC_BLIP_SLOTS];	// ref DAT_100e1aa4[28]
+	int m_iProgressEnd;		// ref DAT_100e1b98
 };
 
 extern CHudSgtc g_SgtcHud;

@@ -59,8 +59,7 @@
 //   SGTC HUD (19): AddPortrait Reset AboutMe TogglePor SetRndTim NewRnd
 //     ZatTouch Radio Armor Stamina SubModel HasKey HideHud HudInfoMode
 //     TicketMode Gtickets Ttickets Progress Blip — all real parsers in
-//     ref (see per-handler formats in yield report); our handlers are
-//     drain stubs, so the SGTC HUD state they feed is NOT replicated.
+//     ref (see sgtc_hud.cpp); CHudSgtc keeps wire parity for SGTC HUD state.
 //   NOT hooked by ref (we do not hook either): Custom (present only as a
 //     CHudMessage channel-name table entry, never passed to
 //     pfnHookUserMsg), SecAmmoVal/SecAmmoIcon (TFC leftovers still

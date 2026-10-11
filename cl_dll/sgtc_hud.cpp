@@ -11,6 +11,11 @@ int CHudSgtc::Init( void )
 	m_iFlags = HUDELEM_ACTIVE;
 	Reset();
 	gHUD.AddHudElem( this );
+	// ref FUN_10072e5f — SGTC view toggles (default 0).
+	gEngfuncs.pfnRegisterVariable( "view_lowvis", "0", FCVAR_ARCHIVE );
+	gEngfuncs.pfnRegisterVariable( "view_radar", "0", FCVAR_ARCHIVE );
+	gEngfuncs.pfnRegisterVariable( "view_portraits", "0", FCVAR_ARCHIVE );
+	gEngfuncs.pfnRegisterVariable( "view_seeownport", "0", FCVAR_ARCHIVE );
 	return 1;
 }
 
@@ -19,11 +24,78 @@ int CHudSgtc::VidInit( void )
 	return 1;
 }
 
+static cvar_t *SGTC_Cvar( const char *name )
+{
+	return gEngfuncs.pfnGetCvarPointer( name );
+}
+
 int CHudSgtc::Draw( float flTime )
 {
+	if( m_iHideHud )
+		return 0;
+
+	cvar_t *cvRadar = SGTC_Cvar( "view_radar" );
+	if( cvRadar && cvRadar->value > 0.0f )
+	{
+		int x = ScreenWidth - 220;
+		int y = ScreenHeight - 220;
+		if( gHUD.GetSpriteIndex( "radar" ) )
+		{
+			wrect_t rc = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "radar" ) );
+			SPR_DrawAdditive( 0, x, y, &rc );
+			if( gHUD.GetSpriteIndex( "blip" ) )
+			{
+				wrect_t bl = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "blip" ) );
+				for( int i = 1; i < SGTC_RADAR_SLOTS; i++ )
+				{
+					if( !m_iRadarType[i] )
+						continue;
+					int bx = x + ( m_iRadarX[i] >> 3 );
+					int by = y + ( m_iRadarY[i] >> 3 );
+					SPR_DrawAdditive( 0, bx, by, &bl );
+				}
+				if( m_iRadarFocusX || m_iRadarFocusY )
+				{
+					int fx = x + ( m_iRadarFocusX >> 3 );
+					int fy = y + ( m_iRadarFocusY >> 3 );
+					SPR_DrawAdditive( 0, fx, fy, &bl );
+				}
+			}
+		}
+	}
+
+	if( m_iTicketModeFlag && gHUD.GetSpriteIndex( "ticketdock" ) )
+	{
+		wrect_t dock = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "ticketdock" ) );
+		int x = 10;
+		int y = ScreenHeight - dock.bottom - 10;
+		SPR_DrawAdditive( 0, x, y, &dock );
+	}
+
+	if( m_iBlipProgress > 0 && gHUD.GetSpriteIndex( "pbar" ) )
+	{
+		wrect_t bar = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "pbar" ) );
+		int x = ScreenWidth / 2 - bar.right / 2;
+		int y = ScreenHeight - 48;
+		SPR_DrawAdditive( 0, x, y, &bar );
+		if( gHUD.GetSpriteIndex( "pbare" ) )
+		{
+			wrect_t fill = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "pbare" ) );
+			fill.right = (int)( fill.right * ( m_iBlipProgress / 100.0f ) );
+			SPR_DrawAdditive( 0, x, y, &fill );
+		}
+	}
+
+	if( m_fZatTouchActive && m_flZatTouchTime + 2.0f > flTime && gHUD.GetSpriteIndex( "zat_touch" ) )
+	{
+		wrect_t zt = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "zat_touch" ) );
+		SPR_DrawAdditive( 0, ScreenWidth / 2 - zt.right / 2, ScreenHeight / 2 - zt.bottom / 2, &zt );
+	}
+	else if( m_fZatTouchActive && m_flZatTouchTime + 2.0f <= flTime )
+		m_fZatTouchActive = 0;
+
 	(void)flTime;
-	// Full hud.txt layout draw is future work; state is kept for parity with ref.
-	return 0;
+	return 1;
 }
 
 void CHudSgtc::Reset( void )
@@ -42,10 +114,13 @@ void CHudSgtc::Reset( void )
 	m_iArmorOverlay = 0;
 	m_iArmorState = 0;
 	m_iArmorParam = 0;
-	m_iBlipCmd = 0;
-	memset( m_iBlipSlots, 0, sizeof( m_iBlipSlots ) );
-	m_iBlipTail = 0;
 	m_iBlipProgress = 0;
+	m_iRadarFocusX = 0;
+	m_iRadarFocusY = 0;
+	memset( m_iRadarType, 0, sizeof( m_iRadarType ) );
+	memset( m_iRadarX, 0, sizeof( m_iRadarX ) );
+	memset( m_iRadarY, 0, sizeof( m_iRadarY ) );
+	memset( m_iRadarAlpha, 0, sizeof( m_iRadarAlpha ) );
 	m_fZatTouchActive = 0;
 	m_flZatTouchTime = 0;
 	m_iHideHud = 0;
@@ -64,6 +139,11 @@ void CHudSgtc::Reset( void )
 	m_flRoundTime = 0;
 	m_flRoundStart = 0;
 	m_iTicketModeFlag = 0;
+	m_iHudInfoByte = 0;
+	m_iProgress = 0;
+	m_iProgressIcon = 0;
+	memset( m_iProgressTeam, 0, sizeof( m_iProgressTeam ) );
+	m_iProgressEnd = 0;
 }
 
 // ref FUN_100772b4 — ZatTouch, REG size 0 on server.
@@ -76,16 +156,7 @@ int CHudSgtc::MsgFunc_ZatTouch( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// ref FUN_10076cf7 — READ_BYTE -> +0x5c
-int CHudSgtc::MsgFunc_Gtickets( const char *pszName, int iSize, void *pbuf )
-{
-	(void)pszName;
-	BEGIN_READ( pbuf, iSize );
-	m_iGtickets = READ_BYTE();
-	m_iFlags |= HUD_ACTIVE;
-	return 1;
-}
-
+// ref FUN_10076d24 — Ttickets → +0x60
 int CHudSgtc::MsgFunc_Ttickets( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
@@ -95,16 +166,38 @@ int CHudSgtc::MsgFunc_Ttickets( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
+// ref FUN_10076cf7 — Gtickets → +0x5c
+int CHudSgtc::MsgFunc_Gtickets( const char *pszName, int iSize, void *pbuf )
+{
+	(void)pszName;
+	BEGIN_READ( pbuf, iSize );
+	m_iGtickets = READ_BYTE();
+	m_iFlags |= HUD_ACTIVE;
+	return 1;
+}
+
+// ref FUN_10076bfb — TicketMode → +0x58 flag
 int CHudSgtc::MsgFunc_TicketMode( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	m_iTicketMode = READ_BYTE();
+	int b = READ_BYTE();
+	m_iTicketModeFlag = ( b >= 1 ) ? 1 : 0;
+	m_iFlags |= HUD_ACTIVE;
 	return 1;
 }
 
-// ref FUN_10076ba2
+// ref FUN_10076bce — HudInfoMode → +0x54
 int CHudSgtc::MsgFunc_HudInfoMode( const char *pszName, int iSize, void *pbuf )
+{
+	(void)pszName;
+	BEGIN_READ( pbuf, iSize );
+	m_iHudInfoByte = READ_BYTE();
+	return 1;
+}
+
+// ref FUN_10076ba2 — Stamina hook stores DAT_100f71dc (hud info mode byte).
+int CHudSgtc::MsgFunc_Stamina( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
@@ -112,14 +205,7 @@ int CHudSgtc::MsgFunc_HudInfoMode( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-int CHudSgtc::MsgFunc_Stamina( const char *pszName, int iSize, void *pbuf )
-{
-	(void)pszName;
-	BEGIN_READ( pbuf, iSize );
-	m_iStamina = READ_BYTE();
-	return 1;
-}
-
+// ref FUN_10076d51 — SubModel global DAT_100f6fb8
 int CHudSgtc::MsgFunc_SubModel( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
@@ -128,12 +214,30 @@ int CHudSgtc::MsgFunc_SubModel( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
+// ref FUN_10076d7d — HasKey: keymode + vote timer (offsets +0x34/+0x30).
 int CHudSgtc::MsgFunc_HasKey( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	m_iHasKey = READ_BYTE();
-	(void)READ_BYTE(); // second byte in REG size 2
+	int mode = READ_BYTE();
+	if( mode < 2 )
+		m_iKeyMode = mode;
+	else if( mode == 2 )
+		m_flKeyTime = gHUD.m_flTime + 5.0f;
+	else
+		m_flKeyTime = 0.0f;
+
+	int vote = READ_BYTE();
+	if( vote == 1 )
+	{
+		m_iVoteMode = -1;
+		m_iHasKey = 0;
+	}
+	else if( vote == 2 )
+	{
+		if( m_iVoteMode < 0 )
+			m_iVoteMode = 5;
+	}
 	return 1;
 }
 
@@ -186,38 +290,59 @@ int CHudSgtc::MsgFunc_Armor( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// ref FUN_10076c5f — radar blip batch (28 slots + cmd/progress bytes).
-int CHudSgtc::MsgFunc_Blip( const char *pszName, int iSize, void *pbuf )
+// ref FUN_10076c5f — Progress batch (icon + 28 team bytes + tail).
+int CHudSgtc::MsgFunc_Progress( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	m_iBlipCmd = READ_BYTE();
-	m_iBlipTail = READ_BYTE();
+	m_iProgress = READ_BYTE();
+	m_iProgressIcon = READ_BYTE();
 	for( int i = 0; i < SGTC_BLIP_SLOTS; i++ )
-		m_iBlipSlots[i] = READ_BYTE();
-	int tail2 = READ_BYTE();
-	(void)tail2;
+		m_iProgressTeam[i] = READ_BYTE();
+	m_iProgressEnd = READ_BYTE();
 
-	if( m_iBlipCmd == 0 )
+	if( m_iProgress == 0 )
 		m_iBlipProgress = 0;
-	if( m_iBlipCmd == 100 )
+	if( m_iProgress == 100 )
 		m_iBlipProgress = 100;
 	m_iFlags |= HUD_ACTIVE;
 	return 1;
 }
 
-int CHudSgtc::MsgFunc_Progress( const char *pszName, int iSize, void *pbuf )
+// ref FUN_100770dd — Blip: type byte + 2 coords, ring slots 1..255.
+int CHudSgtc::MsgFunc_Blip( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	for( int i = 0; i < iSize; i++ )
+	int type = READ_BYTE();
+	int rx = READ_COORD();
+	int ry = READ_COORD();
+
+	if( type == 0x32 )
 	{
-		int b = READ_BYTE();
-		if( b == 0 )
-			m_iBlipProgress = 0;
-		else if( b == 100 )
-			m_iBlipProgress = 100;
+		m_iRadarFocusX = rx;
+		m_iRadarFocusY = ry;
 	}
+	else if( type == 0x3d )
+	{
+		m_iRadarFocusX = 0;
+		m_iRadarFocusY = 0;
+	}
+	else
+	{
+		for( int slot = 1; slot < SGTC_RADAR_SLOTS; slot++ )
+		{
+			if( m_iRadarType[slot] == 0 )
+			{
+				m_iRadarType[slot] = type;
+				m_iRadarX[slot] = rx;
+				m_iRadarY[slot] = ry;
+				m_iRadarAlpha[slot] = 255;
+				break;
+			}
+		}
+	}
+	m_iFlags |= HUD_ACTIVE;
 	return 1;
 }
 
