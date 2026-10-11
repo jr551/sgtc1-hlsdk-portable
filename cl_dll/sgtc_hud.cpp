@@ -684,7 +684,6 @@ void CHudSgtc::Reset( void )
 	m_flRoundTime = 0;
 	m_flRoundStart = 0;
 	m_iTicketModeFlag = 0;
-	m_iHudInfoByte = 0;
 	m_iTicketDockFrame = 0;
 	m_iTicketSlideOffset = 0;
 	m_iTicketSlideRemain = 0;
@@ -747,7 +746,8 @@ int CHudSgtc::MsgFunc_HudInfoMode( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	m_iHudInfoByte = READ_BYTE();
+	m_iHudInfoMode = READ_BYTE();
+	m_iFlags |= HUD_ACTIVE;
 	return 1;
 }
 

@@ -49,8 +49,8 @@ public:
 
 	int m_iGtickets;
 	int m_iTtickets;
-	int m_iTicketMode;
-	int m_iHudInfoMode;
+	int m_iHudInfoMode;		// ref +0x54 (HudInfoMode, FUN_10076bce)
+	int m_iTicketMode;		// ref +0x58 (TicketMode msg)
 	int m_iStamina;
 	int m_iSubModel;
 	int m_iHasKey;
@@ -101,7 +101,6 @@ public:
 	float m_flRoundTime;		// ref +0x16ec
 	float m_flRoundStart;		// ref +0x16e8
 	int m_iTicketModeFlag;		// ref +0x58 (TicketMode msg)
-	int m_iHudInfoByte;		// ref +0x54 (HudInfoMode msg, FUN_10076bce)
 	int m_iTicketDockFrame;		// ref +0x1694 (slide phase counter 0..10)
 	int m_iTicketSlideOffset;	// ref +0x1698 (dock sub-offset 0..0x7d)
 	int m_iTicketSlideRemain;	// ref DAT_100f6fb0 (slide-in distance, starts 0xc00)
