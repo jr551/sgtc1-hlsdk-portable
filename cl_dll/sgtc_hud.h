@@ -68,6 +68,7 @@ public:
 	int m_iArmorState;		// ref +0x1690
 	int m_iArmorParam;		// ref +0x168c
 	float m_flArmorTacPhase;	// ref tri-strip +0x14 (anim clock @0x100739bd)
+	float m_flArmorTacStart;	// ref slide-in origin (state 1→2 @0x100738a6)
 
 	int m_iBlipPulse;		// ref +0x1670 (Draw pulse 0..0x9b; vote tint @0x100762ba)
 	int m_iBlipProgress;		// ref +0x1674 (pbar fill; Progress msg @0x10076ccc)

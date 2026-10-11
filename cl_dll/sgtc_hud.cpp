@@ -523,20 +523,38 @@ static void SGTC_DrawSprite( const char *name, int x, int y )
 		SPR_DrawAdditive( 0, x, y, &rc );
 }
 
-// ref CHudSgtc::Draw @0x100738a6 — tac overlay tri-strip → sprite layers (tacdisp + tac_*).
-static void SGTC_TickArmorTacOverlay( CHudSgtc *hud, float flTime )
+// ref CHudSgtc::Draw @0x100738a6 — tac slide FSM (+0x1690): visup/visdown @0x100bbaac/ac0,
+// tri-strip DAT_100f70cc (sprite path on Xash); phase +10s @0x10095a50, close +0.001s @0x10094178.
+static const float kArmorTacPhaseHold = 10.0f;	// rodata @0x10095a50
+static const float kArmorTacPhaseClose = 0.001f;	// rodata @0x10094178
+static const float kArmorTacSlideSec = 0.35f;	// approx. vis slide (ref tri-strip +0xb48)
+
+static void SGTC_CloseArmorTacSlide( CHudSgtc *hud, float flTime )
+{
+	gEngfuncs.pfnPlaySoundByName( "player/visdown.wav", 1.0f );
+	hud->m_flArmorTacPhase = flTime + kArmorTacPhaseClose;
+	hud->m_iArmorState = 0;
+}
+
+static void SGTC_RunArmorTacSlideFsm( CHudSgtc *hud, float flTime )
 {
 	if( hud->m_iArmorState == 1 )
 	{
-		hud->m_flArmorTacPhase = flTime;
+		gEngfuncs.pfnPlaySoundByName( "player/visup.wav", 1.0f );
 		hud->m_iArmorState = 2;
+		hud->m_flArmorTacStart = flTime;
+		hud->m_flArmorTacPhase = flTime + kArmorTacPhaseHold;
 		return;
 	}
-	if( hud->m_iArmorState == 3 || ( hud->m_iArmorState == 2 && hud->m_iTacDispActive ) )
+	if( hud->m_iArmorState == 2 )
 	{
-		hud->m_flArmorTacPhase = flTime;
-		hud->m_iArmorState = 0;
+		hud->m_flArmorTacPhase = flTime + kArmorTacPhaseHold;
+		if( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL )
+			SGTC_CloseArmorTacSlide( hud, flTime );
+		return;
 	}
+	if( hud->m_iArmorState == 3 )
+		SGTC_CloseArmorTacSlide( hud, flTime );
 }
 
 static void SGTC_DrawArmorTacOverlay( CHudSgtc *hud, float flTime, int lx, int ly )
@@ -544,10 +562,17 @@ static void SGTC_DrawArmorTacOverlay( CHudSgtc *hud, float flTime, int lx, int l
 	if( !hud->m_iArmorOverlay && !hud->m_iTacDispActive && hud->m_iArmorState == 0 )
 		return;
 
-	SGTC_TickArmorTacOverlay( hud, flTime );
-
 	const int tx = lx + 36;
-	const int ty = ly - 44;
+	int ty = ly - 44;
+	if( hud->m_iArmorState == 2 )
+	{
+		float slide = ( flTime - hud->m_flArmorTacStart ) / kArmorTacSlideSec;
+		if( slide < 0.0f )
+			slide = 0.0f;
+		if( slide > 1.0f )
+			slide = 1.0f;
+		ty -= (int)( ( 1.0f - slide ) * 48.0f );
+	}
 
 	wrect_t base;
 	if( SGTC_Sprite( "tacdisp", &base ) )
@@ -894,12 +919,15 @@ static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, floa
 
 int CHudSgtc::Draw( float flTime )
 {
-	if( m_iHideHud )
-		return 0;
-
 	const int panelH = 168;
 	const int lx = 0;
 	const int ly = ScreenHeight - panelH;
+
+	// ref @0x100738a6 — tac FSM runs before DAT_100e9d0c body skip @0x10073ac1.
+	SGTC_RunArmorTacSlideFsm( this, flTime );
+
+	if( m_iHideHud || ( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL ) )
+		return 0;
 	const int rx = ScreenWidth - 200;
 
 	SGTC_DrawSprite( "hud_left", lx, ly );
@@ -1087,6 +1115,7 @@ void CHudSgtc::Reset( void )
 	m_iArmorState = 0;
 	m_iArmorParam = 0;
 	m_flArmorTacPhase = 0;
+	m_flArmorTacStart = 0;
 	m_iBlipPulse = 0;
 	m_iBlipProgress = 0;
 	m_flBlipProgressLatch = 0;
