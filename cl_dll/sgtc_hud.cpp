@@ -155,11 +155,20 @@ static void SGTC_DrawTicketDock( CHudSgtc *hud, float flTime )
 	gHUD.DrawHudNumber( x + 0x100, numY, DHN_DRAWZERO, hud->m_iTtickets, 255, 255, 255 );
 }
 
-// ref @0x1004b45a — fill DAT_100e1a34[0..0x1b] at VGUI layout (runtime on Win32).
+// ref @0x1004b45a / TeamNames VGUI @0x10057bed — fill DAT_100e1a34[0..0x1b] from resource bytes.
 static void SGTC_InitProgressSlotX( CHudSgtc *hud )
 {
 	for( int i = 0; i < SGTC_BLIP_SLOTS; i++ )
 		hud->m_iProgressSlotX[i] = ( i < 14 ) ? 0x10 : 0x12;
+}
+
+// ref FUN_1002a9ca @0x1002abe2: slots 0..13 use DAT_100e1a34[i]; slots 14..27 use
+// (&DAT_100e1a6c)[i] which aliases DAT_100e1aa4 + (i-14)*4 (progress team ints).
+static int SGTC_ProgressSlotStep( const CHudSgtc *hud, int slot )
+{
+	if( slot < 14 )
+		return hud->m_iProgressSlotX[slot];
+	return hud->m_iProgressTeam[slot - 14];
 }
 
 // ref VGUI panel update @0x1002abe2 — per-slot team progress chip state (no widgets on Xash).
@@ -185,8 +194,7 @@ static void SGTC_TickProgressTeamUi( CHudSgtc *hud )
 		}
 		else if( team == 2 )
 		{
-			// ref @0x1002ac70 / @0x1002acb0 — cursor += table[slot].
-			hud->m_iProgressIconCursor += hud->m_iProgressSlotX[i];
+			hud->m_iProgressIconCursor += SGTC_ProgressSlotStep( hud, i );
 			st = 1;
 			hud->m_iProgressTeam[i] = 1;	// ref @0x1002acb7
 		}
@@ -222,13 +230,13 @@ static void SGTC_DrawProgressTeamUi( CHudSgtc *hud )
 	{
 		if( hud->m_iProgressTeamUiState[i] != 1 )
 		{
-			xWalk += hud->m_iProgressSlotX[i];
+			xWalk += SGTC_ProgressSlotStep( hud, i );
 			continue;
 		}
 
 		const int y = ( i < 14 ) ? rowY0 : rowY1;
 		const int x = anchorX + xWalk;
-		xWalk += hud->m_iProgressSlotX[i];
+		xWalk += SGTC_ProgressSlotStep( hud, i );
 		SPR_Set( gHUD.GetSprite( idx ), 255, 255, 255 );
 		SPR_DrawHoles( 0, x, y, &rc );
 	}
