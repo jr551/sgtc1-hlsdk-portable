@@ -39,9 +39,9 @@ void CItemNVG::Precache( void )
 
 BOOL CItemNVG::MyTouch( CBasePlayer *pPlayer )
 {
-	if( pPlayer->pev->iuser4 )
+	if( pPlayer->m_iHasNVG )	// ref +0xe1c
 		return FALSE;
-	pPlayer->pev->iuser4 = 1;
+	pPlayer->m_iHasNVG = 1;
 	if( gmsgFlashlight )
 	{
 		MESSAGE_BEGIN( MSG_ONE, gmsgFlashlight, NULL, pPlayer->edict() );

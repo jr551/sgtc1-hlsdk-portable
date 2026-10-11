@@ -1035,7 +1035,25 @@ CStargateReplicateur::CStargateReplicateur( void )
 
 void CStargateReplicateur::PlayerSpawn( CBasePlayer *pPlayer )
 {
+	// ref @0x17dc7e: DM spawn, then shrink the "Replic" team hull.
 	CHalfLifeMultiplay::PlayerSpawn( pPlayer );
+	// ref param_1+0xca8 &= ~0xb — low-nibble clear on an SGTC player flag.
+	if( !stricmp( pPlayer->m_szTeamName, "Replic" ) ) // ref rodata 0x1eade0
+	{
+		pPlayer->pev->view_ofs = Vector( 0, 0, 6 );	// +0x174
+		pPlayer->pev->fov = 110.0f;			// +0x214 = 0x42dc0000
+		pPlayer->pev->movetype = 14;			// +0x108 (SGTC custom)
+		UTIL_SetSize( pPlayer->pev,
+			Vector( -16, -16, -20 ), Vector( 16, 16, 20 ) );
+	}
+	else
+	{
+		pPlayer->pev->view_ofs = Vector( 0, 0, 28 );	// standard eye height
+		pPlayer->pev->fov = 0;				// +0x214 = 0
+		pPlayer->pev->movetype = MOVETYPE_WALK;		// +0x108 = 3
+		UTIL_SetSize( pPlayer->pev,
+			VEC_HULL_MIN, VEC_HULL_MAX );
+	}
 }
 
 // ===========================================================================

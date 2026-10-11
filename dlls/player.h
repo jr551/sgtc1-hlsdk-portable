@@ -197,6 +197,22 @@ public:
 
 	char m_szTeamName[TEAM_NAME_LENGTH];
 
+	// --- StargateTC extension fields (ref CBasePlayer extra offsets; the .so
+	// uses a shifted entvars/CBasePlayer layout, mapped here by name) ---
+	float	m_flNukeGrace;		// ref +0x414: game_nuke grace timer (killed if < now)
+	float	m_flNukeChargeTime;	// ref +0x42c: arm-charge tick deadline (now+0.15)
+	int	m_iNukeCharge;		// ref +0x45c: arm charge, fires at 100
+	int	m_iInBombZone;		// ref +0xaec: >=1 while inside zone_bomb_target scope
+	int	m_iNukeBonus;		// ref +0x934: +4 on nuke arming
+	float	m_flZoneTime;		// ref +0x498: last capture-zone touch (now+0.3)
+	int	m_iZoneId;		// ref +0x4cc: owning capture-zone id
+	int	m_iCapFlags;		// ref +0x4a4: cleared on capture-zone touch
+	char	m_bZoneFlag;		// ref +0x3e2: cleared on capture-zone touch
+	int	m_iCapFlags2;		// ref +0xa70: cleared on capture-zone touch
+	int	m_iHasNVG;		// ref +0xe1c: set by item_NVG
+	float	m_flGateTravel;		// ref +0x408: gate-travel deadline (now+~1s)
+	int	m_iGateTeam;		// ref +0x458: team copied from zone_gatetravel
+
 	virtual void Spawn( void );
 	void Pain( void );
 

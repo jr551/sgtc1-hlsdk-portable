@@ -1,34 +1,59 @@
-// sgtc_zones.cpp — SGTC brush zones (ref/stc_i386.so factories @0x19d1d4..0x19d24c).
-// REA: CTriggerShelter::Spawn @0x199920, CTriggerBomb @0x19a36a/0x19a10c,
-// CTriggerCapture @0x199a056, CTriggerGTravel @0x19a51a / GTravelTouch @0x19a40c.
+// sgtc_zones.cpp — SGTC brush zones, REA-verified against ref/stc_i386.so
+// (Ghidra addrs): CTriggerShelter::Spawn 0x1a9920,
+// CTriggerGTravel::Spawn 0x1aa51a / CBaseTrigger::GTravelTouch 0x1aa40c,
+// CTriggerCapture::{Precache 0x1a9fe2, Spawn 0x1aa056, CaptureTouch 0x1a9efa,
+// Think 0x1a9964}, CTriggerBomb::{Spawn 0x1aa36a, Think 0x1aa10c,
+// BombZoneTouch 0x1aa25e}.
+// pev field map (ref entvars): +0x104 nextthink, +0x160 health (state marker).
 
 #include "extdll.h"
 #include "util.h"
 #include "cbase.h"
 #include "player.h"
 #include "gamerules.h"
+#include "weapons.h"
+#include "effects.h"
 #include "sgtc_rules.h"
 
-#include "weapons.h"
+extern void SGTC_InitTrigger( CBaseToggle *pTrigger );
+
+// ref BSS globals defined in sgtc_token.cpp / game.cpp.
+extern int sgtc_GlobalBombState;	// ref 0x23710c
+extern int sgtc_bomby;			// ref 0x2368c4
+extern int sgtc_type;			// ref 0x236588 (game "type", 2 = CP)
 
 // ---------------------------------------------------------------------------
-// zone_shelter — nuke-proof volume (FGD). Ref only InitTrigger + clears fields.
+// zone_shelter — "nukeproof zone" (FGD). ref Spawn: InitTrigger + m_pfnTouch/Use
+// pointer setup only; entities inside survive the game_nuke pass.
 // ---------------------------------------------------------------------------
 class CTriggerShelter : public CBaseToggle
 {
 public:
 	void Spawn( void );
+	void EXPORT ShelterTouch( CBaseEntity *pOther );
 };
 
 void CTriggerShelter::Spawn( void )
 {
 	SGTC_InitTrigger( this );
+	// ref +0x140 = 0 (no use callback). Touch marks the player for shelter.
+	SetTouch( &CTriggerShelter::ShelterTouch );
+}
+
+void CTriggerShelter::ShelterTouch( CBaseEntity *pOther )
+{
+	if( !pOther || !pOther->IsPlayer() )
+		return;
+	((CBasePlayer *)pOther)->m_flNukeGrace = gpGlobals->time + 0.25f;
 }
 
 LINK_ENTITY_TO_CLASS( zone_shelter, CTriggerShelter );
 
 // ---------------------------------------------------------------------------
-// zone_gatetravel — marks players for DHD/gate travel (ref GTravelTouch @0x19a40c).
+// zone_gatetravel — ref CBaseTrigger::GTravelTouch: virtual gate (vtable+0xa8,
+// IsPlayer-equivalent) then sets player+0x408 travel deadline = now+0.25,
+// clears pev+0x50/+0x74 vectors (velocity/avelocity), sets pev+0xa0 flag=1
+// (deadflag-side marker) and player+0x458 = (int)zone pev+0x1f8 (team float).
 // ---------------------------------------------------------------------------
 class CTriggerGTravel : public CBaseToggle
 {
@@ -45,19 +70,28 @@ void CTriggerGTravel::Spawn( void )
 
 void CTriggerGTravel::GateTravelTouch( CBaseEntity *pOther )
 {
-	if( !pOther || !pOther->IsPlayer() || !pOther->IsAlive() )
+	// ref calls vtable+0xa8 — behaves like IsPlayer here (players only travel).
+	if( !pOther || !pOther->IsPlayer() )
 		return;
 
 	CBasePlayer *pPlayer = (CBasePlayer *)pOther;
-	pPlayer->pev->fuser3 = gpGlobals->time + 1.0f;
-	pPlayer->pev->iuser1 = 1;
-	pPlayer->pev->iuser2 = (int)pev->team;
+	pPlayer->m_flGateTravel = gpGlobals->time + 0.25f;	// ref +0x408
+	pPlayer->pev->velocity = Vector( 0, 0, 0 );		// ref pev+0x50
+	pPlayer->pev->avelocity = Vector( 0, 0, 0 );		// ref pev+0x74
+	pPlayer->pev->deadflag = 1;				// ref pev+0xa0
+	pPlayer->m_iGateTeam = (int)pev->team;			// ref +0x458 = (int)pev+0x1f8
 }
 
 LINK_ENTITY_TO_CLASS( zone_gatetravel, CTriggerGTravel );
 
 // ---------------------------------------------------------------------------
-// zone_capture — CP capture brush (ref CTriggerCapture::* @0x199a056).
+// zone_capture — flag capture zone (ref CTriggerCapture).
+// 0x240 current flag state (0 draw, 1 tau, 2 goa, 3 dispute)
+// 0x244 pending flag state this think, 0x248 count team2, 0x24c count team1,
+// 0x250 last pending state, 0x254 zone id (RANDOM_LONG 500..99999999),
+// 0x258 flag-state switch deadline, 0x25c sprite-created flag.
+// Player side: m_iZoneId (+0x4cc), m_flZoneTime (+0x498 = now+0.3),
+// pev->team (+0x1ac) 1/2.
 // ---------------------------------------------------------------------------
 class CTriggerCapture : public CBaseToggle
 {
@@ -66,66 +100,181 @@ public:
 	void Precache( void );
 	void EXPORT CaptureTouch( CBaseEntity *pOther );
 	void EXPORT CaptureThink( void );
-	EHANDLE m_hCapturer;
-	int m_iCapturing;
-	BOOL m_fActive;
+
+	int m_iFlagState;	// +0x240
+	int m_iPending;		// +0x244
+	int m_iCount2;		// +0x248 (pev->team==2)
+	int m_iCount1;		// +0x24c (pev->team==1)
+	int m_iLastPending;	// +0x250
+	int m_iZoneId;		// +0x254
+	float m_flSwitch;	// +0x258
+	EHANDLE m_hSprite;	// flag sprite (ref tracks via "env_sprite" walk)
+	BOOL m_bSpriteMade;	// +0x25c
 };
 
 void CTriggerCapture::Precache( void )
 {
-	PRECACHE_SOUND( "misc/talk.wav" );
+	// ref @0x1a9fe2.
+	PRECACHE_MODEL( "sprites/flag_draw.spr" );
+	PRECACHE_MODEL( "sprites/flag_tau.spr" );
+	PRECACHE_MODEL( "sprites/flag_goa.spr" );
+	PRECACHE_MODEL( "sprites/flag_dispute.spr" );
 }
 
 void CTriggerCapture::Spawn( void )
 {
+	// ref @0x1aa056: InitTrigger + touch/think hooks + id.
 	Precache();
 	SGTC_InitTrigger( this );
 	SetTouch( &CTriggerCapture::CaptureTouch );
 	SetThink( &CTriggerCapture::CaptureThink );
 	pev->nextthink = gpGlobals->time + 0.1f;
-	m_hCapturer = NULL;
-	m_iCapturing = 0;
-	m_fActive = FALSE;
+	m_iFlagState = 0;
+	m_iPending = 0;
+	m_iCount2 = 0;
+	m_iCount1 = 0;
+	m_iLastPending = 0;
+	m_iZoneId = 0;
+	m_flSwitch = 0;
+	m_bSpriteMade = FALSE;
+	pev->health = 100.0f;		// +0x160 = 0x42c80000
 }
 
 void CTriggerCapture::CaptureTouch( CBaseEntity *pOther )
 {
-	if( !pOther || !pOther->IsPlayer() || !pOther->IsAlive() )
+	// ref @0x1a9efa: find matching "player" entity; bind zone id + window;
+	// alive players get capture fields cleared.
+	if( !pOther )
 		return;
-	if( !g_pGameRules || !g_pGameRules->IsTeamplay() )
-		return;
-
-	CBasePlayer *pl = (CBasePlayer *)pOther;
-	if( !m_hCapturer )
-		m_hCapturer = pl;
-	m_fActive = TRUE;
+	CBaseEntity *pEnt = NULL;
+	while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+	{
+		if( pEnt != pOther )
+			continue;
+		CBasePlayer *pl = (CBasePlayer *)pEnt;
+		pl->m_iZoneId = m_iZoneId;
+		pl->m_flZoneTime = gpGlobals->time + 0.3f;
+		if( pl->IsAlive() )	// ref vtable+0xa8
+		{
+			pl->m_bZoneFlag = 0;
+			pl->m_iCapFlags = 0;
+			pl->m_flNukeChargeTime = 0;	// ref +0x40c (unmapped reuse)
+			pl->m_iCapFlags2 = 0;
+		}
+	}
 }
 
 void CTriggerCapture::CaptureThink( void )
 {
-	if( m_hCapturer )
+	m_iLastPending = m_iPending;
+	m_iPending = 0;
+	m_iCount2 = 0;
+	m_iCount1 = 0;
+
+	if( m_iZoneId == 0 )
+		m_iZoneId = RANDOM_LONG( 500, 99999999 );
+
+	// One-time flag sprite creation at the named target's origin.
+	if( m_bSpriteMade != TRUE )
 	{
-		CBaseEntity *pCap = m_hCapturer;
-		if( pCap && pCap->IsPlayer() )
+		Vector vecPos( 0, 0, 0 );
+		CBaseEntity *pTarget = NULL;
+		while( ( pTarget = UTIL_FindEntityByTargetname( pTarget,
+				STRING( pev->target ) ) ) != NULL )
 		{
-			if( m_fActive && g_pGameRules && g_pGameRules->IsTeamplay() )
+			m_bSpriteMade = TRUE;
+			vecPos = pTarget->pev->origin;
+		}
+		if( m_bSpriteMade )
+		{
+			CSprite *pSprite = CSprite::SpriteCreate(
+				"sprites/flag_draw.spr", vecPos, FALSE );
+			pSprite->SetScale( 0.5 );
+			pSprite->SetTransparency( kRenderTransAlpha, 255, 255, 255,
+				255, 0xe );
+			pSprite->pev->spawnflags |= ( m_iZoneId & 0xffff ); // ref sprite+0x19c = zone id
+			m_hSprite = pSprite;
+		}
+	}
+
+	// health <= 69 -> reset counters (ref 0x42c80000 write to +0x160).
+	if( pev->health <= 69.0f )
+	{
+		m_iFlagState = 0;
+		m_flSwitch = 0;
+		pev->health = 100.0f;
+	}
+
+	// Count players bound to this zone within their touch window.
+	CBaseEntity *pEnt = NULL;
+	while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+	{
+		CBasePlayer *pl = (CBasePlayer *)pEnt;
+		if( pl->m_iZoneId == m_iZoneId &&
+		    gpGlobals->time < pl->m_flZoneTime )
+		{
+			if( pl->pev->team == 1 )
+				m_iCount1++;
+			else if( pl->pev->team == 2 )
+				m_iCount2++;
+		}
+	}
+
+	if( m_iCount2 < m_iCount1 )
+		m_iPending = 1;
+	else if( m_iCount1 < m_iCount2 )
+		m_iPending = 2;
+	else if( m_iCount1 == m_iCount2 )
+		m_iPending = 3;
+	if( m_iCount2 == 0 && m_iCount1 == 0 )
+		m_iPending = 0;
+
+	if( m_iLastPending != m_iPending )
+		m_flSwitch = gpGlobals->time + 3.0f;
+
+	if( m_iLastPending > 0 && m_iPending == 0 )
+	{
+		if( sgtc_type == 2 )
+			m_flSwitch = gpGlobals->time + 10.0f;
+		else
+			m_flSwitch = gpGlobals->time + CVAR_GET_FLOAT( "resetflagtime" );
+	}
+
+	if( m_flSwitch < gpGlobals->time )
+	{
+		m_iFlagState = m_iPending;
+		// Swap flag sprite on the bound sprite entity (ref walks
+		// "env_sprite" matching zone id; our sprite EHANDLE is equivalent).
+		CBaseEntity *pSprite = m_hSprite;
+		if( pSprite )
+		{
+			const char *psz = NULL;
+			switch( m_iFlagState )
 			{
-				CStargateTeamDM *sg = (CStargateTeamDM *)g_pGameRules;
-				int idx = g_pGameRules->GetTeamIndex( ((CBasePlayer *)pCap)->m_szTeamName );
-				if( idx >= 0 )
-					sg->Goal( idx );
+			case 0: psz = "sprites/flag_draw.spr"; break;
+			case 1: psz = "sprites/flag_tau.spr"; break;
+			case 2: psz = "sprites/flag_goa.spr"; break;
+			case 3: psz = "sprites/flag_dispute.spr"; break;
+			}
+			if( psz )
+			{
+				pSprite->pev->model = MAKE_STRING( psz ); // ref writes pev+0xb8
+				// ref calls sprite vtable+0 (ObjectCaps?) — Spawn-side
+				// model refresh; re-issue SpriteInit equivalent.
+				pSprite->pev->modelindex = MODEL_INDEX( psz );
 			}
 		}
-		m_hCapturer = NULL;
 	}
-	m_fActive = FALSE;
-	pev->nextthink = gpGlobals->time + 0.1f;
+
+	pev->nextthink = gpGlobals->time + 0.3f;
 }
 
 LINK_ENTITY_TO_CLASS( zone_capture, CTriggerCapture );
 
 // ---------------------------------------------------------------------------
-// zone_bomb_target — bomb plant zone (ref CTriggerBomb::* @0x19a36a).
+// zone_bomb_target — ref CTriggerBomb. Members: +0x241 satchel-present flag,
+// +0x242 targets-fired flag, +0x248 satchel-out deadline (now+10), +0x24c
+// satchel-in window (now+0.2). Satchel pev+0x160 (health) drives state.
 // ---------------------------------------------------------------------------
 class CTriggerBomb : public CBaseToggle
 {
@@ -133,43 +282,71 @@ public:
 	void Spawn( void );
 	void EXPORT BombZoneTouch( CBaseEntity *pOther );
 	void EXPORT BombThink( void );
-	float m_flBombTime;
-	BOOL m_fArmed;
-	BOOL m_fPlanted;
+
+	BOOL m_fSatchelIn;	// +0x241
+	BOOL m_fFired;		// +0x242
+	float m_flOutTime;	// +0x248
+	float m_flInWindow;	// +0x24c
 };
 
 void CTriggerBomb::Spawn( void )
 {
+	// ref @0x1aa36a: InitTrigger + touch+think hooks; +0x134 = 0xc5 marker.
 	SGTC_InitTrigger( this );
 	SetTouch( &CTriggerBomb::BombZoneTouch );
 	SetThink( &CTriggerBomb::BombThink );
 	pev->nextthink = gpGlobals->time + 0.1f;
-	m_flBombTime = 0;
-	m_fArmed = FALSE;
-	m_fPlanted = FALSE;
+	m_fSatchelIn = FALSE;
+	m_fFired = FALSE;
+	m_flOutTime = 0;
+	m_flInWindow = 0;
+	pev->health = 100.0f;
 }
 
 void CTriggerBomb::BombZoneTouch( CBaseEntity *pOther )
 {
-	if( !pOther || !pOther->IsPlayer() || !pOther->IsAlive() )
+	// ref @0x1aa25e: scan monster_satchel ents; on match, arm window + health.
+	if( !pOther )
 		return;
-	if( m_fPlanted )
-		return;
-	m_fArmed = TRUE;
-	m_fPlanted = TRUE;
-	m_flBombTime = gpGlobals->time + 30.0f;
-	EMIT_SOUND( ENT( pev ), CHAN_WEAPON, "weapons/c4_beep.wav", 1.0f, ATTN_NORM );
-	SUB_UseTargets( pOther, USE_ON, 0 );
+	CBaseEntity *pSatchel = NULL;
+	while( ( pSatchel = UTIL_FindEntityByClassname( pSatchel,
+			"monster_satchel" ) ) != NULL )
+	{
+		if( pOther != pSatchel )
+			continue;
+		if( m_fSatchelIn != TRUE )
+		{
+			m_fSatchelIn = TRUE;
+			pSatchel->pev->health = 99.0f;	// ref +0x160 = 0x42c60000
+			m_flOutTime = gpGlobals->time + 10.0f;
+		}
+		if( pSatchel->pev->health <= 99.0f || pSatchel->pev->health <= 22.0f )
+			m_flInWindow = gpGlobals->time + 0.2f;
+	}
 }
 
 void CTriggerBomb::BombThink( void )
 {
-	if( m_fPlanted && m_flBombTime > 0 && gpGlobals->time >= m_flBombTime )
+	// ref @0x1aa10c.
+	if( pev->health <= 69.0f )
 	{
-		RadiusDamage( pev->origin, pev, pev, 400.0f, 512.0f, CLASS_NONE, DMG_BLAST );
-		SUB_UseTargets( this, USE_ON, 0 );
-		m_fPlanted = FALSE;
-		m_fArmed = FALSE;
+		m_fSatchelIn = FALSE;
+		m_fFired = FALSE;
+		pev->health = 100.0f;
+	}
+	if( m_fFired != TRUE && m_fSatchelIn != FALSE &&
+	    m_flInWindow < gpGlobals->time )
+	{
+		if( m_flOutTime <= 0.0f || gpGlobals->time <= m_flOutTime )
+		{
+			SUB_UseTargets( this, USE_TOGGLE, 0 );
+			m_fFired = TRUE;
+		}
+		else
+		{
+			m_fSatchelIn = FALSE;
+			m_flOutTime = 0;
+		}
 	}
 	pev->nextthink = gpGlobals->time + 0.1f;
 }
