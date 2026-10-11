@@ -104,6 +104,8 @@ public:
 	int m_iTicketDockFrame;		// ref +0x1694 (slide phase counter 0..10)
 	int m_iTicketSlideOffset;	// ref +0x1698 (dock sub-offset 0..0x7d)
 	int m_iTicketSlideRemain;	// ref DAT_100f6fb0 (slide-in distance, starts 0xc00)
+	char m_bTicketDockLayout78;	// ref ticket tick @0x10074c3a — draw 0x78/0x78/0x32
+	char m_cTicketSlideDir;		// ref ebp-0xb8 this frame (1 = use +0x1698 for draw)
 	int m_iProgress;		// ref +0x38 (Progress msg)
 	int m_iProgressIcon;		// ref DAT_100e1b94
 	int m_iProgressTeam[SGTC_BLIP_SLOTS];	// ref DAT_100e1aa4[28]
