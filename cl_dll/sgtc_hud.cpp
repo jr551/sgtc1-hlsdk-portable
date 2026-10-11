@@ -196,6 +196,42 @@ static void SGTC_DrawArmorTacOverlay( CHudSgtc *hud, float flTime, int lx, int l
 	SPR_DrawAdditive( 0, tx, ty, &tint );
 }
 
+// ref CHudSgtc::Draw @0x10073f07 — radar ring slots 1..255, alpha @+0x1158 fades by 5.
+static void SGTC_DrawRadarBlips( CHudSgtc *hud, int baseX, int baseY )
+{
+	int blIdx = gHUD.GetSpriteIndex( "blip" );
+	if( !blIdx )
+		return;
+	wrect_t bl = gHUD.GetSpriteRect( blIdx );
+
+	for( int slot = 1; slot < SGTC_RADAR_SLOTS; slot++ )
+	{
+		if( hud->m_iRadarType[slot] <= 0 )
+			continue;
+
+		int alpha = hud->m_iRadarAlpha[slot];
+		if( alpha <= 0 )
+		{
+			hud->m_iRadarType[slot] = 0;
+			continue;
+		}
+
+		int r = alpha, g = alpha, b = alpha;
+		if( hud->m_iPortraitActiveTeam == 2 )
+			b = 0;
+
+		int bx = baseX + ( hud->m_iRadarX[slot] >> 3 );
+		int by = baseY + ( hud->m_iRadarY[slot] >> 3 );
+		SPR_Set( gHUD.GetSprite( blIdx ), r, g, b );
+		SPR_DrawAdditive( 0, bx, by, &bl );
+
+		alpha -= 5;
+		hud->m_iRadarAlpha[slot] = alpha;
+		if( alpha < 1 )
+			hud->m_iRadarType[slot] = 0;
+	}
+}
+
 static void SGTC_DrawBarNeedle( const char *bar, const char *needle, int x, int y, float frac )
 {
 	wrect_t rcBar, rcNeedle;
@@ -388,21 +424,15 @@ int CHudSgtc::Draw( float flTime )
 		{
 			wrect_t rc = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "radar" ) );
 			SPR_DrawAdditive( 0, x, y, &rc );
+			SGTC_DrawRadarBlips( this, x, y );
 			if( gHUD.GetSpriteIndex( "blip" ) )
 			{
 				wrect_t bl = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "blip" ) );
-				for( int i = 1; i < SGTC_RADAR_SLOTS; i++ )
-				{
-					if( !m_iRadarType[i] )
-						continue;
-					int bx = x + ( m_iRadarX[i] >> 3 );
-					int by = y + ( m_iRadarY[i] >> 3 );
-					SPR_DrawAdditive( 0, bx, by, &bl );
-				}
 				if( m_iRadarFocusX || m_iRadarFocusY )
 				{
 					int fx = x + ( m_iRadarFocusX >> 3 );
 					int fy = y + ( m_iRadarFocusY >> 3 );
+					SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( "blip" ) ), 255, 255, 255 );
 					SPR_DrawAdditive( 0, fx, fy, &bl );
 				}
 			}
