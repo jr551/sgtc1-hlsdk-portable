@@ -49,6 +49,21 @@ void CHudSgtc::Reset( void )
 	m_fZatTouchActive = 0;
 	m_flZatTouchTime = 0;
 	m_iHideHud = 0;
+	m_iPortraitSprite = 0;
+	m_iPortraitEnt = 0;
+	m_flPortraitTime = 0;
+	m_iPortraitX = 0;
+	memset( m_iPortraitHp, 0, sizeof( m_iPortraitHp ) );
+	m_szPortraitName[0] = 0;
+	m_iPortraitId = 0;
+	m_iAboutMeSelf = 0;
+	m_iAboutMePlayer = 0;
+	m_iKeyMode = 0;
+	m_flKeyTime = 0;
+	m_iVoteMode = -1;
+	m_flRoundTime = 0;
+	m_flRoundStart = 0;
+	m_iTicketModeFlag = 0;
 }
 
 // ref FUN_100772b4 — ZatTouch, REG size 0 on server.
@@ -217,6 +232,8 @@ int CHudSgtc::MsgFunc_HideHud( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
+#include "sgtc_env.h"
+
 static int SGTC_DrainMsg( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
@@ -226,69 +243,134 @@ static int SGTC_DrainMsg( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
+// ref @0x100768d4 — short,long,short,short,short,short,short,short,string,byte
 int CHudSgtc::MsgFunc_AddPortrait( const char *pszName, int iSize, void *pbuf )
 {
-	return SGTC_DrainMsg( pszName, iSize, pbuf );
+	(void)pszName;
+	BEGIN_READ( pbuf, iSize );
+	int spr   = READ_SHORT();	// iVar1
+	int t     = READ_LONG();	// iVar2 → +0x28
+	int i3    = READ_SHORT();	// DAT_100f70c8
+	int i4    = READ_SHORT();
+	int x     = READ_SHORT();	// iVar5 → compared w/ this+0x40
+	int hp0   = READ_SHORT();	// +0x44
+	int hp1   = READ_SHORT();	// +0x48
+	int hp2   = READ_SHORT();	// +0x4c
+	const char *name = READ_STRING();
+	int id    = READ_BYTE();
+
+	if( m_iPortraitX == x )
+	{
+		m_flPortraitTime = (float)t;
+		m_iPortraitId = id;
+		m_iPortraitHp[0] = hp0;
+		m_iPortraitHp[1] = hp1;
+		m_iPortraitHp[2] = hp2;
+		if( spr )
+		{
+			m_iPortraitSprite = spr;
+			m_iPortraitEnt = spr; // ref resolves via FUN_10072923/10051180
+		}
+		(void)i3; (void)i4;
+		strncpy( m_szPortraitName, name, sizeof( m_szPortraitName ) - 1 );
+	}
+	return 1;
 }
 
+// ref @0x10076eb9 — short + byte; byte==0 resets portrait arrays, else SetPortrait(iVar1)
 int CHudSgtc::MsgFunc_Reset( const char *pszName, int iSize, void *pbuf )
 {
-	Reset();
-	return SGTC_DrainMsg( pszName, iSize, pbuf );
+	(void)pszName;
+	BEGIN_READ( pbuf, iSize );
+	int arg = READ_SHORT();
+	int mode = READ_BYTE();
+	if( mode == 0 )
+		Reset();
+	else
+		m_iPortraitEnt = arg;
+	m_iVoteMode = -1;
+	return 1;
 }
 
+// ref @0x10076a20 — byte 0 → short self @+0x20, short player @+0x40
 int CHudSgtc::MsgFunc_AboutMe( const char *pszName, int iSize, void *pbuf )
 {
-	return SGTC_DrainMsg( pszName, iSize, pbuf );
+	(void)pszName;
+	BEGIN_READ( pbuf, iSize );
+	if( READ_BYTE() == 0 )
+	{
+		m_iAboutMeSelf = READ_SHORT();
+		m_iAboutMePlayer = READ_SHORT();
+		m_iPortraitX = m_iAboutMePlayer; // ref +0x1564 copy
+	}
+	return 1;
 }
 
+// ref @0x10077088 — no payload; toggles view_portraits cvar.
 int CHudSgtc::MsgFunc_TogglePor( const char *pszName, int iSize, void *pbuf )
 {
-	return SGTC_DrainMsg( pszName, iSize, pbuf );
+	(void)pszName;
+	BEGIN_READ( pbuf, iSize );
+	cvar_t *cv = gEngfuncs.pfnGetCvarPointer( "view_portraits" );
+	if( cv )
+		gEngfuncs.Cvar_SetValue( "view_portraits", cv->value == 0.0f ? 1.0f : 0.0f );
+	return 1;
 }
 
+// ref @0x100771f3 — short round-time + byte state.
 int CHudSgtc::MsgFunc_SetRndTim( const char *pszName, int iSize, void *pbuf )
 {
-	return SGTC_DrainMsg( pszName, iSize, pbuf );
+	(void)pszName;
+	BEGIN_READ( pbuf, iSize );
+	m_flRoundTime = (float)READ_SHORT();
+	m_flRoundStart = gHUD.m_flTime;
+	int state = READ_BYTE();
+	if( state )
+		m_iTicketMode = state; // ref calls this vtable+0x1c
+	return 1;
 }
 
+// ref @0x1007724b — clears zat flag + portrait arrays + 256-slot loop.
 int CHudSgtc::MsgFunc_NewRnd( const char *pszName, int iSize, void *pbuf )
 {
+	(void)pszName;
+	BEGIN_READ( pbuf, iSize );
+	m_fZatTouchActive = 0;
 	Reset();
 	return 1;
 }
 
 int CHudSgtc::MsgFunc_ClearEnv( const char *pszName, int iSize, void *pbuf )
 {
-	return SGTC_DrainMsg( pszName, iSize, pbuf );
+	return g_ClientEnv.MsgFunc_ClearEnv( pszName, iSize, pbuf );
 }
 
 int CHudSgtc::MsgFunc_EnvFull( const char *pszName, int iSize, void *pbuf )
 {
-	return SGTC_DrainMsg( pszName, iSize, pbuf );
+	return g_ClientEnv.MsgFunc_EnvFull( pszName, iSize, pbuf );
 }
 
 int CHudSgtc::MsgFunc_EnvRain( const char *pszName, int iSize, void *pbuf )
 {
-	return SGTC_DrainMsg( pszName, iSize, pbuf );
+	return g_ClientEnv.MsgFunc_EnvRain( pszName, iSize, pbuf );
 }
 
 int CHudSgtc::MsgFunc_EnvFount( const char *pszName, int iSize, void *pbuf )
 {
-	return SGTC_DrainMsg( pszName, iSize, pbuf );
+	return g_ClientEnv.MsgFunc_EnvFount( pszName, iSize, pbuf );
 }
 
 int CHudSgtc::MsgFunc_NewLens( const char *pszName, int iSize, void *pbuf )
 {
-	return SGTC_DrainMsg( pszName, iSize, pbuf );
+	return g_ClientEnv.MsgFunc_NewLens( pszName, iSize, pbuf );
 }
 
 int CHudSgtc::MsgFunc_AddRing( const char *pszName, int iSize, void *pbuf )
 {
-	return SGTC_DrainMsg( pszName, iSize, pbuf );
+	return g_ClientEnv.MsgFunc_AddRing( pszName, iSize, pbuf );
 }
 
 int CHudSgtc::MsgFunc_ChgPartSt( const char *pszName, int iSize, void *pbuf )
 {
-	return SGTC_DrainMsg( pszName, iSize, pbuf );
+	return g_ClientEnv.MsgFunc_ChgPartSt( pszName, iSize, pbuf );
 }

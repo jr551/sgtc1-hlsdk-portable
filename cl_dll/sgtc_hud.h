@@ -69,6 +69,24 @@ public:
 	float m_flZatTouchTime;		// ref +0x16f8
 
 	int m_iHideHud;
+
+	// ref @0x100768d4 — AddPortrait record (short,long,short×6,string,byte)
+	int m_iPortraitSprite;		// +0x24
+	int m_iPortraitEnt;		// +0x3c
+	float m_flPortraitTime;		// +0x28
+	int m_iPortraitX;		// +0x40  (server ent index)
+	int m_iPortraitHp[3];		// +0x44/48/4c
+	char m_szPortraitName[32];
+	int m_iPortraitId;		// last byte
+
+	int m_iAboutMeSelf;		// ref +0x20
+	int m_iAboutMePlayer;		// ref +0x40
+	int m_iKeyMode;			// ref +0x34
+	float m_flKeyTime;		// ref +0x30
+	int m_iVoteMode;		// ref DAT_100babe4
+	float m_flRoundTime;		// ref +0x16ec
+	float m_flRoundStart;		// ref +0x16e8
+	int m_iTicketModeFlag;		// ref +0x58
 };
 
 extern CHudSgtc g_SgtcHud;
