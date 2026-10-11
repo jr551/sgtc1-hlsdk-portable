@@ -56,6 +56,9 @@ public:
 	int m_iRadioTeam;
 	int m_iRadioMsg;
 
+	int m_iArmorTeamTint;		// ref DAT_100f71d4 (Armor subs 3/4/5)
+	int m_iTacDispActive;		// ref DAT_100f70d0 (Armor sub 10 on, sub 4 off)
+
 	float m_flArmorBar;		// ref +0x2c
 	int m_iArmorAux;		// ref DAT_100f71d8
 	int m_iArmorOverlay;		// ref +0x1684

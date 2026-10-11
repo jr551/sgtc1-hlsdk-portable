@@ -6,6 +6,9 @@
 
 CHudSgtc g_SgtcHud;
 
+// ref FUN_10076ba2 — Stamina byte → global DAT_100f71dc.
+static int s_iSgtcStaminaByte;
+
 static void SGTC_InitPortraitSlots( CHudSgtc *hud );
 
 int CHudSgtc::Init( void )
@@ -226,7 +229,7 @@ int CHudSgtc::Draw( float flTime )
 	float life = (float)gHUD.m_Health.m_iHealth;
 	SGTC_DrawBarNeedle( "life_bar", "needle", lx + 24, ly + 28, life / 100.0f );
 	SGTC_DrawBarNeedle( "armor_bar", "needle", lx + 48, ly + 28, m_flArmorBar / 100.0f );
-	SGTC_DrawBarNeedle( "stamn_bar", "needle", lx + 72, ly + 28, (float)m_iStamina / 100.0f );
+	SGTC_DrawBarNeedle( "stamn_bar", "needle", lx + 72, ly + 28, (float)s_iSgtcStaminaByte / 100.0f );
 
 	if( m_iHasKey )
 		SGTC_DrawSprite( "bombkey", lx + 120, ly + 100 );
@@ -335,10 +338,13 @@ void CHudSgtc::Reset( void )
 	m_iTicketMode = 0;
 	m_iHudInfoMode = 0;
 	m_iStamina = 0;
+	s_iSgtcStaminaByte = 0;
 	m_iSubModel = 0;
 	m_iHasKey = 0;
 	m_iRadioTeam = 0;
 	m_iRadioMsg = 0;
+	m_iArmorTeamTint = 0;
+	m_iTacDispActive = 0;
 	m_flArmorBar = 0;
 	m_iArmorAux = 0;
 	m_iArmorOverlay = 0;
@@ -428,12 +434,12 @@ int CHudSgtc::MsgFunc_HudInfoMode( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// ref FUN_10076ba2 / DAT_100f71dc — stamina meter byte.
 int CHudSgtc::MsgFunc_Stamina( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	m_iStamina = READ_BYTE();
+	s_iSgtcStaminaByte = READ_BYTE();
+	m_iStamina = s_iSgtcStaminaByte;
 	return 1;
 }
 
@@ -473,12 +479,11 @@ int CHudSgtc::MsgFunc_HasKey( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
+// ref FUN_10076c3d @0x10076c3d — BEGIN_READ only; radio text uses Titles.txt elsewhere.
 int CHudSgtc::MsgFunc_Radio( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	m_iRadioTeam = READ_BYTE();
-	m_iRadioMsg = READ_BYTE();
 	return 1;
 }
 
@@ -505,18 +510,21 @@ int CHudSgtc::MsgFunc_Armor( const char *pszName, int iSize, void *pbuf )
 	if( sub == 3 && m_iArmorState == 0 )
 	{
 		m_iArmorState = 1;
-		m_iRadioTeam = 0; // ref clears DAT_100f71d4
+		m_iArmorTeamTint = 0; // ref DAT_100f71d4
 	}
 	else if( sub == 4 && m_iArmorState == 2 )
 	{
 		m_iArmorState = 3;
-		m_iRadioTeam = 0;
+		m_iArmorTeamTint = 0;
+		m_iTacDispActive = 0; // ref DAT_100f70d0
 	}
 	if( sub == 5 && m_iArmorState == 0 )
 	{
 		m_iArmorState = 1;
-		m_iRadioTeam = 1;
+		m_iArmorTeamTint = 1;
 	}
+	if( sub == 10 )
+		m_iTacDispActive = 1;
 	if( sub == 1 )
 		m_iArmorParam = d;
 	return 1;
