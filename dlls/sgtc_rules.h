@@ -347,23 +347,24 @@ class CEnvParticule : public CPointEntity
 {
 public:
 	void Spawn( void );
+	void Activate( void );
 	void KeyValue( KeyValueData *pkvd );
 	void Reset( void );
 	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
 	void SendValue( void );
 	void SendValueTo( CBasePlayer *pPlayer );
 
-	int m_iCount;        // nombre
+	int m_iCount;        // nombre (wire: WRITE_SHORT)
+	int m_iId;           // id (wire: WRITE_BYTE); ChgPartSt key
 	Vector m_vecAccel;   // acceleration
 	Vector m_vecV0;      // v0
 	Vector m_vecSpread;  // ecart
-	Vector m_vecSize;    // taille (x,y)
-	Vector m_vecColor;   // _couleur (r,g,b,a)
+	Vector m_vecSize;    // taille (x,y) stored as float, wire: WRITE_COORD
+	float m_flColor[4];  // _couleur (r,g,b,a) wire: 4x WRITE_BYTE
 	float m_flLife;      // vie
 	float m_flBounce;    // bounce
 	int m_iSprite;       // sprite
 	int m_iType;         // type 1=rain 2=snow
-	BOOL m_bActive;
 	virtual int Save( CSave &save );
 	virtual int Restore( CRestore &restore );
 	static TYPEDESCRIPTION m_SaveData[];
@@ -402,19 +403,19 @@ public:
 	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
 	void SendValue( void );
 	void SendValueTo( CBasePlayer *pPlayer );
-	int m_iCount;
-	Vector m_vecAccel;
-	Vector m_vecDir;
-	Vector m_vecSize;
-	Vector m_vecColor;
-	float m_flMinAngle, m_flMaxAngle;
-	float m_flMinRadius, m_flMaxRadius;
-	float m_flMinVel, m_flMaxVel;
-	float m_flLife;
-	float m_flBounce;
-	int m_iSprite;
-	int m_iType;
-	BOOL m_bActive;
+	int m_iId;           // ref this+0x208
+	int m_iCount;        // ref this+0x20c nombre
+	float m_flMinAngle, m_flMaxAngle;   // +0x210,+0x214
+	float m_flMinVel, m_flMaxVel;       // +0x218,+0x21c
+	float m_flMinRadius, m_flMaxRadius; // +0x220,+0x224
+	Vector m_vecDir;     // directeur +0x228
+	Vector m_vecOrigine; // origine +0x234
+	Vector m_vecSize;    // taille +0x240
+	float m_flColor[4];  // +0x248
+	float m_flLife;      // +0x258
+	float m_flBounce;    // +0x25c
+	int m_iSprite;       // +0x260
+	int m_iType;         // +0x264
 	virtual int Save( CSave &save );
 	virtual int Restore( CRestore &restore );
 	static TYPEDESCRIPTION m_SaveData[];
