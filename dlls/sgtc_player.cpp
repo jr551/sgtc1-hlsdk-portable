@@ -6,6 +6,7 @@
 #include "cbase.h"
 #include "player.h"
 #include "sgtc_rules.h"
+#include "sgtc_shield.h"
 
 static const struct
 {
@@ -145,9 +146,71 @@ void CBasePlayer::SGTC_UpdateStamina( void )
 	m_iStaminaSent = m_iStamina;
 }
 
-// ref @0x1390b2 — personal shield entity sync (~0x4f1); TODO: effect_shield follow.
+// ref @0x1390b2 — shield charge, spawn effect_shield, follow owner.
 void CBasePlayer::SGTC_ShieldThinker( void )
 {
+	if( m_flShieldLatch == 0.0f )
+		m_flShieldLatch = gpGlobals->time - 1.0f;	// ref @0x1390e6
+
+	if( gpGlobals->time >= m_flShieldThinkNext )
+	{
+		if( m_iShieldCharge > 0 && ( m_bShieldWall || m_bShieldSprint ) )
+		{
+			if( gpGlobals->frametime < 1.0f )
+				m_iShieldCharge--;
+		}
+		else
+		{
+			m_bShieldSprint = 0;
+			m_bShieldWall = 0;
+		}
+
+		if( m_iShieldCharge <= 9 && !m_bShieldWall && !m_bShieldSprint )
+			m_iShieldCharge++;
+
+		m_flShieldThinkNext = gpGlobals->time + 1.5f;	// ref rodata @0x1d74c4
+	}
+
+	if( !m_bShieldWall )
+		return;
+
+	if( !m_bShieldSpawned )
+	{
+		CBaseEntity *pShield = CBaseEntity::Create( "effect_shield", pev->origin, pev->v_angle, edict() );
+		if( !pShield )
+			return;
+
+		pShield->pev->owner = edict();
+		m_bShieldSpawned = 1;
+
+		if( m_bShieldLarge )
+		{
+			pShield->pev->scale = 2.0f;
+			pShield->pev->renderamt = 100.0f;
+			pShield->pev->framerate = 1.0f;
+		}
+		return;
+	}
+
+	BOOL bFound = FALSE;
+	CBaseEntity *pEnt = NULL;
+	while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "effect_shield" ) ) != NULL )
+	{
+		if( pEnt->pev->owner != edict() )
+			continue;
+
+		pEnt->pev->origin = pev->origin;
+		pEnt->pev->origin.z -= 40.0f;	// ref @0x1d74dc
+		if( m_flShieldLatch <= gpGlobals->time )
+			pEnt->pev->renderamt = 130.0f;
+		else
+			pEnt->pev->renderamt = 100.0f;
+
+		((CShield *)pEnt)->Think();
+		bFound = TRUE;
+	}
+
+	m_bShieldSpawned = bFound;
 }
 
 // ref @0x13a02d..0x13a0da — drain 10 stamina (+0x43c) when moving above ~0.125.

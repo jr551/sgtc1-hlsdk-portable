@@ -70,7 +70,7 @@ void CShieldGun::PrimaryAttack( void )
 	Vector vecSrc = m_pPlayer->pev->origin + m_pPlayer->pev->view_ofs;
 
 #ifndef CLIENT_DLL
-	CBaseEntity::Create( "effect_shield", vecSrc, m_pPlayer->pev->v_angle, m_pPlayer->edict() );
+	m_pPlayer->m_bShieldWall = 1;
 #endif
 
 	PLAYBACK_EVENT_FULL( SGTC_EVENT_FLAGS, m_pPlayer->edict(), s_usShieldFire,

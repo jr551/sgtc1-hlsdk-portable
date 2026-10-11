@@ -213,6 +213,13 @@ public:
 	float	m_flGateTravel;		// ref +0x408: gate-travel deadline (now+~1s)
 	int	m_iGateTeam;		// ref +0x458: team copied from zone_gatetravel
 	float	m_flRadarNext;		// ref +0x49c: next CBasePlayer::RadarScan tick
+	int	m_iShieldCharge;	// ref +0x158 — shield weapon charge 0..9 (ShieldThinker)
+	float	m_flShieldLatch;	// ref +0x3f8
+	float	m_flShieldThinkNext;	// ref +0x404
+	char	m_bShieldWall;		// ref +0x3e0 — deploy personal shield
+	char	m_bShieldSpawned;	// ref +0x4e4 — effect_shield entity active
+	char	m_bShieldSprint;	// ref +0x4e9 — sprint drain gate
+	char	m_bShieldLarge;		// ref +0x460 — big shield sizing on spawn
 	int	m_iStamina;		// ref +0x43c — HUD Stamina usermsg byte
 	int	m_iStaminaSent;		// ref +0xa24 — last value sent to client
 	float	m_flMoveLatch;		// ref +0xa6c — stamina tick gate (now+interval)

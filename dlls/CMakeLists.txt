@@ -155,6 +155,7 @@ set (SVDLL_SOURCES
 	sgtc_lanceproj.cpp
 	sgtc_links.cpp
 	sgtc_player.cpp
+	sgtc_shield.cpp
 	sgtc_monsters.cpp
 	sgtc_rules.cpp
 	sgtc_token.cpp
