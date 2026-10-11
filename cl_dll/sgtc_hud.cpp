@@ -47,50 +47,56 @@ static void SGTC_TickTicketDock( CHudSgtc *hud, float flTime )
 	int slideDir = 0;	// ref ebp-0xb8 (1 = shrink offset @0x10074d4e)
 	hud->m_cTicketSlideDir = 0;
 
+	// ref @0x10074ad7 — cascade subtracts (not else-if); may peel multiple tiers per frame.
 	if( hud->m_iTicketSlideRemain > 0 )
 	{
-		if( hud->m_iTicketSlideRemain >= 0x600 )
-			hud->m_iTicketSlideRemain -= 0x600;
-		else if( hud->m_iTicketSlideRemain >= 0x300 )
-			hud->m_iTicketSlideRemain -= 0x300;
-		else if( hud->m_iTicketSlideRemain >= 0x180 )
-			hud->m_iTicketSlideRemain -= 0x180;
-		else if( hud->m_iTicketSlideRemain >= 0xc0 )
-			hud->m_iTicketSlideRemain -= 0xc0;
-		else if( hud->m_iTicketSlideRemain >= 0x60 )
-			hud->m_iTicketSlideRemain -= 0x60;
-		else if( hud->m_iTicketSlideRemain >= 0x30 )
-			hud->m_iTicketSlideRemain -= 0x30;
-		else if( hud->m_iTicketSlideRemain >= 0x18 )
+		int &rem = hud->m_iTicketSlideRemain;
+		if( rem >= 0x600 )
+			rem -= 0x600;
+		if( rem >= 0x300 )
+			rem -= 0x300;
+		if( rem >= 0x180 )
+			rem -= 0x180;
+		if( rem >= 0xc0 )
+			rem -= 0xc0;
+		if( rem >= 0x60 )
+			rem -= 0x60;
+		if( rem >= 0x30 )
+			rem -= 0x30;
+		if( rem >= 0x18 )
 		{
 			slideDir = 2;
-			hud->m_iTicketSlideRemain -= 0x18;
+			rem -= 0x18;
 		}
-		else if( hud->m_iTicketSlideRemain >= 0xc )
+		if( rem >= 0xc )
 		{
 			slideDir = 1;
-			hud->m_iTicketSlideRemain -= 0xc;
+			rem -= 0xc;
 		}
-		else if( hud->m_iTicketSlideRemain >= 0x6 )
+		if( rem >= 0x6 )
 		{
 			hud->m_bTicketDockLayout78 = 1;
-			hud->m_iTicketSlideRemain -= 0x6;
+			rem -= 0x6;
 		}
-		else if( hud->m_iTicketSlideRemain >= 0x3 )
-			hud->m_iTicketSlideRemain -= 0x3;
-		else if( hud->m_iTicketSlideRemain >= 0x2 )
-			hud->m_iTicketSlideRemain -= 0x2;
-		else
-			hud->m_iTicketSlideRemain = 0;
+		if( rem >= 0x3 )
+			rem -= 0x3;
+		if( rem >= 0x2 )
+			rem -= 0x2;
+		else if( rem > 0 )
+			rem = 0;
 	}
 
 	// ref @0x10074c97 — skip frame/offset latch until m_flKeyTime reached.
 	if( flTime < hud->m_flKeyTime )
 		return;
 
-	hud->m_iTicketDockFrame++;
-	if( hud->m_iTicketDockFrame > 10 )
-		hud->m_iTicketDockFrame = 0;
+	// ref @0x10074cb1 — dock frame/tint latch only when slideDir==2 this frame.
+	if( slideDir == 2 )
+	{
+		hud->m_iTicketDockFrame++;
+		if( hud->m_iTicketDockFrame > 10 )
+			hud->m_iTicketDockFrame = 0;
+	}
 
 	if( slideDir == 1 )
 	{
@@ -113,46 +119,49 @@ static void SGTC_DrawTicketDock( CHudSgtc *hud, float flTime )
 		return;
 	wrect_t dock = gHUD.GetSpriteRect( iDock );
 
-	const int baseY = ScreenHeight - 0x9f;	// ref @0x100749b0 (ds:0x100ed4c4 - 0x9f)
-	const int slideX = hud->m_iTicketSlideRemain;
-	int offX;
-	int offY;
-	int offH;
+	// ref CHudSgtc::Draw @0x10074a4c / @0x10074e8b — fixed anchor; SPR_Set tints (not position).
+	const int x = ScreenWidth - 0x4e;
+	const int y = ScreenHeight - 0x8e;
+
+	int tintR, tintG, tintB;
 	if( hud->m_cTicketSlideDir == 1 )	// ref @0x10074d4e
-	{
-		offX = offY = offH = hud->m_iTicketSlideOffset;
-	}
+		tintR = tintG = tintB = hud->m_iTicketSlideOffset;
 	else if( hud->m_iTicketDockFrame > 5 )	// ref @0x10074ccd
 	{
-		offX = 0xf3;
-		offY = 0xb7;
-		offH = 0;
+		tintR = 0xf3;
+		tintG = 0xb7;
+		tintB = 0;
 	}
 	else
 	{
-		offX = 0xff;
-		offY = 0xd5;
-		offH = 0x53;
+		tintR = 0xff;
+		tintG = 0xd5;
+		tintB = 0x53;
 	}
 	if( hud->m_bTicketDockLayout78 )	// ref @0x10074df8
 	{
-		offX = 0x78;
-		offY = 0x78;
-		offH = 0x32;
+		tintR = 0x78;
+		tintG = 0x78;
+		tintB = 0x32;
 	}
 	if( flTime < hud->m_flKeyTime )	// ref @0x10074e25
 	{
-		offY = 0;
-		offH = 0;
+		tintG = 0;
+		tintB = 0;
 	}
 
-	const int x = slideX + offX;
-	const int y = baseY + offY - dock.bottom;
+	SPR_Set( gHUD.GetSprite( iDock ), tintR, tintG, tintB );
 	SPR_DrawAdditive( 0, x, y, &dock );
 
-	const int numY = baseY + 0x82;	// ref @0x10074edc
-	gHUD.DrawHudNumber( x + 0x82, numY, DHN_DRAWZERO, hud->m_iGtickets, 255, 255, 255 );
-	gHUD.DrawHudNumber( x + 0x100, numY, DHN_DRAWZERO, hud->m_iTtickets, 255, 255, 255 );
+	// ref @0x10074f0e — G/T counts when m_iArmorOverlay==0 (+0x1684).
+	if( hud->m_iArmorOverlay != 0 )
+		return;
+
+	const int numY = ScreenHeight - 0x25;
+	if( hud->m_iGtickets > 0 )
+		gHUD.DrawHudNumber( 0x46, numY, DHN_DRAWZERO, hud->m_iGtickets, 0xa8, 0xd3, 0xff );
+	if( hud->m_iTtickets > 0 )
+		gHUD.DrawHudNumber( 0x82, numY, DHN_DRAWZERO, hud->m_iTtickets, 0xa8, 0xd3, 0xff );
 }
 
 // ref @0x1004b45a / TeamNames VGUI @0x10057bed — fill DAT_100e1a34[0..0x1b] from resource bytes.
@@ -318,9 +327,10 @@ static void SGTC_DrawVoteCastMenu( float flTime )
 	static const char *modeTok[] = {
 		"1. #MODE0", "2. #MODE1", "3. #MODE2", "4. #MODE3", "5. #MODE4"
 	};
+	// ref @0x10076464 — y = ScreenHeight/2 + (-0x32..+0x1e), x = ScreenWidth/3.
 	const int midY = ScreenHeight / 2;
-	SGTC_DrawVoteCastHudLine( midY - 50, "#SELPREF", 100, 100, 255 );
-	const int modeY[] = { midY - 30, midY - 15, midY, midY + 15, midY + 30 };
+	SGTC_DrawVoteCastHudLine( midY - 0x32, "#SELPREF", 100, 100, 255 );
+	const int modeY[] = { midY - 0x1e, midY - 0xf, midY, midY + 0xf, midY + 0x1e };
 	for( int i = 0; i < 5; i++ )
 	{
 		int r = 255, g = 255, b = 255;
