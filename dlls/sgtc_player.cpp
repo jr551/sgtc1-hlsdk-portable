@@ -402,6 +402,18 @@ void CBasePlayer::SGTC_MenuselectBombKey( int sel )
 	m_bBombKeyWarnSent = 0;
 }
 
+// ref @0x136454 — toggle +0x4e9; on: pev+0x148 = kRenderTransAlpha (4).
+void CBasePlayer::SGTC_ToggleVis( void )
+{
+	if( !m_bShieldSprint )
+	{
+		pev->rendermode = kRenderTransAlpha;
+		m_bShieldSprint = 1;
+	}
+	else
+		m_bShieldSprint = 0;
+}
+
 // ref @0x1336b8 — if shield sprint, snap pev+0x14c (armorvalue) to 220.
 void CBasePlayer::SnagInvis( void )
 {

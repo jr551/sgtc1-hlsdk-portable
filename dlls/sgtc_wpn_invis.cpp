@@ -27,6 +27,9 @@ void CInvis::Spawn( void )
 	m_iId = SGTC_WPN_INVIS;
 	m_iClip = -1;
 	m_iDefaultAmmo = 10;
+	m_bInvisActive = 0;
+	m_flInvisLatchA = 0.0f;
+	m_flInvisLatchB = 0.0f;
 	FallInit();
 }
 
@@ -67,22 +70,43 @@ BOOL CInvis::Deploy( void )
 	return SGTC_DEPLOY( 2, "models/v_invis.mdl", "models/p_invis.mdl", SGTC_DRAW, "python" );
 }
 
+// ref @0xfbb62 — toggle +0x208, ToggleVis @0x136454, ammo > 3.
 void CInvis::PrimaryAttack( void )
 {
-	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 )
+	if( !m_pPlayer )
+		return;
+	if( m_pPlayer->m_bShieldWall )
+		return;
+	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 3 )
 	{
 		PlayEmptySound();
 		return;
 	}
 
-	m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType]--;
-	m_pPlayer->pev->effects |= EF_NODRAW;
-	m_pPlayer->m_bSnagInvisFlag = 1;	// ref +0x4df, copied to latch on Spawn
-	m_pPlayer->m_bSgtcCloakTick = 1;	// ref +0x448 — SgtcThink pulse @0x139b5d
-	m_pPlayer->m_flCloakTickNext = 0.0f;
-	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
-
 	EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_WEAPON, "weapons/invis.wav", 1.0, ATTN_NORM );
+
+	m_bInvisActive ^= 1;
+	m_pPlayer->SGTC_ToggleVis();
+
+	if( m_bInvisActive )
+	{
+		m_flInvisLatchA = 1.0f;	// ref rodata @0x1d2614 region (+0x134)
+		m_flInvisLatchB = 0.0f;
+		m_pPlayer->pev->animtime = gpGlobals->time;
+		m_pPlayer->m_bSnagInvisFlag = 1;
+		m_pPlayer->m_bSgtcCloakTick = 1;
+		m_pPlayer->m_flCloakTickNext = 0.0f;
+	}
+	else
+	{
+		m_flInvisLatchA = 0.0f;
+		m_flInvisLatchB = 0.0f;
+		m_pPlayer->pev->effects &= ~EF_NODRAW;
+		m_pPlayer->pev->rendermode = kRenderNormal;
+		m_pPlayer->m_bSgtcCloakTick = 0;
+	}
+
+	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
 
 	PLAYBACK_EVENT_FULL( SGTC_EVENT_FLAGS, m_pPlayer->edict(), s_usInvisFire,
 		0.0, (float *)&g_vecZero, (float *)&g_vecZero, 0, 0, 0, 0, 0, 0 );
@@ -93,20 +117,16 @@ void CInvis::PrimaryAttack( void )
 
 void CInvis::SecondaryAttack( void )
 {
-	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 )
+	if( !m_pPlayer )
+		return;
+	if( m_bInvisActive )
+		return;
+	if( gpGlobals->time < m_pPlayer->m_flGateTravel && !m_pPlayer->IsOnLadder() )
+		return;
+	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 3 )
 		return;
 
-	m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType]--;
-	m_pPlayer->pev->effects |= EF_NODRAW;
-	m_pPlayer->m_bSnagInvisFlag = 1;
-	m_pPlayer->m_bSgtcCloakTick = 1;
-	m_pPlayer->m_flCloakTickNext = 0.0f;
-	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
-
-	EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_WEAPON, "weapons/invis.wav", 1.0, ATTN_NORM );
-
-	m_flNextPrimaryAttack = GetNextAttackDelay( 1.0 );
-	m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 1.0;
+	PrimaryAttack();
 }
 
 void CInvis::InvisThink( void )

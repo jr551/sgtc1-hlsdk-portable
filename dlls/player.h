@@ -257,6 +257,7 @@ public:
 	void SGTC_MenuselectBombKey( int sel );	// ref ClientCommand @0xcb456 — menuselect <=4
 	void SGTC_SgtcThink( void );	// ref @0x13963a — called from PostThink @0x1405b3
 	void Zat( entvars_t *pevInflictor );	// ref @0x13378a — zat_proj / zatboom
+	void SGTC_ToggleVis( void );	// ref @0x136454 — invis rendermode latch (+0x4e9)
 	void SnagInvis( void );	// ref @0x1336b8
 	void SGTC_TryShieldTraceHit( entvars_t *pevAttacker, TraceResult *ptr );	// ref TraceAttack @0x13720e
 	void SGTC_TickShieldTraceLatch( void );	// ref CheckTimeBasedDamage @0x13e995

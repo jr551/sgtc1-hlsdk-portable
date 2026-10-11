@@ -385,6 +385,10 @@ public:
 	SGTC_DECLARE_WEAPON();
 	void EXPORT InvisThink( void );
 	int iItemSlot( void ) { return 3; }
+
+	char	m_bInvisActive;		// ref weapon +0x208
+	float	m_flInvisLatchA;	// ref weapon +0x134
+	float	m_flInvisLatchB;	// ref weapon +0x138
 };
 
 class CLarve : public CBasePlayerWeapon
