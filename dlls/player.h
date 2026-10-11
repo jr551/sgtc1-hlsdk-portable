@@ -213,8 +213,14 @@ public:
 	float	m_flGateTravel;		// ref +0x408: gate-travel deadline (now+~1s)
 	int	m_iGateTeam;		// ref +0x458: team copied from zone_gatetravel
 	float	m_flRadarNext;		// ref +0x49c: next CBasePlayer::RadarScan tick
+	int	m_iStamina;		// ref +0x43c — HUD Stamina usermsg byte
+	int	m_iStaminaSent;		// ref +0xa24 — last value sent to client
+	float	m_flMoveLatch;		// ref +0xa6c — stamina tick gate (now+interval)
+	float	m_flMaxSpeedLatch;	// ref +0xa7c — pev->maxspeed snapshot (StartObserver)
 
 	void SGTC_RadarScan( void );	// ref @0x135592 — Blip usermsg to client HUD
+	void SGTC_UpdateStamina( void );	// ref @0x1336e8
+	void SGTC_ShieldThinker( void );	// ref @0x1390b2 (partial port)
 	void SGTC_SgtcThink( void );	// ref @0x13963a — called from PostThink @0x1405b3
 
 	virtual void Spawn( void );

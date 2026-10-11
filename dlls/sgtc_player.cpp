@@ -127,8 +127,66 @@ void CBasePlayer::SGTC_RadarScan( void )
 	m_flRadarNext = gpGlobals->time + 0.25f;
 }
 
-// ref CBasePlayer::SgtcThink @0x13963a (full body ~7 KB; radar slice @0x13a430).
+// ref @0x1336e8 — MSG_ONE gmsgStamina when m_iStamina (+0x43c) != m_iStaminaSent (+0xa24).
+void CBasePlayer::SGTC_UpdateStamina( void )
+{
+	if( m_iStamina < 0 )
+		m_iStamina = 0;
+
+	if( m_iStamina == m_iStaminaSent )
+		return;
+
+	if( !gmsgStamina )
+		return;
+
+	MESSAGE_BEGIN( MSG_ONE, gmsgStamina, NULL, pev );
+	WRITE_BYTE( m_iStamina );
+	MESSAGE_END();
+	m_iStaminaSent = m_iStamina;
+}
+
+// ref @0x1390b2 — personal shield entity sync (~0x4f1); TODO: effect_shield follow.
+void CBasePlayer::SGTC_ShieldThinker( void )
+{
+}
+
+// ref @0x13a02d..0x13a0da — drain 10 stamina (+0x43c) when moving above ~0.125.
+static void SGTC_TryStaminaDrainFromMovement( CBasePlayer *p )
+{
+	if( gpGlobals->time < p->m_flMoveLatch )
+		return;
+
+	if( p->pev->flags & FL_FROZEN )
+		return;
+
+	const float kMinMove = 0.125f;
+	if( p->m_flMaxSpeedLatch > kMinMove )
+		return;
+
+	if( p->pev->maxspeed != p->m_flMaxSpeedLatch )
+		return;
+
+	const float horiz = (float)( fabs( p->pev->velocity.x ) + fabs( p->pev->velocity.y ) );
+	const float move = horiz + p->pev->velocity.z;
+	if( move <= kMinMove )
+		return;
+
+	p->m_iStamina -= 10;
+	p->SGTC_UpdateStamina();
+	p->m_flMoveLatch = gpGlobals->time + 0.25f;
+}
+
+// ref CBasePlayer::SgtcThink @0x13963a (full body ~7 KB; tail @0x13a404).
 void CBasePlayer::SGTC_SgtcThink( void )
 {
+	if( !IsAlive() )
+		return;
+
+	// ref @0x1397b3 — nuke bonus display counter floor.
+	if( m_iNukeBonus <= 5 )
+		m_iNukeBonus = 6;
+
+	SGTC_TryStaminaDrainFromMovement( this );
+	SGTC_ShieldThinker();
 	SGTC_RadarScan();
 }
