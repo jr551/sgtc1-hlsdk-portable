@@ -33,6 +33,7 @@
 #include "shake.h"
 #include "decals.h"
 #include "gamerules.h"
+#include "sgtc_rules.h"
 #include "game.h"
 #include "pm_shared.h"
 #include "hltv.h"
@@ -230,6 +231,8 @@ void LinkUserMessages( void )
 
 	gmsgStatusText = REG_USER_MSG( "StatusText", -1 );
 	gmsgStatusValue = REG_USER_MSG( "StatusValue", 3 );
+
+	SGTC_LinkUserMessages();
 }
 
 LINK_ENTITY_TO_CLASS( player, CBasePlayer )

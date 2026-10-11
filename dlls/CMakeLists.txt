@@ -156,6 +156,7 @@ set (SVDLL_SOURCES
 	sgtc_links.cpp
 	sgtc_monsters.cpp
 	sgtc_rules.cpp
+	sgtc_token.cpp
 	sgtc_wpn_ammo_psg1.cpp
 	sgtc_wpn_batsup.cpp
 	sgtc_wpn_coujaf.cpp

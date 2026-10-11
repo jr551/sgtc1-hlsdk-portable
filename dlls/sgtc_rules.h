@@ -172,6 +172,16 @@ public:
 	void PlayerSpawn( CBasePlayer *pPlayer ) override;
 };
 
+// ref CStargateReplicateur::CStargateReplicateur @0x16e364 — base CHalfLifeMultiplay.
+class CStargateReplicateur : public CHalfLifeMultiplay
+{
+public:
+	CStargateReplicateur( void );
+	BOOL IsStargate( void ) { return TRUE; }
+	const char *GetGameDescription( void ) override { return "StargateTC-Replic"; }
+	void PlayerSpawn( CBasePlayer *pPlayer ) override;
+};
+
 // ---------------------------------------------------------------------------
 // Spawn points. In the .so these are bare CPointEntity factories
 // (info_player_torri 0x18b8b4, marine 0x18b864, goauld 0x18b88c,

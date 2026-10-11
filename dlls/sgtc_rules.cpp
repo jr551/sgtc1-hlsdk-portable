@@ -54,6 +54,10 @@ static void SGTC_InitTrigger( CBaseToggle *pTrigger )
 		SetBits( pev->effects, EF_NODRAW );
 }
 
+#if !defined( _WIN32 ) && defined( __GNUC__ )
+#pragma GCC visibility push( default )
+#endif
+
 // ---------------------------------------------------------------------------
 // User messages. Header-owned (env/radar) + file-global HUD/round messages the
 // rules classes send. Names are the exact BSS gmsg* symbols of
@@ -91,6 +95,10 @@ int gmsgVGUIMenu = 0;
 int gmsgHideVGUI = 0;
 int gmsgZatTouch = 0;
 int gmsgRadio = 0;
+
+#if !defined( _WIN32 ) && defined( __GNUC__ )
+#pragma GCC visibility pop
+#endif
 
 void SGTC_LinkUserMessages( void )
 {
@@ -130,6 +138,9 @@ void SGTC_LinkUserMessages( void )
 // Mode installer. mp_gamemode prefix chain from InstallGameRules disasm
 // (rodata 0x1d1ab0: "sg_" "sgi_" "ctp_" "un_" "inv_" "rep_").
 // ---------------------------------------------------------------------------
+#if !defined( _WIN32 ) && defined( __GNUC__ )
+__attribute__(( visibility( "default" ) ))
+#endif
 CGameRules *SGTC_InstallGameRules( const char *pszMode )
 {
 	if( !pszMode || !*pszMode )
@@ -143,7 +154,7 @@ CGameRules *SGTC_InstallGameRules( const char *pszMode )
 	if( !strncmp( pszMode, "inv_", 4 ) )
 		return new CStargateInvis;
 	if( !strncmp( pszMode, "rep_", 4 ) )
-		return NULL; // CStargateReplicateur: sibling slice owns it
+		return new CStargateReplicateur;
 	return NULL;
 }
 
@@ -1016,6 +1027,15 @@ void CStargateInvis::PlayerSpawn( CBasePlayer *pPlayer )
 	pPlayer->GiveNamedItem( "weapon_coujaf" );
 	pPlayer->GiveNamedItem( "weapon_invis" );
 	pPlayer->GiveNamedItem( "weapon_zat" );
+}
+
+CStargateReplicateur::CStargateReplicateur( void )
+{
+}
+
+void CStargateReplicateur::PlayerSpawn( CBasePlayer *pPlayer )
+{
+	CHalfLifeMultiplay::PlayerSpawn( pPlayer );
 }
 
 // ===========================================================================
