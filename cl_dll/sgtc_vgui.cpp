@@ -246,7 +246,8 @@ const char *SgtcVgui_ScreenStatus( const char *screen )
 	if ( !stricmp( screen, "commandmenu" ) )	return "stub";	// commandmenu.txt echo only
 	if ( !stricmp( screen, "serverbrowser" ) )return "stub";
 	if ( !stricmp( screen, "gate" ) )		return "stub";	// no client VGUI gate screens
-	if ( !stricmp( screen, "progress" ) )	return "live";	// CHudSgtc @0x1002abe2 HUD bridge
+	// ref CProgressPanel @0x1002a9ca has no SPR_Draw*; chip paint = CHudSgtc HUD bridge (sgtc_hud.cpp).
+	if ( !stricmp( screen, "progress" ) )	return "live";
 	return "unknown";
 }
 

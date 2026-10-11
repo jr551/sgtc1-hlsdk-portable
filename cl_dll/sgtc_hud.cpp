@@ -363,12 +363,10 @@ static int SGTC_ProgressSlotChipVisible( const CHudSgtc *hud, int slot )
 	return hud->m_iProgressTeam[slot] == 1;
 }
 
-// ref VGUI panel update @0x1002abe2 — per-slot team progress chip state (no widgets on Xash).
+// ref FUN_1002a9ca @0x1002a9ca — per-slot team chip state (VGUI widgets on Win32; HUD SPR on Xash).
 static void SGTC_TickProgressTeamUi( CHudSgtc *hud )
 {
-	if( hud->m_iProgress <= 0 )
-		return;
-
+	// ref panel update has no m_iProgress gate; only Draw hides chips when progress==0.
 	// ref FUN_1002a9ca entry: DAT_100e1b90 recomputed every VGUI/progress frame.
 	hud->m_iProgressIconCursor = 0;
 
@@ -400,12 +398,15 @@ static void SGTC_TickProgressTeamUi( CHudSgtc *hud )
 	}
 }
 
+// ref Progress msg byte1 -> DAT_100e1b94 (width budget in VGUI @0x1002944d; star tint in HUD).
 static const char *SGTC_ProgressIconSprite( int icon )
 {
 	if( icon == 1 )
 		return "star_g";
 	if( icon == 2 )
 		return "star_p";
+	if( icon == 3 )
+		return "star_b";
 	return "star_s";
 }
 
