@@ -102,6 +102,9 @@ public:
 	float m_flRoundStart;		// ref +0x16e8
 	int m_iTicketModeFlag;		// ref +0x58 (TicketMode msg)
 	int m_iHudInfoByte;		// ref +0x54 (HudInfoMode msg, FUN_10076bce)
+	int m_iTicketDockFrame;		// ref +0x1694 (slide phase counter 0..10)
+	int m_iTicketSlideOffset;	// ref +0x1698 (dock sub-offset 0..0x7d)
+	int m_iTicketSlideRemain;	// ref DAT_100f6fb0 (slide-in distance, starts 0xc00)
 	int m_iProgress;		// ref +0x38 (Progress msg)
 	int m_iProgressIcon;		// ref DAT_100e1b94
 	int m_iProgressTeam[SGTC_BLIP_SLOTS];	// ref DAT_100e1aa4[28]

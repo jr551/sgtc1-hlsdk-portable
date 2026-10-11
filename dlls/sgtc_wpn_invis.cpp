@@ -77,6 +77,7 @@ void CInvis::PrimaryAttack( void )
 
 	m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType]--;
 	m_pPlayer->pev->effects |= EF_NODRAW;
+	m_pPlayer->m_bSnagInvisFlag = 1;	// ref +0x4df, copied to latch on Spawn
 	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
 
 	EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_WEAPON, "weapons/invis.wav", 1.0, ATTN_NORM );
@@ -95,6 +96,7 @@ void CInvis::SecondaryAttack( void )
 
 	m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType]--;
 	m_pPlayer->pev->effects |= EF_NODRAW;
+	m_pPlayer->m_bSnagInvisFlag = 1;
 	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
 
 	EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_WEAPON, "weapons/invis.wav", 1.0, ATTN_NORM );

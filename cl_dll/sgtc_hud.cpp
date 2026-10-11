@@ -38,6 +38,82 @@ static void SGTC_TickBlipPulse( CHudSgtc *hud )
 		hud->m_cBlipPulseDir = hud->m_cBlipPulseDir ? 0 : 1;
 }
 
+// ref @0x10074a20..0x10074e58 — ticket dock slide + sprite rect helper @0x10051150.
+static void SGTC_TickTicketDock( CHudSgtc *hud )
+{
+	if( !hud->m_iTicketModeFlag )
+		return;
+
+	if( hud->m_iTicketSlideRemain > 0 )
+	{
+		if( hud->m_iTicketSlideRemain >= 0x600 )
+			hud->m_iTicketSlideRemain -= 0x600;
+		else if( hud->m_iTicketSlideRemain >= 0x300 )
+			hud->m_iTicketSlideRemain -= 0x300;
+		else if( hud->m_iTicketSlideRemain >= 0x180 )
+			hud->m_iTicketSlideRemain -= 0x180;
+		else if( hud->m_iTicketSlideRemain >= 0xc0 )
+			hud->m_iTicketSlideRemain -= 0xc0;
+		else if( hud->m_iTicketSlideRemain >= 0x60 )
+			hud->m_iTicketSlideRemain -= 0x60;
+		else if( hud->m_iTicketSlideRemain >= 0x30 )
+			hud->m_iTicketSlideRemain -= 0x30;
+		else if( hud->m_iTicketSlideRemain >= 0x18 )
+			hud->m_iTicketSlideRemain -= 0x18;
+		else if( hud->m_iTicketSlideRemain >= 0xc )
+			hud->m_iTicketSlideRemain -= 0xc;
+		else
+			hud->m_iTicketSlideRemain = 0;
+	}
+
+	if( hud->m_iTicketDockFrame < 10 )
+	{
+		hud->m_iTicketDockFrame++;
+		return;
+	}
+
+	if( hud->m_iTicketSlideOffset < 0x7d )
+		hud->m_iTicketSlideOffset += 2;
+	else if( hud->m_iTicketSlideOffset > 0x32 )
+		hud->m_iTicketSlideOffset -= 2;
+}
+
+static void SGTC_DrawTicketDock( CHudSgtc *hud, float flTime )
+{
+	if( !hud->m_iTicketModeFlag )
+		return;
+
+	const int iDock = gHUD.GetSpriteIndex( "ticketdock" );
+	if( !iDock )
+		return;
+	wrect_t dock = gHUD.GetSpriteRect( iDock );
+
+	const int baseY = ScreenHeight - 0x9f;	// ref @0x100749b0 (ds:0x100ed4c4 - 0x9f)
+	int slideX = hud->m_iTicketSlideRemain;
+	int offX = 0x78;
+	int offY = 0x78;
+	int offH = 0x32;
+	if( hud->m_iTicketDockFrame < 10 )
+	{
+		offX = hud->m_iTicketSlideOffset;
+		offY = offX;
+		offH = offX;
+	}
+	if( flTime < hud->m_flKeyTime )
+	{
+		offY = 0;
+		offH = 0;
+	}
+
+	const int x = slideX + offX;
+	const int y = baseY + offY - dock.bottom;
+	SPR_DrawAdditive( 0, x, y, &dock );
+
+	const int numY = baseY + 0x82;	// ref @0x10074edc
+	gHUD.DrawHudNumber( x + 0x82, numY, DHN_DRAWZERO, hud->m_iGtickets, 255, 255, 255 );
+	gHUD.DrawHudNumber( x + 0x100, numY, DHN_DRAWZERO, hud->m_iTtickets, 255, 255, 255 );
+}
+
 // ref @0x100750c5 — ramp m_iBlipProgress toward m_iProgress while 0 < progress < 100.
 static void SGTC_TickBlipBarProgress( CHudSgtc *hud, float flTime )
 {
@@ -482,16 +558,8 @@ int CHudSgtc::Draw( float flTime )
 		}
 	}
 
-	if( m_iTicketModeFlag && SGTC_Sprite( "ticketdock", NULL ) )
-	{
-		wrect_t dock;
-		SGTC_Sprite( "ticketdock", &dock );
-		int x = 10;
-		int y = ScreenHeight - dock.bottom - 10;
-		SPR_DrawAdditive( 0, x, y, &dock );
-		gHUD.DrawHudNumber( x + 24, y + 20, DHN_DRAWZERO, m_iGtickets, 255, 255, 255 );
-		gHUD.DrawHudNumber( x + 64, y + 20, DHN_DRAWZERO, m_iTtickets, 255, 255, 255 );
-	}
+	SGTC_TickTicketDock( this );
+	SGTC_DrawTicketDock( this, flTime );
 
 	if( m_flRoundTime > 0.0f )
 	{
@@ -617,6 +685,9 @@ void CHudSgtc::Reset( void )
 	m_flRoundStart = 0;
 	m_iTicketModeFlag = 0;
 	m_iHudInfoByte = 0;
+	m_iTicketDockFrame = 0;
+	m_iTicketSlideOffset = 0;
+	m_iTicketSlideRemain = 0;
 	m_iProgress = 0;
 	m_iProgressIcon = 0;
 	memset( m_iProgressTeam, 0, sizeof( m_iProgressTeam ) );
@@ -661,6 +732,12 @@ int CHudSgtc::MsgFunc_TicketMode( const char *pszName, int iSize, void *pbuf )
 	BEGIN_READ( pbuf, iSize );
 	int b = READ_BYTE();
 	m_iTicketModeFlag = ( b >= 1 ) ? 1 : 0;
+	if( m_iTicketModeFlag )
+	{
+		m_iTicketDockFrame = 0;
+		m_iTicketSlideOffset = 0;
+		m_iTicketSlideRemain = 0xc00;	// ref DAT_100f6fb0 initial @0x10074ad7
+	}
 	m_iFlags |= HUD_ACTIVE;
 	return 1;
 }
