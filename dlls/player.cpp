@@ -2615,6 +2615,9 @@ void CBasePlayer::PostThink()
 	if( !IsAlive() )
 		goto pt_end;
 
+	// ref PostThink @0x1405b3 → SgtcThink @0x13963a (StargateTC per-player tick).
+	SGTC_SgtcThink();
+
 	// Handle Tank controlling
 	if( m_pTank != 0 )
 	{

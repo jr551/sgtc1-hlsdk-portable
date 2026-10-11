@@ -215,6 +215,7 @@ public:
 	float	m_flRadarNext;		// ref +0x49c: next CBasePlayer::RadarScan tick
 
 	void SGTC_RadarScan( void );	// ref @0x135592 — Blip usermsg to client HUD
+	void SGTC_SgtcThink( void );	// ref @0x13963a — called from PostThink @0x1405b3
 
 	virtual void Spawn( void );
 	void Pain( void );

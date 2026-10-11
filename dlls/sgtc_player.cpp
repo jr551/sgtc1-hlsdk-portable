@@ -127,9 +127,8 @@ void CBasePlayer::SGTC_RadarScan( void )
 	m_flRadarNext = gpGlobals->time + 0.25f;
 }
 
-void SGTC_PlayerThinkRadar( CBasePlayer *pPlayer )
+// ref CBasePlayer::SgtcThink @0x13963a (full body ~7 KB; radar slice @0x13a430).
+void CBasePlayer::SGTC_SgtcThink( void )
 {
-	if( !pPlayer )
-		return;
-	pPlayer->SGTC_RadarScan();
+	SGTC_RadarScan();
 }
