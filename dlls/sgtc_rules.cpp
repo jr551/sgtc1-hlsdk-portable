@@ -618,8 +618,8 @@ void CStargateTeamDM::NewRound( void )
 	// respawn via map reset, not enumerated here).
 	m_bRoundOver = FALSE;
 	m_iSGTCTeamScores[0] = m_iSGTCTeamScores[1] = 0;
+	// ref REG "NewRnd", 0 — no payload (LinkUserMessages @0x132fe6).
 	MESSAGE_BEGIN( MSG_ALL, gmsgNewRnd );
-		WRITE_BYTE( 1 );
 	MESSAGE_END();
 	RecountTeams( TRUE );
 }
@@ -660,8 +660,8 @@ void CStargateTeamDM::StartPortrait( CBasePlayer *pPlayer )
 
 void CStargateTeamDM::RedrawPortrait( CBasePlayer *pPlayer )
 {
+	// ref REG "TogglePor", 0 — no payload; portrait refresh is client-side.
 	MESSAGE_BEGIN( MSG_ALL, gmsgTogglePortrait );
-		WRITE_BYTE( pPlayer->entindex() );
 	MESSAGE_END();
 }
 
@@ -1524,6 +1524,7 @@ BOOL CItemObjective::MyTouch( CBasePlayer *pPlayer )
 	pPlayer->m_rgItems[ITEM_SECURITY] += 1;
 	MESSAGE_BEGIN( MSG_ONE, gmsgHasKey, NULL, pPlayer->edict() );
 		WRITE_BYTE( pPlayer->m_rgItems[ITEM_SECURITY] );
+		WRITE_BYTE( 0 ); // ref HasKey REG size 2 (key + vote byte)
 	MESSAGE_END();
 	return TRUE;
 }
@@ -1622,6 +1623,11 @@ void CEnvParticule::Spawn( void )
 	pev->solid = SOLID_NOT;
 	pev->movetype = MOVETYPE_NONE;
 	m_bActive = TRUE;
+}
+
+void CEnvParticule::Activate( void )
+{
+	CPointEntity::Activate();
 	SendValue();
 }
 

@@ -347,6 +347,7 @@ class CEnvParticule : public CPointEntity
 {
 public:
 	void Spawn( void );
+	void Activate( void );
 	void KeyValue( KeyValueData *pkvd );
 	void Reset( void );
 	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
