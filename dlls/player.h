@@ -233,7 +233,7 @@ public:
 	char	m_bLanceStunFlag;	// ref +0xa3e — set by CLanceProj::ProjTouch @0xfeb57
 	float	m_flMoveLatch;		// ref +0xa6c — stamina tick gate (now+interval)
 	float	m_flLanceStunEnd;	// ref +0xa74 — now+0.2 (rodata 0x1d7530)
-	float	m_flMaxSpeedLatch;	// ref +0xa7c — pev->maxspeed snapshot (StartObserver)
+	float	m_flMaxSpeedLatch;	// ref +0xa7c — pev->fuser2 speed snapshot (SgtcThink @0x13a06e)
 
 	void SGTC_RadarScan( void );	// ref @0x135592 — Blip usermsg to client HUD
 	void SGTC_UpdateStamina( void );	// ref @0x1336e8

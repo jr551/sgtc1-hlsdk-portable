@@ -237,7 +237,7 @@ void CBasePlayer::SGTC_ShieldThinker( void )
 	m_bShieldSpawned = bFound;
 }
 
-// ref @0x13a02d..0x13a0da — drain 10 stamina (+0x43c) when moving above ~0.125.
+// ref @0x13a02d..0x13a0da — drain 10 stamina (+0x43c) on movement tick (+0xa6c).
 static void SGTC_TryStaminaDrainFromMovement( CBasePlayer *p )
 {
 	if( gpGlobals->time < p->m_flMoveLatch )
@@ -246,21 +246,19 @@ static void SGTC_TryStaminaDrainFromMovement( CBasePlayer *p )
 	if( p->pev->flags & FL_FROZEN )
 		return;
 
-	const float kMinMove = 0.125f;
-	if( p->m_flMaxSpeedLatch > kMinMove )
+	if( p->m_flMaxSpeedLatch == 0.0f )
 		return;
 
-	if( p->pev->maxspeed != p->m_flMaxSpeedLatch )
+	if( p->pev->fuser2 != p->m_flMaxSpeedLatch )
 		return;
 
-	const float horiz = (float)( fabs( p->pev->velocity.x ) + fabs( p->pev->velocity.y ) );
-	const float move = horiz + p->pev->velocity.z;
-	if( move <= kMinMove )
+	const float move = p->pev->velocity.x + p->pev->velocity.y + p->pev->velocity.z;
+	if( move <= 0.0f )
 		return;
 
 	p->m_iStamina -= 10;
 	p->SGTC_UpdateStamina();
-	p->m_flMoveLatch = gpGlobals->time + 0.25f;
+	p->m_flMoveLatch = gpGlobals->time + 0.5f;	// ref rodata @0x1d755c
 }
 
 // ref @0x139f18 — when +0x444/+0x938 differ from +0x45c/+0x934, MSG_ONE Progress.
