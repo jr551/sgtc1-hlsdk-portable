@@ -6,6 +6,8 @@
 
 CHudSgtc g_SgtcHud;
 
+static void SGTC_InitPortraitSlots( CHudSgtc *hud );
+
 int CHudSgtc::Init( void )
 {
 	m_iFlags = HUDELEM_ACTIVE;
@@ -16,6 +18,7 @@ int CHudSgtc::Init( void )
 	gEngfuncs.pfnRegisterVariable( "view_radar", "0", FCVAR_ARCHIVE );
 	gEngfuncs.pfnRegisterVariable( "view_portraits", "0", FCVAR_ARCHIVE );
 	gEngfuncs.pfnRegisterVariable( "view_seeownport", "0", FCVAR_ARCHIVE );
+	SGTC_InitPortraitSlots( this );
 	return 1;
 }
 
@@ -29,10 +32,86 @@ static cvar_t *SGTC_Cvar( const char *name )
 	return gEngfuncs.pfnGetCvarPointer( name );
 }
 
+static int SGTC_Sprite( const char *name, wrect_t *prc )
+{
+	int idx = gHUD.GetSpriteIndex( name );
+	if( idx <= 0 )
+		return 0;
+	if( prc )
+		*prc = gHUD.GetSpriteRect( idx );
+	return idx;
+}
+
+static void SGTC_DrawSprite( const char *name, int x, int y )
+{
+	wrect_t rc;
+	if( SGTC_Sprite( name, &rc ) )
+		SPR_DrawAdditive( 0, x, y, &rc );
+}
+
+static void SGTC_DrawBarNeedle( const char *bar, const char *needle, int x, int y, float frac )
+{
+	wrect_t rcBar, rcNeedle;
+	if( !SGTC_Sprite( bar, &rcBar ) )
+		return;
+	SPR_DrawAdditive( 0, x, y, &rcBar );
+	if( frac < 0.0f )
+		frac = 0.0f;
+	if( frac > 1.0f )
+		frac = 1.0f;
+	if( SGTC_Sprite( needle, &rcNeedle ) )
+	{
+		int ny = y + (int)( ( rcBar.bottom - rcBar.top - rcNeedle.bottom ) * ( 1.0f - frac ) );
+		SPR_DrawAdditive( 0, x + 4, ny, &rcNeedle );
+	}
+}
+
+// ref FUN_10072502 — clear 33 portrait slot records @ Init.
+static void SGTC_InitPortraitSlots( CHudSgtc *hud )
+{
+	for( int i = 0; i < SGTC_PORTRAIT_SLOTS; i++ )
+	{
+		hud->m_iPortraitSlotId[i] = 0;
+		hud->m_iPortraitSlotAux[i] = 0;
+		hud->m_iPortraitSlotFlash[i] = 0;
+		hud->m_iPortraitSlotGray[i] = 0x7d;
+		hud->m_iPortraitSlotEnt[i] = 0;
+	}
+}
+
 int CHudSgtc::Draw( float flTime )
 {
 	if( m_iHideHud )
 		return 0;
+
+	// ref FUN_1007257b — expire portrait slots not matching active ent.
+	for( int i = 0; i < SGTC_PORTRAIT_SLOTS; i++ )
+	{
+		if( m_iPortraitSlotEnt[i] != 0 && m_iPortraitSlotEnt[i] != m_iPortraitEnt )
+		{
+			m_iPortraitSlotId[i] = 0;
+			m_iPortraitSlotAux[i] = 0;
+			m_iPortraitSlotFlash[i] = 0;
+			m_iPortraitSlotGray[i] = 0x7d;
+			m_iPortraitSlotEnt[i] = 0;
+		}
+	}
+
+	const int panelH = 168;
+	const int lx = 0;
+	const int ly = ScreenHeight - panelH;
+	const int rx = ScreenWidth - 200;
+
+	SGTC_DrawSprite( "hud_left", lx, ly );
+	SGTC_DrawSprite( "hud_right", rx, ly );
+
+	float life = (float)gHUD.m_Health.m_iHealth;
+	SGTC_DrawBarNeedle( "life_bar", "needle", lx + 24, ly + 28, life / 100.0f );
+	SGTC_DrawBarNeedle( "armor_bar", "needle", lx + 48, ly + 28, m_flArmorBar / 100.0f );
+	SGTC_DrawBarNeedle( "stamn_bar", "needle", lx + 72, ly + 28, (float)m_iStamina / 100.0f );
+
+	if( m_iHasKey )
+		SGTC_DrawSprite( "bombkey", lx + 120, ly + 100 );
 
 	cvar_t *cvRadar = SGTC_Cvar( "view_radar" );
 	if( cvRadar && cvRadar->value > 0.0f )
@@ -64,12 +143,31 @@ int CHudSgtc::Draw( float flTime )
 		}
 	}
 
-	if( m_iTicketModeFlag && gHUD.GetSpriteIndex( "ticketdock" ) )
+	if( m_iTicketModeFlag && SGTC_Sprite( "ticketdock", NULL ) )
 	{
-		wrect_t dock = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "ticketdock" ) );
+		wrect_t dock;
+		SGTC_Sprite( "ticketdock", &dock );
 		int x = 10;
 		int y = ScreenHeight - dock.bottom - 10;
 		SPR_DrawAdditive( 0, x, y, &dock );
+		gHUD.DrawHudNumber( x + 24, y + 20, DHN_DRAWZERO, m_iGtickets, 255, 255, 255 );
+		gHUD.DrawHudNumber( x + 64, y + 20, DHN_DRAWZERO, m_iTtickets, 255, 255, 255 );
+	}
+
+	if( m_flRoundTime > 0.0f )
+	{
+		int remain = (int)( m_flRoundTime - ( flTime - m_flRoundStart ) );
+		if( remain < 0 )
+			remain = 0;
+		gHUD.DrawHudNumber( ScreenWidth / 2 - 24, 8, DHN_3DIGITS | DHN_DRAWZERO, remain, 255, 200, 64 );
+	}
+
+	cvar_t *cvPort = SGTC_Cvar( "view_portraits" );
+	if( cvPort && cvPort->value > 0.0f && m_iPortraitEnt )
+	{
+		SGTC_DrawSprite( "port_left", lx + 8, ly - 104 );
+		SGTC_DrawSprite( "port_mid", lx + 24, ly - 104 );
+		SGTC_DrawSprite( "port_right", lx + 104, ly - 104 );
 	}
 
 	if( m_iBlipProgress > 0 && gHUD.GetSpriteIndex( "pbar" ) )
@@ -144,6 +242,7 @@ void CHudSgtc::Reset( void )
 	m_iProgressIcon = 0;
 	memset( m_iProgressTeam, 0, sizeof( m_iProgressTeam ) );
 	m_iProgressEnd = 0;
+	SGTC_InitPortraitSlots( this );
 }
 
 // ref FUN_100772b4 — ZatTouch, REG size 0 on server.
@@ -196,12 +295,12 @@ int CHudSgtc::MsgFunc_HudInfoMode( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// ref FUN_10076ba2 — Stamina hook stores DAT_100f71dc (hud info mode byte).
+// ref FUN_10076ba2 / DAT_100f71dc — stamina meter byte.
 int CHudSgtc::MsgFunc_Stamina( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	m_iHudInfoMode = READ_BYTE();
+	m_iStamina = READ_BYTE();
 	return 1;
 }
 
@@ -315,8 +414,8 @@ int CHudSgtc::MsgFunc_Blip( const char *pszName, int iSize, void *pbuf )
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
 	int type = READ_BYTE();
-	int rx = READ_COORD();
-	int ry = READ_COORD();
+	int rx = (int)READ_COORD();
+	int ry = (int)READ_COORD();
 
 	if( type == 0x32 )
 	{

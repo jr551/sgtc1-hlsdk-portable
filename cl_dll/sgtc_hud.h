@@ -7,6 +7,7 @@
 
 #define SGTC_BLIP_SLOTS 28
 #define SGTC_RADAR_SLOTS 256
+#define SGTC_PORTRAIT_SLOTS 33
 
 // ref client.dll: SGTC HUD state on CHudSgtc (offsets from REA decompile).
 class CHudSgtc : public CHudBase
@@ -97,6 +98,13 @@ public:
 	int m_iProgressIcon;		// ref DAT_100e1b94
 	int m_iProgressTeam[SGTC_BLIP_SLOTS];	// ref DAT_100e1aa4[28]
 	int m_iProgressEnd;		// ref DAT_100e1b98
+
+	// ref FUN_10072502 portrait ring (+0x64,+0x264,+0x1568,+0x15ec,+0x164)
+	int m_iPortraitSlotId[SGTC_PORTRAIT_SLOTS];
+	int m_iPortraitSlotAux[SGTC_PORTRAIT_SLOTS];
+	int m_iPortraitSlotFlash[SGTC_PORTRAIT_SLOTS];
+	int m_iPortraitSlotGray[SGTC_PORTRAIT_SLOTS];
+	int m_iPortraitSlotEnt[SGTC_PORTRAIT_SLOTS];
 };
 
 extern CHudSgtc g_SgtcHud;
