@@ -210,9 +210,10 @@ void CSGTCProjBase::ProjTouch( CBaseEntity *pOther )
 		ignore_monsters, ENT( pev ), &tr );
 
 	CBaseEntity *pHit = CBaseEntity::Instance( tr.pHit );
-	// ref @0xfeb28: if tr.pHit IsPlayer(), set a player flag at +0xa3e —
-	// an SGTC CBasePlayer member not present in the stock layout (probable
-	// stun/zap effect flag). Unmapped: noted for follow-up.
+	// ref @0xfeb28 — IsPlayer() then byte +0xa3e = 1.
+	if( pHit && pHit->IsPlayer() )
+		((CBasePlayer *)pHit)->m_bLanceStunFlag = 1;
+
 	SGTC_DoSpark( pev, tr.vecEndPos );
 	Exploder( &tr, DMG_ALWAYSGIB );
 }

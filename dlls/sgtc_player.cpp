@@ -344,6 +344,20 @@ void CBasePlayer::SGTC_MenuselectBombKey( int sel )
 	m_bBombKeyWarnSent = 0;
 }
 
+// ref @0x139814 — arm 0.2s window (rodata 0x1d7530), expire +0xa3e, copy to +0x4e8.
+void CBasePlayer::SGTC_TickLanceStunLatch( void )
+{
+	static const float kLanceStunSec = 0.2f;
+
+	if( !m_bLanceStunLatch && m_bLanceStunFlag )
+		m_flLanceStunEnd = gpGlobals->time + kLanceStunSec;
+
+	if( m_bLanceStunFlag && gpGlobals->time >= m_flLanceStunEnd )
+		m_bLanceStunFlag = 0;
+
+	m_bLanceStunLatch = m_bLanceStunFlag;
+}
+
 // ref CBasePlayer::SgtcThink @0x13963a (full body ~7 KB; tail @0x13a404).
 void CBasePlayer::SGTC_SgtcThink( void )
 {
@@ -358,6 +372,7 @@ void CBasePlayer::SGTC_SgtcThink( void )
 	if( IsOnLadder() && m_bShieldWall )
 		m_bShieldWall = 0;
 
+	SGTC_TickLanceStunLatch();
 	SGTC_TryBombKeyCampWarn();
 	SGTC_SendProgressIfDirty();
 	SGTC_TryStaminaDrainFromMovement( this );

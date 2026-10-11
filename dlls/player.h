@@ -224,12 +224,15 @@ public:
 	float	m_flShieldThinkNext;	// ref +0x404
 	char	m_bShieldWall;		// ref +0x3e0 — deploy personal shield
 	char	m_bShieldSpawned;	// ref +0x4e4 — effect_shield entity active
+	char	m_bLanceStunLatch;	// ref +0x4e8 — latched copy of +0xa3e (SgtcThink)
 	char	m_bShieldSprint;	// ref +0x4e9 — sprint drain gate
 	char	m_bShieldLarge;		// ref +0x460 — big shield sizing on spawn
 	char	m_bWeapSubModel;	// ref +0x925 — SubModel disp flag (WeapDispSet 1/2)
 	int	m_iStamina;		// ref +0x43c — HUD Stamina usermsg byte
 	int	m_iStaminaSent;		// ref +0xa24 — last value sent to client
+	char	m_bLanceStunFlag;	// ref +0xa3e — set by CLanceProj::ProjTouch @0xfeb57
 	float	m_flMoveLatch;		// ref +0xa6c — stamina tick gate (now+interval)
+	float	m_flLanceStunEnd;	// ref +0xa74 — now+0.2 (rodata 0x1d7530)
 	float	m_flMaxSpeedLatch;	// ref +0xa7c — pev->maxspeed snapshot (StartObserver)
 
 	void SGTC_RadarScan( void );	// ref @0x135592 — Blip usermsg to client HUD
@@ -237,6 +240,7 @@ public:
 	void SGTC_ShieldThinker( void );	// ref @0x1390b2 (partial port)
 	void SGTC_WeapDispSet( int mode );	// ref @0x133aca — MSG_ONE SubModel
 	void SGTC_SendProgressIfDirty( void );	// ref @0x139f18 — MSG_ONE gmsgProgress
+	void SGTC_TickLanceStunLatch( void );	// ref @0x139814 — lance stun timer + latch
 	void SGTC_TryBombKeyCampWarn( void );	// ref @0x1398ef — MSG_ONE HasKey camp warn
 	void SGTC_SyncBombZoneHasKey( void );	// ref @0x13a438 — HasKey on zone/key transitions
 	void SGTC_MenuselectBombKey( int sel );	// ref ClientCommand @0xcb456 — menuselect <=4
