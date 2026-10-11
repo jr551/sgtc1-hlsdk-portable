@@ -67,7 +67,7 @@ public:
 	int m_iArmorParam;		// ref +0x168c
 	float m_flArmorTacPhase;	// ref tri-strip +0x14 (anim clock @0x100739bd)
 
-	int m_iBlipProgress;		// ref +0x1674 (Progress msg cmd 0/100)
+	int m_iBlipProgress;		// ref +0x1674 (Progress msg; Draw tint @0x100762ba)
 
 	int m_iRadarFocusX;		// ref +0x169c (Blip type 0x32)
 	int m_iRadarFocusY;		// ref +0x16a0

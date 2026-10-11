@@ -473,7 +473,8 @@ void CStargateTeamDM::PlayerSpawn( CBasePlayer *pPlayer )
 
 void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 {
-	// .so PlayerThink maintains portrait/round HUD; base sim is stock.
+	// ref CBasePlayer::SgtcThink @0x13963a calls RadarScan @0x135592 when due.
+	SGTC_PlayerThinkRadar( pPlayer );
 	CHalfLifeMultiplay::PlayerThink( pPlayer );
 }
 
@@ -927,6 +928,12 @@ edict_t *CStargateUnas::SGTC_FindTeamSpawn( const char *pszClassname )
 	if( !pSpot )
 		pSpot = UTIL_FindEntityByClassname( pSpot, (char *)pszClassname );
 	return pSpot ? pSpot->edict() : NULL;
+}
+
+void CStargateUnas::PlayerThink( CBasePlayer *pPlayer )
+{
+	SGTC_PlayerThinkRadar( pPlayer );
+	CHalfLifeMultiplay::PlayerThink( pPlayer );
 }
 
 void CStargateUnas::PlayerSpawn( CBasePlayer *pPlayer )

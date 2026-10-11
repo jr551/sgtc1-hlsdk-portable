@@ -49,6 +49,7 @@ extern int gmsgChangeParticuleState;
 extern int gmsgGameMode;
 void SGTC_LinkUserMessages( void );
 void SGTC_InitTrigger( CBaseToggle *pTrigger );
+void SGTC_PlayerThinkRadar( CBasePlayer *pPlayer );
 
 // Mode-selecting installer. Stock InstallGameRules() (gamerules.cpp:310)
 // cannot know about SGTC classes; the one-line hook is documented in the
@@ -143,6 +144,7 @@ public:
 	void InitHUD( CBasePlayer *pPlayer ) override;
 	void UpdateGameMode( CBasePlayer *pPlayer ) override;
 	void PlayerSpawn( CBasePlayer *pPlayer ) override;
+	void PlayerThink( CBasePlayer *pPlayer ) override;
 	int IPointsForKill( CBasePlayer *pAttacker, CBasePlayer *pKilled ) override;
 	void PlayerKilled( CBasePlayer *pVictim, entvars_t *pKiller, entvars_t *pInflictor ) override;
 	void DeathNotice( CBasePlayer *pVictim, entvars_t *pKiller, entvars_t *pInflictor ) override;

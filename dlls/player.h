@@ -212,6 +212,9 @@ public:
 	int	m_iHasNVG;		// ref +0xe1c: set by item_NVG
 	float	m_flGateTravel;		// ref +0x408: gate-travel deadline (now+~1s)
 	int	m_iGateTeam;		// ref +0x458: team copied from zone_gatetravel
+	float	m_flRadarNext;		// ref +0x49c: next CBasePlayer::RadarScan tick
+
+	void SGTC_RadarScan( void );	// ref @0x135592 — Blip usermsg to client HUD
 
 	virtual void Spawn( void );
 	void Pain( void );
