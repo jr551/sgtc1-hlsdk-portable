@@ -84,7 +84,12 @@ if((WIN32 OR ${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
 	OR CMAKE_SYSTEM_PROCESSOR STREQUAL "i586"
 	OR CMAKE_SYSTEM_PROCESSOR STREQUAL "i686"))
 	option(GOLDSOURCE_SUPPORT "Build goldsource compatible client library" ON)
-	set(USE_STATIC_FREEVGUI OFF)
+	# Win32 GoldSrc ships vgui2.dll; Linux Xash3D FWGS needs InitVGUISupportAPI inside client.so.
+	if(WIN32)
+		set(USE_STATIC_FREEVGUI OFF)
+	else()
+		set(USE_STATIC_FREEVGUI ON)
+	endif()
 else()
 	option(GOLDSOURCE_SUPPORT "Build goldsource compatible client library" OFF)
 	# no prebuilt vgui shared library exists here by default, so link FreeVGUI into the client
