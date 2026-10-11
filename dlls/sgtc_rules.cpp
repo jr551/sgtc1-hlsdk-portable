@@ -1625,12 +1625,13 @@ static void SGTC_ParseColor( const char *str, Vector &out )
 static void SGTC_WriteEnvParticulePayload( CEnvParticule *p )
 {
 	// ref CEnvParticule::SendValue @0x15ec68 — 47 bytes (19 WRITE_COORD + 7 BYTE + 1 SHORT).
-	WRITE_COORD( p->pev->absmin.x );
-	WRITE_COORD( p->pev->absmin.y );
-	WRITE_COORD( p->pev->absmin.z );
-	WRITE_COORD( p->pev->absmax.x );
-	WRITE_COORD( p->pev->absmax.y );
-	WRITE_COORD( p->pev->absmax.z );
+	// First 6 coords: pev->origin then pev->oldorigin (entvars +0xc4..+0xd8), not absmin/max.
+	WRITE_COORD( p->pev->origin.x );
+	WRITE_COORD( p->pev->origin.y );
+	WRITE_COORD( p->pev->origin.z );
+	WRITE_COORD( p->pev->oldorigin.x );
+	WRITE_COORD( p->pev->oldorigin.y );
+	WRITE_COORD( p->pev->oldorigin.z );
 	WRITE_COORD( p->m_vecAccel.x );
 	WRITE_COORD( p->m_vecAccel.y );
 	WRITE_COORD( p->m_vecAccel.z );
@@ -1811,9 +1812,10 @@ static void SGTC_RainEnsureCount( CEnvRain *pRain )
 			pRain->m_iCount = -pRain->m_iCount;
 		return;
 	}
-	const float vol = ( pRain->pev->absmax.x - pRain->pev->absmin.x ) *
-		( pRain->pev->absmax.y - pRain->pev->absmin.y ) *
-		( pRain->pev->absmax.z - pRain->pev->absmin.z );
+	// ref CEnvRain::SendValue @0x15f84a — volume from origin vs oldorigin (+0xc4..+0xd8).
+	const float vol = ( pRain->pev->origin.x - pRain->pev->oldorigin.x ) *
+		( pRain->pev->origin.y - pRain->pev->oldorigin.y ) *
+		( pRain->pev->origin.z - pRain->pev->oldorigin.z );
 	pRain->m_iCount = (int)( pRain->m_flDensity * vol );
 	if( pRain->m_iCount < 0 )
 		pRain->m_iCount = -pRain->m_iCount;
@@ -1822,12 +1824,12 @@ static void SGTC_RainEnsureCount( CEnvRain *pRain )
 static void SGTC_WriteEnvRainPayload( CEnvRain *pRain )
 {
 	// ref CEnvRain::SendValue @0x15f82a — 15 bytes (6 COORD + BYTE + SHORT).
-	WRITE_COORD( pRain->pev->absmin.x );
-	WRITE_COORD( pRain->pev->absmin.y );
-	WRITE_COORD( pRain->pev->absmin.z );
-	WRITE_COORD( pRain->pev->absmax.x );
-	WRITE_COORD( pRain->pev->absmax.y );
-	WRITE_COORD( pRain->pev->absmax.z );
+	WRITE_COORD( pRain->pev->origin.x );
+	WRITE_COORD( pRain->pev->origin.y );
+	WRITE_COORD( pRain->pev->origin.z );
+	WRITE_COORD( pRain->pev->oldorigin.x );
+	WRITE_COORD( pRain->pev->oldorigin.y );
+	WRITE_COORD( pRain->pev->oldorigin.z );
 	WRITE_BYTE( pRain->m_iSprite );
 	WRITE_SHORT( pRain->m_iCount );
 }
