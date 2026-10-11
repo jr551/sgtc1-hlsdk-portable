@@ -231,9 +231,12 @@ public:
 	int	m_iStamina;		// ref +0x43c — HUD Stamina usermsg byte
 	int	m_iStaminaSent;		// ref +0xa24 — last value sent to client
 	char	m_bLanceStunFlag;	// ref +0xa3e — set by CLanceProj::ProjTouch @0xfeb57
+	float	m_flShieldTraceTime;	// ref +0xa68 — shield TraceAttack timer (CheckTimeBasedDamage)
 	float	m_flMoveLatch;		// ref +0xa6c — stamina tick gate (now+interval)
 	float	m_flLanceStunEnd;	// ref +0xa74 — now+0.2 (rodata 0x1d7530)
-	float	m_flMaxSpeedLatch;	// ref +0xa7c — pev->fuser2 speed snapshot (SgtcThink @0x13a06e)
+	float	m_flMaxSpeedLatch;	// ref +0xa7c — pev->fuser2 / maxspeed snapshot
+	char	m_bShieldTraceHit;	// ref +0xa78 — set TraceAttack @0x137256
+	char	m_bZatTouchFlag;	// ref +0xa88 — set CBasePlayer::Zat @0x1338e2
 
 	void SGTC_RadarScan( void );	// ref @0x135592 — Blip usermsg to client HUD
 	void SGTC_UpdateStamina( void );	// ref @0x1336e8
@@ -241,6 +244,8 @@ public:
 	void SGTC_WeapDispSet( int mode );	// ref @0x133aca — MSG_ONE SubModel
 	void SGTC_SendProgressIfDirty( void );	// ref @0x139f18 — MSG_ONE gmsgProgress
 	void SGTC_TickLanceStunLatch( void );	// ref @0x139814 — lance stun timer + latch
+	void SGTC_TickShieldEnergyAndMaxspeed( void );	// ref @0x13a15c — shield pev+0x14c, maxspeed
+	void SGTC_SyncShieldEnergyFromContents( void );	// ref @0x13a3a5 — PointContents → pev+0x14c
 	void SGTC_TryBombKeyCampWarn( void );	// ref @0x1398ef — MSG_ONE HasKey camp warn
 	void SGTC_SyncBombZoneHasKey( void );	// ref @0x13a438 — HasKey on zone/key transitions
 	void SGTC_MenuselectBombKey( int sel );	// ref ClientCommand @0xcb456 — menuselect <=4

@@ -237,28 +237,86 @@ void CBasePlayer::SGTC_ShieldThinker( void )
 	m_bShieldSpawned = bFound;
 }
 
-// ref @0x13a02d..0x13a0da — drain 10 stamina (+0x43c) on movement tick (+0xa6c).
-static void SGTC_TryStaminaDrainFromMovement( CBasePlayer *p )
+// ref @0x13a02d..0x13a0da — drain 10 stamina (+0x43c); latch always +0.5 @0x13a150.
+static void SGTC_TickMoveLatchAndStaminaDrain( CBasePlayer *p )
 {
 	if( gpGlobals->time < p->m_flMoveLatch )
 		return;
 
-	if( p->pev->flags & FL_FROZEN )
-		return;
+	if( !( p->pev->flags & FL_FROZEN ) && p->m_flMaxSpeedLatch != 0.0f
+		&& p->pev->fuser2 == p->m_flMaxSpeedLatch )
+	{
+		const float move = p->pev->velocity.x + p->pev->velocity.y + p->pev->velocity.z;
+		if( move > 0.0f )
+		{
+			p->m_iStamina -= 10;
+			p->SGTC_UpdateStamina();
+		}
+	}
 
-	if( p->m_flMaxSpeedLatch == 0.0f )
-		return;
-
-	if( p->pev->fuser2 != p->m_flMaxSpeedLatch )
-		return;
-
-	const float move = p->pev->velocity.x + p->pev->velocity.y + p->pev->velocity.z;
-	if( move <= 0.0f )
-		return;
-
-	p->m_iStamina -= 10;
-	p->SGTC_UpdateStamina();
 	p->m_flMoveLatch = gpGlobals->time + 0.5f;	// ref rodata @0x1d755c
+}
+
+// ref @0x13a15c..0x13a3a5 — pev+0x14c shield energy (armorvalue), pev+0x210 maxspeed.
+void CBasePlayer::SGTC_TickShieldEnergyAndMaxspeed( void )
+{
+	static const float kShieldDrain = 5.0f;		// rodata @0x1d7558
+	static const float kShieldCap = 255.0f;		// rodata @0x1d7540
+	static const float kRunSpeed = 180.0f;		// rodata @0x1d7564
+	static const float kLowStaminaSpeed = 10.0f;	// rodata @0x1d7554
+	static const float kZatVelZ = -20.0f;		// rodata @0x1d7560
+	static const float kLatchMoveMin = 0.125f;	// rodata @0x1d7528
+
+	if( m_bZatTouchFlag && pev->velocity.z <= 0.0f )
+		pev->velocity.z = kZatVelZ;
+
+	if( m_bZatTouchFlag || m_bShieldTraceHit )
+		return;
+
+	if( m_bShieldSprint )
+	{
+		if( pev->armorvalue > 0.0f )
+			pev->armorvalue -= kShieldDrain;
+	}
+	else
+	{
+		if( pev->armorvalue < kShieldCap )
+		{
+			if( pev->armorvalue > 0.0f && gpGlobals->time >= m_flGateTravel )
+				pev->armorvalue += kShieldDrain;
+		}
+		else
+		{
+			pev->armorvalue = kShieldCap;
+			pev->rendermode = 0;	// ref pev+0x148
+			pev->renderfx = 0;	// ref pev+0x15c
+		}
+	}
+
+	if( m_flMaxSpeedLatch > kLatchMoveMin )
+		return;
+
+	if( pev->flags & FL_ONGROUND )
+	{
+		if( pev->maxspeed != kRunSpeed )
+			pev->maxspeed = kRunSpeed;
+	}
+	else
+		pev->maxspeed = m_flMaxSpeedLatch;
+
+	if( m_iStamina <= 19 )
+		pev->maxspeed = kLowStaminaSpeed;
+}
+
+// ref @0x13a3a5 — when pev+0x14c < 0 and not sprinting, PointContents → armorvalue.
+void CBasePlayer::SGTC_SyncShieldEnergyFromContents( void )
+{
+	if( pev->armorvalue >= 0.0f )
+		return;
+	if( m_bShieldSprint )
+		return;
+
+	pev->armorvalue = (float)UTIL_PointContents( pev->origin );
 }
 
 // ref @0x139f18 — when +0x444/+0x938 differ from +0x45c/+0x934, MSG_ONE Progress.
@@ -373,7 +431,9 @@ void CBasePlayer::SGTC_SgtcThink( void )
 	SGTC_TickLanceStunLatch();
 	SGTC_TryBombKeyCampWarn();
 	SGTC_SendProgressIfDirty();
-	SGTC_TryStaminaDrainFromMovement( this );
+	SGTC_TickMoveLatchAndStaminaDrain( this );
+	SGTC_TickShieldEnergyAndMaxspeed();
+	SGTC_SyncShieldEnergyFromContents();
 	SGTC_ShieldThinker();
 	SGTC_RadarScan();
 	SGTC_SyncBombZoneHasKey();
