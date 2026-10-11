@@ -155,6 +155,73 @@ static void SGTC_DrawTicketDock( CHudSgtc *hud, float flTime )
 	gHUD.DrawHudNumber( x + 0x100, numY, DHN_DRAWZERO, hud->m_iTtickets, 255, 255, 255 );
 }
 
+// ref VGUI panel update @0x1002abe2 — per-slot team progress chip state (no widgets on Xash).
+static void SGTC_TickProgressTeamUi( CHudSgtc *hud )
+{
+	for( int i = 0; i < SGTC_BLIP_SLOTS; i++ )
+	{
+		const int team = hud->m_iProgressTeam[i];
+		int &st = hud->m_iProgressTeamUiState[i];
+
+		if( team == 0 )
+		{
+			if( st < 2 )
+				st = 2;
+		}
+		else if( team == 1 )
+		{
+			if( st >= 2 )
+				st = 0;
+		}
+		else if( team == 2 )
+		{
+			// ref @0x1002ac68 / @0x1002aca8 — add table[edx] into DAT_100e1b90.
+			const int delta = ( i < 14 ) ? 0x10 : 0x12;
+			hud->m_iProgressIconCursor += delta;
+			st = 1;
+			hud->m_iProgressTeam[i] = 1;	// ref @0x1002acb7
+		}
+	}
+}
+
+static const char *SGTC_ProgressIconSprite( int icon )
+{
+	if( icon == 1 )
+		return "star_g";
+	if( icon == 2 )
+		return "star_p";
+	return "star_s";
+}
+
+static void SGTC_DrawProgressTeamUi( CHudSgtc *hud )
+{
+	if( hud->m_iHideHud || hud->m_iProgress <= 0 )
+		return;
+
+	const char *sprName = SGTC_ProgressIconSprite( hud->m_iProgressIcon );
+	const int idx = gHUD.GetSpriteIndex( sprName );
+	if( !idx )
+		return;
+
+	wrect_t rc = gHUD.GetSpriteRect( idx );
+	const int baseX = ScreenWidth / 2 - hud->m_iProgressIconCursor;
+	const int rowY0 = ScreenHeight - 0xb0;
+	const int rowY1 = rowY0 + 0xe;
+
+	for( int i = 0; i < SGTC_BLIP_SLOTS; i++ )
+	{
+		if( hud->m_iProgressTeamUiState[i] != 1 )
+			continue;
+
+		const int row = ( i < 14 ) ? 0 : 1;
+		const int col = ( i < 14 ) ? i : ( i - 14 );
+		const int x = baseX + col * 0x10;
+		const int y = ( row == 0 ) ? rowY0 : rowY1;
+		SPR_Set( gHUD.GetSprite( idx ), 255, 255, 255 );
+		SPR_DrawHoles( 0, x, y, &rc );
+	}
+}
+
 // ref @0x100750c5 — ramp m_iBlipProgress toward m_iProgress while 0 < progress < 100.
 static void SGTC_TickBlipBarProgress( CHudSgtc *hud, float flTime )
 {
@@ -714,6 +781,8 @@ int CHudSgtc::Draw( float flTime )
 
 	SGTC_TickTicketDock( this, flTime );
 	SGTC_DrawTicketDock( this, flTime );
+	SGTC_TickProgressTeamUi( this );
+	SGTC_DrawProgressTeamUi( this );
 
 	if( m_flRoundTime > 0.0f )
 	{
@@ -895,6 +964,8 @@ void CHudSgtc::Reset( void )
 	m_iProgressIcon = 0;
 	memset( m_iProgressTeam, 0, sizeof( m_iProgressTeam ) );
 	m_iProgressEnd = 0;
+	memset( m_iProgressTeamUiState, 0, sizeof( m_iProgressTeamUiState ) );
+	m_iProgressIconCursor = 0;
 	SGTC_InitPortraitSlots( this );
 }
 
@@ -1073,7 +1144,11 @@ int CHudSgtc::MsgFunc_Progress( const char *pszName, int iSize, void *pbuf )
 	m_iProgressEnd = READ_BYTE();
 
 	if( m_iProgress == 0 )
+	{
 		m_iBlipProgress = 0;
+		memset( m_iProgressTeamUiState, 0, sizeof( m_iProgressTeamUiState ) );
+		m_iProgressIconCursor = 0;
+	}
 	if( m_iProgress == 100 )
 		m_iBlipProgress = 100;
 	m_iFlags |= HUD_ACTIVE;

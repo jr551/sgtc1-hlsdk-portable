@@ -710,7 +710,8 @@ void CBasePlayer::SGTC_TickNukeChargeExpiry( void )
 	m_iNukeCharge = 0;
 }
 
-// ref CBasePlayer::SgtcThink @0x13963a (full body ~7 KB; tail @0x13a404).
+// ref CBasePlayer::SgtcThink @0x13963a..0x13b326 (~7 KB). Post-radar trace/blood/fade
+// stays inlined in ref; port splits shield-trace latch to CheckTimeBasedDamage @0x13e995.
 void CBasePlayer::SGTC_SgtcThink( void )
 {
 	if( !IsAlive() )
