@@ -720,6 +720,9 @@ void ServerActivate( edict_t *pEdictList, int edictCount, int clientMax )
 	// Every call to ServerActivate should be matched by a call to ServerDeactivate
 	g_serveractive = 1;
 
+	// SGTC env_* entities may send user messages from Activate; register first.
+	LinkUserMessages();
+
 	// Clients have not been initialized yet
 	for( i = 0; i < edictCount; i++ )
 	{
@@ -727,7 +730,7 @@ void ServerActivate( edict_t *pEdictList, int edictCount, int clientMax )
 			continue;
 
 		// Clients aren't necessarily initialized until ClientPutInServer()
-		if( i < clientMax || !pEdictList[i].pvPrivateData )
+		if( (i > 0 && i <= clientMax) || !pEdictList[i].pvPrivateData )
 			continue;
 
 		pClass = CBaseEntity::Instance( &pEdictList[i] );
@@ -741,9 +744,6 @@ void ServerActivate( edict_t *pEdictList, int edictCount, int clientMax )
 			ALERT( at_console, "Can't instance %s\n", STRING( pEdictList[i].v.classname ) );
 		}
 	}
-
-	// Link user messages here to make sure first client can get them...
-	LinkUserMessages();
 }
 
 /*
