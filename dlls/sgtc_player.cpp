@@ -490,6 +490,35 @@ void CBasePlayer::Zat( entvars_t *pevInflictor )
 	UTIL_ScreenFade( this, g_vecZero, 0.0f, 100.0f, 0, FFADE_IN );	// ref @0x1339f9
 }
 
+// ref @0x139b26 — holster clears SubModel disp (+0x925) via WeapDispSet(2) when +0xcd4 empty.
+static void SGTC_TickWeapSubModelDisp( CBasePlayer *p )
+{
+	if( !p->m_bWeapSubModel )
+		return;
+	if( p->m_pActiveItem )
+		return;
+	p->SGTC_WeapDispSet( 2 );
+}
+
+// ref @0x139b5d — periodic cloak refresh while +0x448 (0.2s latch @+0xa90).
+void CBasePlayer::SGTC_TickCloakPulse( void )
+{
+	static const float kCloakPulseSec = 0.2f;	// rodata @0x1d754a
+
+	if( !m_bSgtcCloakTick )
+		return;
+	if( gpGlobals->time < pev->animtime )
+		return;
+	if( gpGlobals->time < m_flCloakTickNext )
+		return;
+
+	pev->effects |= EF_NODRAW;
+	if( m_bSnagInvisLatch )
+		SnagInvis();
+
+	m_flCloakTickNext = gpGlobals->time + kCloakPulseSec;
+}
+
 // ref @0x139814 — arm 0.2s window (rodata 0x1d7530), expire +0xa3e, copy to +0x4e8.
 void CBasePlayer::SGTC_TickLanceStunLatch( void )
 {
@@ -525,6 +554,8 @@ void CBasePlayer::SGTC_SgtcThink( void )
 	SGTC_TickShieldEnergyAndMaxspeed();
 	SGTC_SyncShieldEnergyFromContents();
 	SGTC_ShieldThinker();
+	SGTC_TickWeapSubModelDisp( this );
+	SGTC_TickCloakPulse();
 	SGTC_RadarScan();
 	SGTC_SyncBombZoneHasKey();
 }

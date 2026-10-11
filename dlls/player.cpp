@@ -3013,6 +3013,8 @@ void CBasePlayer::Spawn( void )
 	// ref Spawn @0x142009 — latch invis snag (+0x4df → +0x4de), clear arm.
 	m_bSnagInvisLatch = m_bSnagInvisFlag;
 	m_bSnagInvisFlag = 0;
+	m_bSgtcCloakTick = 0;
+	m_flCloakTickNext = 0.0f;
 
 	g_pGameRules->PlayerSpawn( this );
 }

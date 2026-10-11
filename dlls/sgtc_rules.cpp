@@ -747,6 +747,8 @@ edict_t *CStargateTeamCP::GetPlayerSpawnSpot( CBasePlayer *pPlayer )
 void CStargateTeamCP::PlayerSpawn( CBasePlayer *pPlayer )
 {
 	CStargateTeamDM::PlayerSpawn( pPlayer );
+	// ref CP PlayerSpawn @0x171586 — default cloak tick off until loadout arms it.
+	pPlayer->m_bSgtcCloakTick = 0;
 	// CTP capture HUD mode: TicketMode on.
 	MESSAGE_BEGIN( MSG_ONE, gmsgTicketMode, NULL, pPlayer->edict() );
 		WRITE_BYTE( 1 );

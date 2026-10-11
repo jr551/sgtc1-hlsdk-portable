@@ -205,6 +205,7 @@ public:
 	int	m_iInBombZone;		// ref +0xaec: >=1 while inside zone_bomb_target scope
 	int	m_iNukeBonus;		// ref +0x934: +4 on nuke arming; Progress HUD icon byte
 	int	m_iProgressSentPri;	// ref +0x444: last Progress pri sent (+0x45c)
+	char	m_bSgtcCloakTick;	// ref +0x448 — SgtcThink cloak pulse @0x139b5d (CP spawn / invis)
 	int	m_iNukeBonusSent;	// ref +0x938: last Progress icon sent (+0x934)
 	int	m_iProgressTeam[28];	// ref +0x93c: Progress team bytes (28 slots)
 	char	m_bBombKeyWarnSent;	// ref +0x927: HasKey bomb-zone warn latch
@@ -240,6 +241,7 @@ public:
 	float	m_flMaxSpeedLatch;	// ref +0xa7c — pev->fuser2 / maxspeed snapshot
 	char	m_bShieldTraceHit;	// ref +0xa78 — set TraceAttack @0x137256
 	char	m_bZatTouchFlag;	// ref +0xa88 — set CBasePlayer::Zat @0x1338e2
+	float	m_flCloakTickNext;	// ref +0xa90 — cloak pulse deadline (rodata +0.2s @0x1d754a)
 
 	void SGTC_RadarScan( void );	// ref @0x135592 — Blip usermsg to client HUD
 	void SGTC_UpdateStamina( void );	// ref @0x1336e8
@@ -247,6 +249,7 @@ public:
 	void SGTC_WeapDispSet( int mode );	// ref @0x133aca — MSG_ONE SubModel
 	void SGTC_SendProgressIfDirty( void );	// ref @0x139f18 — MSG_ONE gmsgProgress
 	void SGTC_TickLanceStunLatch( void );	// ref @0x139814 — lance stun timer + latch
+	void SGTC_TickCloakPulse( void );	// ref @0x139b5d — cloak pulse while +0x448
 	void SGTC_TickShieldEnergyAndMaxspeed( void );	// ref @0x13a15c — shield pev+0x14c, maxspeed
 	void SGTC_SyncShieldEnergyFromContents( void );	// ref @0x13a3a5 — PointContents → pev+0x14c
 	void SGTC_TryBombKeyCampWarn( void );	// ref @0x1398ef — MSG_ONE HasKey camp warn
