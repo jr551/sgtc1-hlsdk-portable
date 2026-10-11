@@ -42,7 +42,7 @@
 // Brush-trigger setup shared by the SGTC trigger classes. Replicates
 // CBaseTrigger::InitTrigger (triggers.cpp) — InitTrigger itself is TU-local
 // to triggers.cpp and cannot be called from here.
-static void SGTC_InitTrigger( CBaseToggle *pTrigger )
+void SGTC_InitTrigger( CBaseToggle *pTrigger )
 {
 	entvars_t *pev = pTrigger->pev;
 	if( pev->angles != g_vecZero )

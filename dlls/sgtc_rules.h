@@ -48,6 +48,7 @@ extern int gmsgEnvAddRing;
 extern int gmsgChangeParticuleState;
 extern int gmsgGameMode;
 void SGTC_LinkUserMessages( void );
+void SGTC_InitTrigger( CBaseToggle *pTrigger );
 
 // Mode-selecting installer. Stock InstallGameRules() (gamerules.cpp:310)
 // cannot know about SGTC classes; the one-line hook is documented in the
