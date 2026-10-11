@@ -11,6 +11,19 @@
 #include "sgtc_rules.h"
 #include "sgtc_shield.h"
 
+extern Vector sgtc_LastKeyPlace;
+extern char sgtc_KeyInPlay;
+extern void *sgtc_superguns;
+
+static int SGTC_SupergunsHudAux( void )
+{
+	if( !sgtc_superguns )
+		return 0;
+	float fl;
+	memcpy( &fl, (const char *)sgtc_superguns + 0xc, sizeof( fl ) );
+	return (int)fl;
+}
+
 static const struct
 {
 	const char *pszClass;
@@ -390,7 +403,14 @@ void CBasePlayer::SGTC_SyncBombZoneHasKey( void )
 		MESSAGE_END();
 	}
 
-	m_bBombZoneKeyLatch = ( m_iInBombZone > 0 ) ? 1 : 0;
+	if( m_iInBombZone > 0 )
+	{
+		m_bBombZoneKeyLatch = 1;
+		sgtc_KeyInPlay = 1;
+		sgtc_LastKeyPlace = pev->origin;
+	}
+	else
+		m_bBombZoneKeyLatch = 0;
 }
 
 // ref ClientCommand @0xcb456 — menuselect arg <=4 arms bomb-key warn timer.
@@ -710,6 +730,168 @@ void CBasePlayer::SGTC_TickNukeChargeExpiry( void )
 	m_iNukeCharge = 0;
 }
 
+static BOOL SGTC_FloatEq( float a, float b )
+{
+	return a == b;
+}
+
+// ref @0x13a88a..0x13b31f — 0.5s-gated tail after bomb-key sync (shield blood @0x13a584 in ref).
+void CBasePlayer::SGTC_TickSgtcThinkTail( void )
+{
+	static const float kTailGateSec = 0.5f;		// rodata @0x1d755c (also move latch)
+	static const float kStaminaHealthFactor = 1.8f;	// QWORD rodata @0x1d7588
+	static const float kHealthGate99 = 99.0f;	// rodata @0x1d7580
+	static const float kZatArmorCap = 255.0f;	// rodata @0x1d7540
+
+	const float flNow = gpGlobals->time;
+	const BOOL bTailTick = SGTC_FloatEq( m_flSgtcTailTick, flNow );
+
+	if( bTailTick )
+	{
+		if( !SGTC_FloatEq( m_flSgtcLatch3fc, flNow ) )
+		{
+			if( SGTC_FloatEq( m_flSgtcLatch490, flNow ) && gmsgConcuss )
+			{
+				MESSAGE_BEGIN( MSG_ONE, gmsgConcuss, NULL, pev );
+				WRITE_BYTE( 150 );
+				WRITE_BYTE( 0 );
+				MESSAGE_END();
+				m_iConcussLatch = 1;
+			}
+
+			const int r = RANDOM_LONG( 0, 255 );
+			UTIL_ScreenFade( this, Vector( (float)r, (float)r, (float)r ),
+				0.01f, 1.0f, 100, 0 );
+		}
+		else if( m_iConcussLatch == 1 && gmsgConcuss )
+		{
+			MESSAGE_BEGIN( MSG_ONE, gmsgConcuss, NULL, pev );
+			WRITE_BYTE( 0 );
+			WRITE_BYTE( 0 );
+			MESSAGE_END();
+			m_iConcussLatch = 0;
+		}
+
+		m_flSgtcLatch490 = m_flSgtcLatch3fc;
+
+		if( SGTC_FloatEq( m_flSgtcLatch400, flNow ) )
+			m_iHudInfoMode = 0;
+
+		if( m_iHudInfoMode != m_iHudInfoModeSent && gmsgHudInfoMode )
+		{
+			MESSAGE_BEGIN( MSG_ONE, gmsgHudInfoMode, NULL, pev );
+			WRITE_BYTE( m_iHudInfoMode );
+			MESSAGE_END();
+			m_iHudInfoModeSent = m_iHudInfoMode;
+		}
+
+		if( SGTC_FloatEq( m_flGateTravel, flNow ) )
+		{
+			pev->armorvalue = 0.0f;
+			pev->rendermode = kRenderTransAlpha;
+			pev->renderfx = kRenderFxNone;
+			pev->velocity = g_vecZero;
+		}
+
+		if( pev->armorvalue == 0.0f && !m_bShieldSprint )
+		{
+			pev->armorvalue = kZatArmorCap;
+			pev->renderfx = kRenderFxNone;
+			pev->rendermode = kRenderNormal;
+		}
+
+		const int iStaminaBefore = m_iStamina;
+		const float flHealth = pev->health;
+		const float flStaminaCap = flHealth * kStaminaHealthFactor;
+
+		if( (float)m_iStamina > flStaminaCap )
+		{
+			const float flDelta = (float)m_iStamina - flHealth;
+			if( flDelta <= 10.0f )
+				m_iStamina -= 10;
+			else
+				m_iStamina = (int)flHealth;
+			if( m_iStamina < 0 )
+				m_iStamina = 0;
+			SGTC_UpdateStamina();
+		}
+
+		if( (float)m_iStamina <= flHealth )
+		{
+			const int iSaved = m_iStamina;
+			if( pev->velocity.y != 0.0f && pev->velocity.x != 0.0f
+				&& !( pev->flags & FL_DUCKING ) )
+				m_iStamina += 3;
+			else
+				m_iStamina += 2;
+
+			if( m_bSnagInvisLatch )
+				m_iStamina += 5;
+
+			if( pev->flags & FL_ONGROUND )
+				m_iStamina += 2;
+
+			if( m_bSgtcCloakTick )
+				m_iStamina += 1;
+
+			if( m_iStamina < 0 )
+				m_iStamina = 0;
+
+			if( !SGTC_FloatEq( m_flSgtcLatch3fc, flNow ) )
+				m_iStamina -= 7;
+
+			if( m_iStamina != iSaved )
+				SGTC_UpdateStamina();
+
+			if( (float)m_iStamina == flHealth )
+				SGTC_UpdateStamina();
+		}
+		else if( m_iStamina != iStaminaBefore )
+			SGTC_UpdateStamina();
+
+		if( m_bSnagInvisLatch && flHealth == kHealthGate99 && m_bSnagArmorHud
+			&& m_iSnagArmorCap > 0
+			&& SGTC_FloatEq( m_flSnagArmorRamp, (float)m_iSnagArmorCap ) )
+		{
+			m_flSnagArmorRamp += 1.0f;
+			if( m_flSnagArmorRamp > (float)m_iSnagArmorCap )
+				m_flSnagArmorRamp = (float)m_iSnagArmorCap;
+
+			const int iBar = (int)( m_flSnagArmorRamp * 255.0f / (float)m_iSnagArmorCap );
+			const int iSuper = SGTC_SupergunsHudAux();
+
+			if( iBar != m_iArmorHudSent || iSuper != m_iSupergunsSent )
+			{
+				if( gmsgArmor )
+				{
+					MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pev );
+					WRITE_BYTE( iBar );
+					WRITE_BYTE( iSuper );
+					WRITE_BYTE( 0 );
+					WRITE_BYTE( 0 );
+					MESSAGE_END();
+				}
+				m_iArmorHudSent = iBar;
+				m_iSupergunsSent = iSuper;
+			}
+		}
+	}
+
+	m_flSgtcTailTick = flNow + kTailGateSec;
+
+	if( m_bSgtcPePreset )
+	{
+		pev->renderfx = kRenderFxGlowShell;
+		pev->armorvalue = 1.0f;
+		pev->renderamt = 2.0f;
+		pev->rendercolor.x = 0.0f;
+		pev->rendercolor.y = 0.0f;
+	}
+
+	if( !SGTC_FloatEq( m_flZoneTime, flNow ) )
+		m_iZoneId = 0;
+}
+
 // ref CBasePlayer::SgtcThink @0x13963a..0x13b326 (~7 KB). Post-radar trace/blood/fade
 // stays inlined in ref; port splits shield-trace latch to CheckTimeBasedDamage @0x13e995.
 void CBasePlayer::SGTC_SgtcThink( void )
@@ -742,4 +924,5 @@ void CBasePlayer::SGTC_SgtcThink( void )
 	SGTC_ShieldThinker();
 	SGTC_RadarScan();
 	SGTC_SyncBombZoneHasKey();
+	SGTC_TickSgtcThinkTail();
 }

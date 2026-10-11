@@ -248,6 +248,18 @@ public:
 	char	m_bShieldTraceHit;	// ref +0xa78 — set TraceAttack @0x137256
 	char	m_bZatTouchFlag;	// ref +0xa88 — set CBasePlayer::Zat @0x1338e2
 	float	m_flCloakTickNext;	// ref +0xa90 — cloak pulse deadline (rodata +0.2s @0x1d754a)
+	float	m_flSgtcTailTick;	// ref +0x424 — 0.5s gate for SgtcThink tail @0x13a88a..0x13b274
+	int	m_iHudInfoMode;		// ref +0x434 — HudInfoMode usermsg byte
+	char	m_bSnagArmorHud;	// ref +0x449 — snag-invis armor HUD arm (never written in .so)
+	char	m_bSgtcPePreset;	// ref +0x465 — preset PE colors @0x13b28f
+	float	m_flSgtcLatch490;	// ref +0x490 — copy of +0x3fc for concuss edge
+	int	m_iConcussLatch;	// ref +0x508 — Concuss usermsg armed
+	int	m_iHudInfoModeSent;	// ref +0x50c — last HudInfoMode byte sent
+	float	m_flSgtcLatch400;	// ref +0x400 — clears +0x434 when == time
+	int	m_iSnagArmorCap;	// ref +0x908 — armor HUD scale cap (coujaf sets 100)
+	float	m_flSnagArmorRamp;	// ref pev+0x1bc — armor HUD ramp (coujaf seeds)
+	int	m_iArmorHudSent;	// ref +0x91c — last Armor bar byte sent
+	int	m_iSupergunsSent;	// ref +0x920 — last superguns aux sent
 
 	void SGTC_RadarScan( void );	// ref @0x135592 — Blip usermsg to client HUD
 	void SGTC_UpdateStamina( void );	// ref @0x1336e8
@@ -266,6 +278,7 @@ public:
 	void SGTC_SyncShieldEnergyFromContents( void );	// ref @0x13a3a5 — PointContents → pev+0x14c
 	void SGTC_TryBombKeyCampWarn( void );	// ref @0x1398ef — MSG_ONE HasKey camp warn
 	void SGTC_SyncBombZoneHasKey( void );	// ref @0x13a438 — HasKey on zone/key transitions
+	void SGTC_TickSgtcThinkTail( void );	// ref @0x13a88a..0x13b31f — post-bomb-key tail
 	void SGTC_MenuselectBombKey( int sel );	// ref ClientCommand @0xcb456 — menuselect <=4
 	void SGTC_SgtcThink( void );	// ref @0x13963a — called from PostThink @0x1405b3
 	void Zat( entvars_t *pevInflictor );	// ref @0x13378a — zat_proj / zatboom

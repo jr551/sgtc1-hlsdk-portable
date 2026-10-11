@@ -37,8 +37,10 @@ int sgtc_type = 0;		// ref BSS "type" @0x236588 (2 = CP-style capture)
 // GlobalBombState @0x23710c, bomby @0x2368c4.
 Vector sgtc_firstplace;
 Vector sgtc_LastKeyPlace;
+char sgtc_KeyInPlay = 0;	// ref BSS KeyInPlay @0x2368c6 (indirect in .so)
 int sgtc_GlobalBombState = 0;
 int sgtc_bomby = 0;
+void *sgtc_superguns = NULL;	// ref GLOB_DAT superguns @0x2134d4 (fld DWORD @+0xc)
 
 class CToken : public CBaseDelay
 {
