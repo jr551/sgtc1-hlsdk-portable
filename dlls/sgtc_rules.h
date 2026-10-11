@@ -181,6 +181,20 @@ public:
 	BOOL IsStargate( void ) { return TRUE; }
 	const char *GetGameDescription( void ) override { return "StargateTC-Replic"; }
 	void PlayerSpawn( CBasePlayer *pPlayer ) override;
+	// ref decompile @0x17de78/0x17d998/0x17e19a
+	void RecountTeams( BOOL bResendInfo );
+	void ChangePlayerTeam( CBasePlayer *pPlayer, const char *pTeamName, BOOL bKill, BOOL bGib ) override;
+	BOOL ClientCommand( CBasePlayer *pPlayer, const char *pcmd ) override;
+	int GetTeamIndex( const char *pTeamName ) override;
+	BOOL IsValidTeam( const char *pTeamName ) override;
+protected:
+	char m_szRepTeamList[512];	// ref this+0x18 — "Replic;Torri" or worldspawn teamlist
+	BOOL m_teamLimit;			// ref this+0x14
+	char m_szRepTeams[8][16];	// ref team_names[64][0x10]
+	BOOL m_bDisableDeathMessages;	// ref this+0xc
+	BOOL m_bDisableDeathPenalty;	// ref this+0x10
+	int m_iRepScores[32];
+	int m_iRepTeamCount;
 };
 
 // ---------------------------------------------------------------------------

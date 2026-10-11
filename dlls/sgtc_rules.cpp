@@ -38,6 +38,8 @@
 #include "game.h"
 #include "saverestore.h"
 #include "sgtc_rules.h"
+#include "voice_gamemgr.h"
+extern CVoiceGameMgr g_VoiceGameMgr;
 
 // Brush-trigger setup shared by the SGTC trigger classes. Replicates
 // CBaseTrigger::InitTrigger (triggers.cpp) — InitTrigger itself is TU-local
@@ -124,14 +126,13 @@ void SGTC_LinkUserMessages( void )
 	gmsgSetHudRoundTime = REG_USER_MSG( "SetRndTim", 3 );
 	gmsgVGUIMenu = REG_USER_MSG( "VGUIMenu", 1 );
 	gmsgHideVGUI = REG_USER_MSG( "HideVGUI", 0 );
-	gmsgZatTouch = REG_USER_MSG( "ZatTouch", 0 );
-	gmsgRadio = REG_USER_MSG( "Radio", 2 );
 	gmsgEnvParticule = REG_USER_MSG( "EnvFull", 47 );
 	gmsgEnvRain = REG_USER_MSG( "EnvRain", 15 );
 	gmsgEnvFountain = REG_USER_MSG( "EnvFount", 45 );
 	gmsgEnvNewLens = REG_USER_MSG( "NewLens", 10 );
 	gmsgEnvAddRing = REG_USER_MSG( "AddRing", -1 );
 	gmsgChangeParticuleState = REG_USER_MSG( "ChgPartSt", 2 );
+	gmsgRadio = REG_USER_MSG( "Radio", 2 );	// ref registers Radio LAST (LinkUserMessages @0x142d44 tail)
 }
 
 // ---------------------------------------------------------------------------
@@ -1031,7 +1032,154 @@ void CStargateInvis::PlayerSpawn( CBasePlayer *pPlayer )
 
 CStargateReplicateur::CStargateReplicateur( void )
 {
+	// ref CStargateReplicateur::CStargateReplicateur @0x17e364
+	m_bDisableDeathMessages = FALSE;
+	m_bDisableDeathPenalty = FALSE;
+	m_iRepTeamCount = 0;
+	memset( m_szRepTeams, 0, sizeof( m_szRepTeams ) );
+	memset( m_iRepScores, 0, sizeof( m_iRepScores ) );
+	strncpy( m_szRepTeamList, "Replic;Torri", sizeof( m_szRepTeamList ) - 1 );
+	// ref: worldspawn 'team' key overrides teamlist (INDEXENT(0)+0x22c via strings)
+	edict_t *pWorld = INDEXENT( 0 );
+	if( pWorld && pWorld->v.team )
+	{
+		char *pList = (char *)STRING( pWorld->v.team );
+		if( pList && pList[0] )
+			strncpy( m_szRepTeamList, pList, sizeof( m_szRepTeamList ) - 1 );
+	}
+	m_teamLimit = ( m_szRepTeamList[0] != 0 );
+	RecountTeams( FALSE );
 }
+
+// ref @0x17de78 — parse m_szRepTeamList into m_szRepTeams, then rescan players.
+void CStargateReplicateur::RecountTeams( BOOL bResendInfo )
+{
+	m_iRepTeamCount = 0;
+	char teamlist[512];
+	strncpy( teamlist, m_szRepTeamList, sizeof( teamlist ) - 1 );
+	teamlist[sizeof( teamlist ) - 1] = 0;
+	for( char *pName = strtok( teamlist, ";" ); pName && *pName;
+		 pName = strtok( NULL, ";" ) )
+	{
+		if( GetTeamIndex( pName ) < 0 && m_iRepTeamCount < 8 )
+		{
+			strncpy( m_szRepTeams[m_iRepTeamCount], pName, 16 );
+			m_iRepTeamCount++;
+		}
+	}
+	if( m_iRepTeamCount < 2 )
+	{
+		m_iRepTeamCount = 0;
+		m_teamLimit = FALSE;
+	}
+	memset( m_iRepScores, 0, sizeof( m_iRepScores ) );
+
+	for( int i = 1; i <= gpGlobals->maxClients; i++ )
+	{
+		CBaseEntity *plr = UTIL_PlayerByIndex( i );
+		if( !plr )
+			continue;
+		const char *pTeam = plr->TeamID();
+		int idx = GetTeamIndex( pTeam );
+		if( idx < 0 && !m_teamLimit && m_iRepTeamCount < 8 )
+		{
+			idx = m_iRepTeamCount;
+			m_iRepScores[idx] = 0;
+			strncpy( m_szRepTeams[m_iRepTeamCount], pTeam, 16 );
+			m_iRepTeamCount++;
+		}
+		if( idx >= 0 )
+			m_iRepScores[idx] += (int)plr->pev->frags;
+		if( bResendInfo && IsValidTeam( pTeam ) )
+		{
+			MESSAGE_BEGIN( MSG_ALL, gmsgTeamInfo );
+				WRITE_BYTE( plr->entindex() );
+				WRITE_STRING( pTeam );
+			MESSAGE_END();
+		}
+	}
+}
+
+int CStargateReplicateur::GetTeamIndex( const char *pTeamName )
+{
+	if( pTeamName && *pTeamName )
+		for( int t = 0; t < m_iRepTeamCount; t++ )
+			if( !stricmp( m_szRepTeams[t], pTeamName ) )
+				return t;
+	return -1;
+}
+
+BOOL CStargateReplicateur::IsValidTeam( const char *pTeamName )
+{
+	if( !m_teamLimit )
+		return TRUE;
+	return GetTeamIndex( pTeamName ) != -1;
+}
+
+// ref @0x17d998.
+void CStargateReplicateur::ChangePlayerTeam( CBasePlayer *pPlayer,
+	const char *pTeamName, BOOL bKill, BOOL bGib )
+{
+	int clientIndex = pPlayer->entindex();
+	int damageFlags = DMG_GENERIC | ( bGib ? DMG_ALWAYSGIB : DMG_NEVERGIB );
+	if( bKill )
+	{
+		m_bDisableDeathMessages = TRUE;	// ref this+0xc
+		m_bDisableDeathPenalty = TRUE;	// ref this+0x10
+		entvars_t *pevWorld = VARS( INDEXENT( 0 ) );
+		pPlayer->TakeDamage( pevWorld, pevWorld, 900, damageFlags ); // 0x44610000
+		m_bDisableDeathMessages = FALSE;
+		m_bDisableDeathPenalty = FALSE;
+	}
+	strncpy( pPlayer->m_szTeamName, pTeamName, TEAM_NAME_LENGTH );
+	g_engfuncs.pfnSetClientKeyValue( clientIndex,
+		g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model", pPlayer->m_szTeamName );
+	g_engfuncs.pfnSetClientKeyValue( clientIndex,
+		g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "team", pPlayer->m_szTeamName );
+
+	MESSAGE_BEGIN( MSG_ALL, gmsgTeamInfo );
+		WRITE_BYTE( clientIndex );
+		WRITE_STRING( pPlayer->m_szTeamName );
+	MESSAGE_END();
+
+	MESSAGE_BEGIN( MSG_ALL, gmsgScoreInfo );
+		WRITE_BYTE( clientIndex );
+		WRITE_SHORT( (int)pPlayer->pev->frags );
+		WRITE_SHORT( pPlayer->m_iDeaths );		// ref param_1+0xdf0
+		WRITE_SHORT( 0 );							// ref param_1+0xa40
+		WRITE_SHORT( GetTeamIndex( pPlayer->m_szTeamName ) + 1 );
+		WRITE_SHORT( (int)pPlayer->pev->team );	// ref *(param_1+4)+0x170
+	MESSAGE_END();
+}
+
+// ref @0x17e19a — menuselect drains, jointeam: 1=Replic else Torri.
+BOOL CStargateReplicateur::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
+{
+	if( g_VoiceGameMgr.ClientCommand( pPlayer, pcmd ) )
+		return TRUE;
+	if( FStrEq( pcmd, "menuselect" ) )
+	{
+		if( CMD_ARGC() >= 2 )
+			atoi( CMD_ARGV( 1 ) ); // ref reads arg, ignores
+		return TRUE;
+	}
+	if( FStrEq( pcmd, "jointeam" ) )
+	{
+		if( CMD_ARGC() > 0 )
+		{
+			int team = atoi( CMD_ARGV( 1 ) );
+			strncpy( pPlayer->m_szTeamName, team == 1 ? "Replic" : "Torri", 16 );
+			char text[64];
+			sprintf( text, "you joined the %s team\n", pPlayer->m_szTeamName );
+			ClientPrint( pPlayer->pev, HUD_PRINTNOTIFY, text );
+			ChangePlayerTeam( pPlayer, pPlayer->m_szTeamName, TRUE, FALSE );
+			RecountTeams( FALSE );
+		}
+		return TRUE;
+	}
+	return FALSE;
+}
+
 
 void CStargateReplicateur::PlayerSpawn( CBasePlayer *pPlayer )
 {
