@@ -521,66 +521,130 @@ static const char *SGTC_PortraitAvatarSprite( int id )
 	return kTable[id - 1];
 }
 
-// ref FUN_100772f2 — name @DrawHudString +0x48/+0xc, avatar @+9/+0x10, HP FillRGBA @+0x42/+0x44.
+// ref FUN_100772f2 — packed color id decode @0x100776c8..0x1007777e (threshold chain).
+struct SGTC_PortraitColorFlags
+{
+	char c0, b8, bc, c4, c8, cc;
+};
+
+static void SGTC_DecodePortraitColorId( int colorId, SGTC_PortraitColorFlags *f )
+{
+	int ac = colorId;
+	memset( f, 0, sizeof( *f ) );
+	if( ac >= 0xc0 ) { f->cc = 2; ac -= 0xc0; }
+	if( ac >= 0x60 ) { f->cc = 1; ac -= 0x60; }
+	if( ac >= 0x30 ) { f->c8 = 1; ac -= 0x30; }
+	if( ac >= 0x18 ) { f->c4 = 2; ac -= 0x18; }
+	if( ac >= 0xc ) { f->c4 = 1; ac -= 0xc; }
+	if( ac >= 0x6 ) { f->c0 = 1; ac -= 0x6; }
+	if( ac >= 0x3 ) { f->bc = 1; ac -= 0x3; }
+	if( ac >= 0x2 ) { f->b8 = 1; ac -= 0x2; }
+}
+
+// ref jump table @0x10077bd3 (index colorId & 0x1f, max 0x12).
+static void SGTC_PortraitTextRgb( int colorId, int &r, int &g, int &b )
+{
+	static const unsigned char kTbl[19][3] =
+	{
+		{ 0xa8, 0xd3, 0xff }, { 0xff, 0x00, 0x00 }, { 0xff, 0x82, 0x00 },
+		{ 0xff, 0xff, 0x00 }, { 0x82, 0xff, 0x00 }, { 0x00, 0xff, 0x00 },
+		{ 0x00, 0xff, 0x82 }, { 0x00, 0xff, 0xff }, { 0x00, 0x82, 0xff },
+		{ 0x00, 0x00, 0xff }, { 0x82, 0x00, 0xff }, { 0xff, 0x00, 0xff },
+		{ 0xff, 0x00, 0x82 }, { 0x78, 0xaf, 0x50 }, { 0xa0, 0x78, 0x82 },
+		{ 0xff, 0xff, 0xff }, { 0xff, 0x80, 0xff }, { 0x80, 0x80, 0x40 },
+		{ 0x80, 0x80, 0x80 },
+	};
+	int idx = colorId & 0x1f;
+	if( idx > 18 )
+		idx = 0;
+	r = kTbl[idx][0];
+	g = kTbl[idx][1];
+	b = kTbl[idx][2];
+	if( r + g + b == 0 )	// ref @0x10077604
+	{
+		r = 0xa8;
+		g = 0xd3;
+		b = 0xff;
+	}
+}
+
+// ref FUN_100772f2 — name @+0x48, py-0x10; avatar tint + flash @0x10077792; HP @0x10077a99.
 static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, float flTime, char dimName )
 {
 	const int sprId = hud->m_iPortraitSlotId[slot];
 	const int ent = hud->m_iPortraitSlotEnt[slot];
 	const char *label = hud->m_szPortraitSlotName[slot];
+	const int colorId = hud->m_iPortraitSlotColor[slot];
 
 	if( !sprId || !ent || !label || !label[0] )
 	{
-		// ref @0x1007730d — "! ERROR !" when id/ent/name missing.
 		const char *err = CHudTextMessage::BufferedLocaliseTextString( "! ERROR !" );
 		gHUD.DrawHudString( px + 0x48, py + 0xc, ScreenWidth, err, 0, 0, 255 );
 		return;
 	}
 
-	int r = 168, g = 211, b = 255;
-	switch( hud->m_iPortraitSlotColor[slot] & 0x1f )
-	{
-	case 1: r = 255; g = 0; b = 0; break;
-	case 2: r = 255; g = 130; b = 0; break;
-	case 3: r = 255; g = 255; b = 0; break;
-	case 4: r = 130; g = 255; b = 0; break;
-	case 5: r = 0; g = 255; b = 0; break;
-	default: break;
-	}
-	if( r + g + b == 0 )	// ref @0x10077604 default tint
-	{
-		r = 168;
-		g = 211;
-		b = 255;
-	}
-	if( dimName )	// ref @0x1007761c — ebp+0x3c nonzero → black text
+	int r, g, b;
+	SGTC_PortraitTextRgb( colorId, r, g, b );
+	if( dimName )
 		r = g = b = 0;
 
 	const char *text = CHudTextMessage::BufferedLocaliseTextString( label );
-	gHUD.DrawHudString( px + 0x48, py + 0x12, ScreenWidth, text, r, g, b );
+	gHUD.DrawHudString( px + 0x48, py - 0x10, ScreenWidth, text, r, g, b );
+
+	SGTC_PortraitColorFlags flags;
+	SGTC_DecodePortraitColorId( colorId, &flags );
+
+	int sr = r, sg = g, sb = b;
+	if( flags.c4 == 2 )
+	{
+		if( hud->m_iPortraitSlotFlash[slot] > 5 )
+		{
+			sr = 0xf3;
+			sg = 0xb7;
+			sb = 0;
+		}
+		else
+		{
+			sr = 0xff;
+			sg = 0xd5;
+			sb = 0x53;
+		}
+		hud->m_iPortraitSlotFlash[slot]++;
+		if( hud->m_iPortraitSlotFlash[slot] > 10 )
+			hud->m_iPortraitSlotFlash[slot] = 0;
+	}
+	else if( flags.c4 == 1 )
+	{
+		int gray = hud->m_iPortraitSlotGray[slot];
+		if( gray > 0x32 )
+		{
+			gray -= 2;
+			hud->m_iPortraitSlotGray[slot] = gray;
+		}
+		sr = sg = sb = gray;
+	}
+	else if( hud->m_iPortraitSlotGray[slot] < 0x7d )
+	{
+		int gray = hud->m_iPortraitSlotGray[slot] + 2;
+		hud->m_iPortraitSlotGray[slot] = gray;
+		sr = sg = sb = gray;
+	}
+
+	if( flags.c0 )
+	{
+		sr = 0x78;
+		sg = 0x78;
+		sb = 0x32;
+	}
 
 	const char *avatar = SGTC_PortraitAvatarSprite( sprId );
 	if( SGTC_Sprite( avatar, NULL ) )
 	{
 		wrect_t av;
 		SGTC_Sprite( avatar, &av );
-		SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( avatar ) ), r, g, b );
+		SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( avatar ) ), sr, sg, sb );
 		SPR_DrawAdditive( 0, px + 9, py + 0x10, &av );
 	}
-
-	// ref flash tick @0x10077792 — m_iPortraitSlotFlash[slot] when color class == 2.
-	if( ( hud->m_iPortraitSlotColor[slot] & 0x1f ) == 2 )
-	{
-		if( hud->m_iPortraitSlotFlash[slot] > 5 )
-		{
-			hud->m_iPortraitSlotFlash[slot]++;
-			if( hud->m_iPortraitSlotFlash[slot] > 10 )
-				hud->m_iPortraitSlotFlash[slot] = 0;
-		}
-	}
-	else if( hud->m_iPortraitSlotGray[slot] < 0x7d && flTime >= hud->m_flKeyTime )
-		hud->m_iPortraitSlotGray[slot] += 2;
-	else if( hud->m_iPortraitSlotGray[slot] > 0 && flTime < hud->m_flKeyTime )
-		hud->m_iPortraitSlotGray[slot] = 0;
 
 	float frac = hud->m_flPortraitSlotHpPct[slot] / 100.0f;
 	if( frac < 0.0f )
@@ -590,17 +654,15 @@ static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, floa
 	if( frac <= 0.0f || dimName )
 		return;
 
-	const int barW = 0x40;	// ref mov [eax+8],0x40 @0x1007790d
+	const int barW = 0x40;
 	const int barX = px + 0x42;
 	const int barY = py + 0x44;
 	FillRGBA( barX, barY, barW, 4, 0x1e, 0x1e, 0x1e, 255 );
 	FillRGBA( barX, barY, (int)( barW * frac ), 4, 0, 0x82, 0, 255 );
 
-	// ref segmented team HP markers @0x10077a99 (uses m_iPortraitSlotHp[0] class).
-	const int hpClass = hud->m_iPortraitSlotHp[slot][0];
-	if( hpClass == 1 )
+	if( flags.cc == 1 )
 		FillRGBA( barX, py + 0x40, barW, 2, 255, 0, 0, 255 );
-	else if( hpClass == 2 )
+	else if( flags.cc == 2 )
 		FillRGBA( barX, py + 0x40, barW, 2, 0, 0x82, 0, 255 );
 }
 
