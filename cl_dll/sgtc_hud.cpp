@@ -409,6 +409,22 @@ static void SGTC_DrawBarNeedle( const char *bar, const char *needle, int x, int 
 	}
 }
 
+// ref FUN_1007257b — drop slots whose team != m_iPortraitActiveTeam (DAT_0x100f70c8).
+static void SGTC_ExpirePortraitSlots( CHudSgtc *hud )
+{
+	for( int i = 0; i < SGTC_PORTRAIT_SLOTS; i++ )
+	{
+		if( hud->m_iPortraitSlotTeam[i] == hud->m_iPortraitActiveTeam )
+			continue;
+
+		hud->m_iPortraitSlotId[i] = 0;
+		hud->m_iPortraitSlotEnt[i] = 0;
+		hud->m_iPortraitSlotFlash[i] = 0;
+		hud->m_iPortraitSlotGray[i] = 0x7d;
+		hud->m_iPortraitSlotTeam[i] = 0;
+	}
+}
+
 // ref FUN_10072502 — clear 33 portrait slot records @ Init.
 static void SGTC_InitPortraitSlots( CHudSgtc *hud )
 {
@@ -542,22 +558,6 @@ int CHudSgtc::Draw( float flTime )
 	if( m_iHideHud )
 		return 0;
 
-	// ref FUN_1007257b — expire portrait slots not matching active ent.
-	for( int i = 0; i < SGTC_PORTRAIT_SLOTS; i++ )
-	{
-		if( m_iPortraitSlotEnt[i] != 0 && m_iPortraitSlotEnt[i] != m_iPortraitEnt )
-		{
-			m_iPortraitSlotId[i] = 0;
-			m_flPortraitSlotHpPct[i] = 0;
-			m_iPortraitSlotTeam[i] = 0;
-			m_iPortraitSlotAux[i] = 0;
-			m_iPortraitSlotEnt[i] = 0;
-			m_iPortraitSlotFlash[i] = 0;
-			m_iPortraitSlotGray[i] = 0x7d;
-			m_szPortraitSlotName[i][0] = 0;
-		}
-	}
-
 	const int panelH = 168;
 	const int lx = 0;
 	const int ly = ScreenHeight - panelH;
@@ -613,22 +613,37 @@ int CHudSgtc::Draw( float flTime )
 	cvar_t *cvPort = SGTC_Cvar( "view_portraits" );
 	if( cvPort && cvPort->value > 0.0f )
 	{
-		SGTC_DrawSprite( "port_left", lx + 8, ly - 104 );
-		SGTC_DrawSprite( "port_mid", lx + 24, ly - 104 );
-		SGTC_DrawSprite( "port_right", lx + 104, ly - 104 );
+		const int portX = ScreenWidth - 0xc6;	// ref @0x10073acd
+		const int portY = ScreenHeight - 0xa1;	// ref @0x10073adc
+		SGTC_DrawSprite( "port_left", portX, portY );
+		SGTC_DrawSprite( "port_mid", portX + 16, portY );
+		SGTC_DrawSprite( "port_right", portX + 96, portY );
+
+		SGTC_ExpirePortraitSlots( this );
+
+		cvar_t *cvSeeOwn = SGTC_Cvar( "view_seeownport" );
 		int col = 0;
 		for( int i = 0; i < SGTC_PORTRAIT_SLOTS; i++ )
 		{
-			if( !m_iPortraitSlotId[i] )
+			if( !m_iPortraitSlotEnt[i] )
 				continue;
-			if( m_iPortraitActiveTeam && m_iPortraitSlotTeam[i] != m_iPortraitActiveTeam )
+			if( !m_szPortraitSlotName[i][0] )
 				continue;
-			int py = ly - 96 - col * 72;
-			if( py < 0 )
-				break;
-			char dim = ( m_iPortraitSlotEnt[i] != m_iPortraitEnt ) ? 1 : 0;
-			SGTC_DrawPortraitCell( this, i, lx + 24, py, dim );
+			if( m_iPortraitSlotId[i] <= 0 )
+				continue;
+			if( m_iPortraitSlotTeam[i] <= 0 )
+				continue;
+			if( m_iPortraitSlotTeam[i] != m_iPortraitActiveTeam )
+				continue;
+			if( m_iPortraitSlotEnt[i] == m_iPortraitEnt && cvSeeOwn && cvSeeOwn->value != 0.0f )
+				continue;
+
 			col++;
+			const int px = ScreenWidth - ( col * 0x50 + 0x10 );	// ref @0x10073c70
+			char dim = ( m_iPortraitSlotEnt[i] != m_iPortraitEnt ) ? 1 : 0;
+			SGTC_DrawPortraitCell( this, i, px, portY, dim );
+			if( px <= 0 )
+				break;
 		}
 	}
 
