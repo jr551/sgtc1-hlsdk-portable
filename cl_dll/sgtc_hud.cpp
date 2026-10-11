@@ -187,10 +187,17 @@ static void SGTC_TickProgressTeamUi( CHudSgtc *hud )
 	if( hud->m_iProgress <= 0 )
 		return;
 
+	// ref FUN_1002a9ca entry: DAT_100e1b90 recomputed every VGUI/progress frame.
+	hud->m_iProgressIconCursor = 0;
+
 	for( int i = 0; i < SGTC_BLIP_SLOTS; i++ )
 	{
-		const int team = hud->m_iProgressTeam[i];
 		int &st = hud->m_iProgressTeamUiState[i];
+
+		if( st == 1 )
+			st = 0;
+
+		const int team = hud->m_iProgressTeam[i];
 
 		if( team == 0 )
 		{
@@ -199,7 +206,7 @@ static void SGTC_TickProgressTeamUi( CHudSgtc *hud )
 		}
 		else if( team == 1 )
 		{
-			if( st >= 2 )
+			if( st == 2 )
 				st = 0;
 		}
 		else if( team == 2 )
