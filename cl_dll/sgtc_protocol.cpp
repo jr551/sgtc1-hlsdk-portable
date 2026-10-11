@@ -112,11 +112,18 @@
 SGTC_MSG_LIST
 #undef X
 
+static int __MsgFunc_Concuss( const char *pszName, int iSize, void *pbuf )
+{
+	return g_SgtcHud.MsgFunc_Concuss( pszName, iSize, pbuf );
+}
+
 void SGTC_ClientProtocol_InitMessages( void )
 {
 #define X( name ) gEngfuncs.pfnHookUserMsg( #name, __MsgFunc_##name );
 SGTC_MSG_LIST
 #undef X
+	// ref client Concuss hook @0x10057aff — overrides stock after gHUD.Init().
+	gEngfuncs.pfnHookUserMsg( "Concuss", __MsgFunc_Concuss );
 }
 
 void SGTC_ClientHUD_Init( void )

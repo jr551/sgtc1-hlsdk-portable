@@ -12,6 +12,7 @@ static int s_iSgtcStaminaByte;
 int g_iSgtcVoteCount = -1;	// ref DAT_100babe4 (5 = vote window)
 int g_iSgtcVoteSel = -1;	// ref DAT_100babe0 (0..4 mode highlight)
 float g_flSgtcVoteAnim = 0;	// ref DAT_100f71e0 (mode cycle timer)
+int g_iSgtcAnnouncePending = 0;	// ref DAT_100f1ce8 (Concuss byte 2 → scroller @0x10074366)
 
 static void SGTC_DrawLocalizedHudLine( int x, int y, const char *token, int r, int g, int b )
 {
@@ -342,6 +343,116 @@ static void SGTC_DrawVoteCastMenu( float flTime )
 
 static void SGTC_InitPortraitSlots( CHudSgtc *hud );
 
+// ref PTR_DAT_100babe8[32] — announce / mode tokens (Concuss byte 2 indexes this).
+static const char *SGTC_AnnounceTokenById( int id )
+{
+	static const char *const kTable[] = {
+		NULL, "#KEY_COLLECTED", "#KEY_DROPPED", "#BOMB_ARMING", "#BOMB_ARMING_INTERRUPTED",
+		"#BOMB_ARMED", "#CTRL_CAP_ENEMY", "#CTRL_CAP_ALLY", "#STRUCT_ATTACKED",
+		"#ENEMY_CAP_KILLED", "#ALLY_CAP_KILLED", "#TOURN_START", "#TOURN_ABORTED", "#TOURN_AWARD",
+		"#CTP_STND_TAU", "#CTP_STND_GOU",
+		"#MODE0", "#MODE1", "#MODE2", "#MODE3", "#MODE4",
+		"radio/son00.wav", "radio/son01.wav", "radio/son02.wav", "radio/son03.wav",
+		"radio/son04.wav", "radio/son05.wav", "radio/son06.wav", "radio/son07.wav",
+		"radio/son08.wav", "radio/son09.wav", "radio/son10.wav",
+	};
+	if( id < 0 || id >= (int)( sizeof( kTable ) / sizeof( kTable[0] ) ) )
+		return NULL;
+	return kTable[id];
+}
+
+static void SGTC_InitAnnounceLines( CHudSgtc *hud )
+{
+	for( int i = 0; i < SGTC_ANNOUNCE_LINES; i++ )
+	{
+		hud->m_szAnnounceTok[i] = NULL;
+		hud->m_flAnnounceLatch[i] = 0.0f;
+		hud->m_iAnnounceScroll[i] = 0;
+	}
+}
+
+// ref @0x10074366 — shift queue + latch new token on DAT_100f1ce8.
+static void SGTC_PushAnnounceLine( CHudSgtc *hud, float flTime, int tokenId )
+{
+	const char *tok = SGTC_AnnounceTokenById( tokenId );
+	for( int i = 0; i < SGTC_ANNOUNCE_LINES - 1; i++ )
+	{
+		hud->m_szAnnounceTok[i] = hud->m_szAnnounceTok[i + 1];
+		hud->m_flAnnounceLatch[i] = hud->m_flAnnounceLatch[i + 1];
+		hud->m_iAnnounceScroll[i] = hud->m_iAnnounceScroll[i + 1];
+	}
+	const int last = SGTC_ANNOUNCE_LINES - 1;
+	hud->m_szAnnounceTok[last] = tok;
+	hud->m_flAnnounceLatch[last] = flTime;
+	hud->m_iAnnounceScroll[last] = 0;
+	gEngfuncs.pfnPlaySoundByName( "buttons/log.wav", 1.0f );
+}
+
+// ref @0x100744d4..0x10074757 — fade + DrawHudString + FillRGBA frame.
+static void SGTC_DrawAnnounceScroller( CHudSgtc *hud, float flTime )
+{
+	if( g_iSgtcAnnouncePending > 0 )
+	{
+		SGTC_PushAnnounceLine( hud, flTime, g_iSgtcAnnouncePending );
+		g_iSgtcAnnouncePending = 0;
+	}
+
+	const int lineH = 0xc;
+	const int lineGap = 3;
+	const int lineCount = SGTC_ANNOUNCE_LINES;
+	const int maxW = 0x12c;
+	int baseX = ScreenWidth / 2 - ( ( lineH + lineGap ) * lineCount ) * 2;
+	int baseY = ScreenHeight / 5 - ( lineH * ( lineCount + lineGap ) ) / 2;
+	if( baseY < 0x69 )
+		baseY = 0x69;
+
+	int minScroll = 100;
+	for( int i = 0; i < lineCount; i++ )
+	{
+		int fade = 0;
+		if( hud->m_iAnnounceScroll[i] == 0 && hud->m_flAnnounceLatch[i] != 0.0f
+			&& flTime > hud->m_flAnnounceLatch[i] + 6.0f )
+			fade = 1;
+		if( hud->m_iAnnounceScroll[i] > 0 && hud->m_flAnnounceLatch[i] != 0.0f
+			&& flTime > hud->m_flAnnounceLatch[i] + 0.08f )
+			fade = 1;
+
+		if( fade && hud->m_iAnnounceScroll[i] < 100 && hud->m_flAnnounceLatch[i] != 0.0f )
+		{
+			hud->m_iAnnounceScroll[i]++;
+			hud->m_flAnnounceLatch[i] = flTime;
+		}
+
+		if( hud->m_iAnnounceScroll[i] < minScroll && hud->m_flAnnounceLatch[i] != 0.0f )
+			minScroll = hud->m_iAnnounceScroll[i];
+
+		if( hud->m_iAnnounceScroll[i] > 99 )
+		{
+			hud->m_iAnnounceScroll[i] = 0;
+			hud->m_flAnnounceLatch[i] = 0.0f;
+			hud->m_szAnnounceTok[i] = NULL;
+		}
+
+		if( hud->m_flAnnounceLatch[i] == 0.0f || !hud->m_szAnnounceTok[i] )
+			continue;
+
+		const int scroll = hud->m_iAnnounceScroll[i];
+		const int r = 100 - scroll;
+		const int g = 100 - scroll;
+		const int b = ( 100 - scroll ) * 2;
+		const char *text = CHudTextMessage::BufferedLocaliseTextString( hud->m_szAnnounceTok[i] );
+		const int y = baseY + i * ( lineH + lineGap );
+		gHUD.DrawHudString( baseX + 4, y, baseX + 4 + maxW, text, r, g, b );
+	}
+
+	const int frameA = 100 - minScroll;
+	const int frameH = ( lineH + lineGap ) * lineCount + 8;
+	FillRGBA( baseX, baseY - 4, 2, frameH, 0x32, 0x32, 0xff, frameA );
+	FillRGBA( baseX + maxW + 6, baseY - 4, 2, frameH, 0x32, 0x32, 0xff, frameA );
+	FillRGBA( baseX + 1, baseY - 4, maxW + 6, 2, 0x32, 0x32, 0xff, frameA );
+	FillRGBA( baseX + 1, baseY - 4 + frameH, maxW + 6, 2, 0x32, 0x32, 0xff, frameA );
+}
+
 int CHudSgtc::Init( void )
 {
 	m_iFlags = HUDELEM_ACTIVE;
@@ -355,6 +466,7 @@ int CHudSgtc::Init( void )
 	gEngfuncs.pfnAddCommand( "votecastmenu", SGTC_VoteCastMenu_f );
 	SGTC_InitPortraitSlots( this );
 	SGTC_InitProgressSlotX( this );
+	SGTC_InitAnnounceLines( this );
 	// ref FUN_10072e96 — reset vote globals unless mid-countdown at 5.
 	if( g_iSgtcVoteCount != 5 )
 		g_iSgtcVoteCount = -1;
@@ -810,6 +922,7 @@ int CHudSgtc::Draw( float flTime )
 		}
 	}
 
+	SGTC_DrawAnnounceScroller( this, flTime );
 	SGTC_TickTicketDock( this, flTime );
 	SGTC_DrawTicketDock( this, flTime );
 	SGTC_TickProgressTeamUi( this );
@@ -998,7 +1111,9 @@ void CHudSgtc::Reset( void )
 	memset( m_iProgressTeamUiState, 0, sizeof( m_iProgressTeamUiState ) );
 	m_iProgressIconCursor = 0;
 	SGTC_InitProgressSlotX( this );
+	SGTC_InitAnnounceLines( this );
 	SGTC_InitPortraitSlots( this );
+	g_iSgtcAnnouncePending = 0;
 }
 
 // ref FUN_100772b4 — ZatTouch, REG size 0 on server.
@@ -1055,6 +1170,22 @@ int CHudSgtc::MsgFunc_HudInfoMode( const char *pszName, int iSize, void *pbuf )
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
 	m_iHudInfoMode = READ_BYTE();
+	m_iFlags |= HUD_ACTIVE;
+	return 1;
+}
+
+// ref FUN_100592cf (Concuss, 2 bytes) — byte0 concussion when byte2==0; byte1 → DAT_100f1ce8.
+int CHudSgtc::MsgFunc_Concuss( const char *pszName, int iSize, void *pbuf )
+{
+	(void)pszName;
+	BEGIN_READ( pbuf, iSize );
+	const int concuss = READ_BYTE();
+	g_iSgtcAnnouncePending = READ_BYTE();
+	if( g_iSgtcAnnouncePending == 0 )
+	{
+		char one = (char)concuss;
+		return gHUD.MsgFunc_Concuss( pszName, 1, &one );
+	}
 	m_iFlags |= HUD_ACTIVE;
 	return 1;
 }

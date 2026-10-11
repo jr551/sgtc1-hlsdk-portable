@@ -8,6 +8,7 @@
 #define SGTC_BLIP_SLOTS 28
 #define SGTC_RADAR_SLOTS 256
 #define SGTC_PORTRAIT_SLOTS 33
+#define SGTC_ANNOUNCE_LINES 5
 
 // ref client.dll: SGTC HUD state on CHudSgtc (offsets from REA decompile).
 class CHudSgtc : public CHudBase
@@ -24,6 +25,7 @@ public:
 	int MsgFunc_Ttickets( const char *pszName, int iSize, void *pbuf );
 	int MsgFunc_TicketMode( const char *pszName, int iSize, void *pbuf );
 	int MsgFunc_HudInfoMode( const char *pszName, int iSize, void *pbuf );
+	int MsgFunc_Concuss( const char *pszName, int iSize, void *pbuf );
 	int MsgFunc_Stamina( const char *pszName, int iSize, void *pbuf );
 	int MsgFunc_SubModel( const char *pszName, int iSize, void *pbuf );
 	int MsgFunc_HasKey( const char *pszName, int iSize, void *pbuf );
@@ -114,6 +116,11 @@ public:
 	int m_iProgressIconCursor;	// ref DAT_100e1b90 (cumulative icon strip offset)
 	int m_iProgressSlotX[SGTC_BLIP_SLOTS];	// ref DAT_100e1a34[28] (0..13 top, 14..27 bot @+0x38)
 
+	// ref CHudSgtc::Draw @0x10074366 — 5-line announce scroller (+0x16a4/+0x16b8/+0x16cc).
+	const char *m_szAnnounceTok[SGTC_ANNOUNCE_LINES];
+	float m_flAnnounceLatch[SGTC_ANNOUNCE_LINES];
+	int m_iAnnounceScroll[SGTC_ANNOUNCE_LINES];
+
 	// ref FUN_10072502 / FUN_10072694 portrait ring
 	int m_iPortraitSlotId[SGTC_PORTRAIT_SLOTS];		// +0x64
 	float m_flPortraitSlotHpPct[SGTC_PORTRAIT_SLOTS];	// +0xe4 (param_2)
@@ -133,5 +140,6 @@ extern CHudSgtc g_SgtcHud;
 extern int g_iSgtcVoteCount;
 extern int g_iSgtcVoteSel;
 extern float g_flSgtcVoteAnim;
+extern int g_iSgtcAnnouncePending;	// ref DAT_100f1ce8 (Concuss byte 2)
 
 #endif
