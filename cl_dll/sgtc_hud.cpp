@@ -155,9 +155,19 @@ static void SGTC_DrawTicketDock( CHudSgtc *hud, float flTime )
 	gHUD.DrawHudNumber( x + 0x100, numY, DHN_DRAWZERO, hud->m_iTtickets, 255, 255, 255 );
 }
 
+// ref @0x1004b45a — fill DAT_100e1a34[0..0x1b] at VGUI layout (runtime on Win32).
+static void SGTC_InitProgressSlotX( CHudSgtc *hud )
+{
+	for( int i = 0; i < SGTC_BLIP_SLOTS; i++ )
+		hud->m_iProgressSlotX[i] = ( i < 14 ) ? 0x10 : 0x12;
+}
+
 // ref VGUI panel update @0x1002abe2 — per-slot team progress chip state (no widgets on Xash).
 static void SGTC_TickProgressTeamUi( CHudSgtc *hud )
 {
+	if( hud->m_iProgress <= 0 )
+		return;
+
 	for( int i = 0; i < SGTC_BLIP_SLOTS; i++ )
 	{
 		const int team = hud->m_iProgressTeam[i];
@@ -175,9 +185,8 @@ static void SGTC_TickProgressTeamUi( CHudSgtc *hud )
 		}
 		else if( team == 2 )
 		{
-			// ref @0x1002ac68 / @0x1002aca8 — add table[edx] into DAT_100e1b90.
-			const int delta = ( i < 14 ) ? 0x10 : 0x12;
-			hud->m_iProgressIconCursor += delta;
+			// ref @0x1002ac70 / @0x1002acb0 — cursor += table[slot].
+			hud->m_iProgressIconCursor += hud->m_iProgressSlotX[i];
 			st = 1;
 			hud->m_iProgressTeam[i] = 1;	// ref @0x1002acb7
 		}
@@ -204,19 +213,22 @@ static void SGTC_DrawProgressTeamUi( CHudSgtc *hud )
 		return;
 
 	wrect_t rc = gHUD.GetSpriteRect( idx );
-	const int baseX = ScreenWidth / 2 - hud->m_iProgressIconCursor;
+	const int anchorX = ScreenWidth / 2 - hud->m_iProgressIconCursor;
 	const int rowY0 = ScreenHeight - 0xb0;
 	const int rowY1 = rowY0 + 0xe;
 
+	int xWalk = 0;
 	for( int i = 0; i < SGTC_BLIP_SLOTS; i++ )
 	{
 		if( hud->m_iProgressTeamUiState[i] != 1 )
+		{
+			xWalk += hud->m_iProgressSlotX[i];
 			continue;
+		}
 
-		const int row = ( i < 14 ) ? 0 : 1;
-		const int col = ( i < 14 ) ? i : ( i - 14 );
-		const int x = baseX + col * 0x10;
-		const int y = ( row == 0 ) ? rowY0 : rowY1;
+		const int y = ( i < 14 ) ? rowY0 : rowY1;
+		const int x = anchorX + xWalk;
+		xWalk += hud->m_iProgressSlotX[i];
 		SPR_Set( gHUD.GetSprite( idx ), 255, 255, 255 );
 		SPR_DrawHoles( 0, x, y, &rc );
 	}
@@ -324,6 +336,7 @@ int CHudSgtc::Init( void )
 	gEngfuncs.pfnRegisterVariable( "view_seeownport", "0", FCVAR_ARCHIVE );
 	gEngfuncs.pfnAddCommand( "votecastmenu", SGTC_VoteCastMenu_f );
 	SGTC_InitPortraitSlots( this );
+	SGTC_InitProgressSlotX( this );
 	// ref FUN_10072e96 — reset vote globals unless mid-countdown at 5.
 	if( g_iSgtcVoteCount != 5 )
 		g_iSgtcVoteCount = -1;
@@ -966,6 +979,7 @@ void CHudSgtc::Reset( void )
 	m_iProgressEnd = 0;
 	memset( m_iProgressTeamUiState, 0, sizeof( m_iProgressTeamUiState ) );
 	m_iProgressIconCursor = 0;
+	SGTC_InitProgressSlotX( this );
 	SGTC_InitPortraitSlots( this );
 }
 

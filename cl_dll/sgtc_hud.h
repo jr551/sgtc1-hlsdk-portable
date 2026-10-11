@@ -112,6 +112,7 @@ public:
 	int m_iProgressEnd;		// ref DAT_100e1b98
 	int m_iProgressTeamUiState[SGTC_BLIP_SLOTS];	// ref DAT_100e1b1c[28]
 	int m_iProgressIconCursor;	// ref DAT_100e1b90 (cumulative icon strip offset)
+	int m_iProgressSlotX[SGTC_BLIP_SLOTS];	// ref DAT_100e1a34[28] (0..13 top, 14..27 bot @+0x38)
 
 	// ref FUN_10072502 / FUN_10072694 portrait ring
 	int m_iPortraitSlotId[SGTC_PORTRAIT_SLOTS];		// +0x64
