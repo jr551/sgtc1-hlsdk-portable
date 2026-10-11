@@ -118,6 +118,71 @@ static void SGTC_TickTicketDock( CHudSgtc *hud, float flTime )
 	hud->m_cTicketSlideDir = (char)slideDir;
 }
 
+// ref @0x10075f37 — peel overlay (+0x1684): G% ammoline bar vs +0x168c baseline.
+static void SGTC_DrawTicketDockPeel( CHudSgtc *hud )
+{
+	if( !hud->m_iArmorParam )
+		hud->m_iArmorParam = hud->m_iGtickets;
+	if( hud->m_iArmorParam <= 0 )
+		return;
+
+	const int pct = ( hud->m_iGtickets * 100 ) / hud->m_iArmorParam;
+	const int ammoIdx = gHUD.GetSpriteIndex( "ammoline" );
+	if( !ammoIdx )
+		return;
+
+	wrect_t rc = gHUD.GetSpriteRect( ammoIdx );
+	rc.bottom = rc.top + 0x12;
+	const int tint = (int)pct + 100;
+	if( tint <= 100 )
+		return;
+
+	SPR_Set( gHUD.GetSprite( ammoIdx ), tint, tint, tint );
+	SPR_DrawHoles( 0, 0x4f, ScreenHeight - 0x23, &rc );
+}
+
+// ref @0x10075f37 / @0x10075f5b — center 2points + G / (T%0x3c) during live round.
+static void SGTC_DrawTwoPointsRow( CHudSgtc *hud, float flTime )
+{
+	if( !hud->m_iTicketModeFlag || hud->m_iKeyMode )
+		return;
+	if( hud->m_flRoundTime <= 0.0f )
+		return;
+	const float rem = hud->m_flRoundTime - ( flTime - hud->m_flRoundStart );
+	if( rem <= 0.0f )
+		return;
+
+	int cx = ScreenWidth / 2;
+	int cy = ScreenHeight - 0x8e;
+	if( cy < (int)( ScreenHeight / 9 ) )
+		cy = ScreenHeight / 9;
+
+	const int twoIdx = gHUD.GetSpriteIndex( "2points" );
+	wrect_t dot;
+	int dotW = 8;
+	if( twoIdx > 0 )
+	{
+		dot = gHUD.GetSpriteRect( twoIdx );
+		dotW = dot.right - dot.left;
+		if( dotW <= 0 )
+			dotW = 8;
+	}
+
+	const int spriteW = dotW;
+	int leftNumX = cx - ( ( spriteW * 9 + ( spriteW * 9 >> 31 & 3 ) ) >> 2 ) - 0x12;
+	gHUD.DrawHudNumber( leftNumX, cy, DHN_DRAWZERO, hud->m_iGtickets, 0xa8, 0xd3, 0xff );
+
+	if( twoIdx > 0 )
+	{
+		SPR_Set( gHUD.GetSprite( twoIdx ), 0xa8, 0xd3, 0xff );
+		SPR_DrawHoles( 0, cx - ( ( spriteW + ( spriteW >> 31 & 7 ) ) >> 3 ), cy, &dot );
+	}
+
+	const int tMod = hud->m_iTtickets % 0x3c;
+	const int rightNumX = cx + ( ( spriteW * 3 + ( spriteW * 3 >> 31 & 7 ) ) >> 3 );
+	gHUD.DrawHudNumber( rightNumX, cy, DHN_2DIGITS | DHN_DRAWZERO, tMod, 0xa8, 0xd3, 0xff );
+}
+
 static void SGTC_DrawTicketDock( CHudSgtc *hud, float flTime )
 {
 	if( !hud->m_iTicketModeFlag )
@@ -162,15 +227,29 @@ static void SGTC_DrawTicketDock( CHudSgtc *hud, float flTime )
 	SPR_Set( gHUD.GetSprite( iDock ), tintR, tintG, tintB );
 	SPR_DrawAdditive( 0, x, y, &dock );
 
-	// ref @0x10074f0e — G/T counts when m_iArmorOverlay==0 (+0x1684).
 	if( hud->m_iArmorOverlay != 0 )
-		return;
-
-	const int numY = ScreenHeight - 0x25;
-	if( hud->m_iGtickets > 0 )
-		gHUD.DrawHudNumber( 0x46, numY, DHN_DRAWZERO, hud->m_iGtickets, 0xa8, 0xd3, 0xff );
-	if( hud->m_iTtickets > 0 )
-		gHUD.DrawHudNumber( 0x82, numY, DHN_DRAWZERO, hud->m_iTtickets, 0xa8, 0xd3, 0xff );
+	{
+		SGTC_DrawTicketDockPeel( hud );
+	}
+	else
+	{
+		// ref @0x10074f0e — G/T counts when +0x1684 idle.
+		const int numY = ScreenHeight - 0x25;
+		if( hud->m_iGtickets > 0 )
+			gHUD.DrawHudNumber( 0x46, numY, DHN_DRAWZERO, hud->m_iGtickets, 0xa8, 0xd3, 0xff );
+		if( hud->m_iTtickets > 0 )
+			gHUD.DrawHudNumber( 0x82, numY, DHN_DRAWZERO, hud->m_iTtickets, 0xa8, 0xd3, 0xff );
+		if( hud->m_iGtickets > 0 && hud->m_iTtickets > 0 )
+		{
+			const int ammoIdx = gHUD.GetSpriteIndex( "ammoline" );
+			if( ammoIdx > 0 )
+			{
+				wrect_t bar = gHUD.GetSpriteRect( ammoIdx );
+				SPR_Set( gHUD.GetSprite( ammoIdx ), 0x7d, 0x7d, 0x7d );
+				SPR_DrawHoles( 0, 0x78, numY, &bar );
+			}
+		}
+	}
 
 	// ref @0x10074eba — after m_flKeyTime (+0x28), slidein overlay on ticket dock anchor.
 	if( flTime <= hud->m_flKeyTime )
@@ -1369,6 +1448,7 @@ int CHudSgtc::Draw( float flTime )
 		}
 	}
 
+	SGTC_DrawTwoPointsRow( this, flTime );
 	SGTC_DrawVoteCastMenu( flTime );
 
 	return 1;
@@ -1602,7 +1682,10 @@ int CHudSgtc::MsgFunc_Armor( const char *pszName, int iSize, void *pbuf )
 	if( sub == 1 )
 		m_iArmorOverlay = 1;
 	else if( sub == 2 )
+	{
 		m_iArmorOverlay = 0;
+		m_iArmorParam = 0;	// ref peel baseline +0x168c reset when overlay off
+	}
 
 	if( sub == 3 && m_iArmorState == 0 )
 	{
