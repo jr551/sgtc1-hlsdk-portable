@@ -47,6 +47,8 @@ static void SGTC_TickTicketDock( CHudSgtc *hud, float flTime )
 
 	int slideDir = 0;	// ref ebp-0xb8 (1 = shrink offset @0x10074d4e)
 	hud->m_cTicketSlideDir = 0;
+	hud->m_bTicketSlide256 = 0;
+	hud->m_bTicketSlide190 = 0;
 
 	// ref @0x10074ad7 — cascade subtracts (not else-if); may peel multiple tiers per frame.
 	if( hud->m_iTicketSlideRemain > 0 )
@@ -80,9 +82,15 @@ static void SGTC_TickTicketDock( CHudSgtc *hud, float flTime )
 			rem -= 0x6;
 		}
 		if( rem >= 0x3 )
+		{
+			hud->m_bTicketSlide190 = 1;
 			rem -= 0x3;
+		}
 		if( rem >= 0x2 )
+		{
+			hud->m_bTicketSlide256 = 1;
 			rem -= 0x2;
+		}
 		else if( rem > 0 )
 			rem = 0;
 	}
@@ -163,6 +171,57 @@ static void SGTC_DrawTicketDock( CHudSgtc *hud, float flTime )
 		gHUD.DrawHudNumber( 0x46, numY, DHN_DRAWZERO, hud->m_iGtickets, 0xa8, 0xd3, 0xff );
 	if( hud->m_iTtickets > 0 )
 		gHUD.DrawHudNumber( 0x82, numY, DHN_DRAWZERO, hud->m_iTtickets, 0xa8, 0xd3, 0xff );
+
+	// ref @0x10074eba — after m_flKeyTime (+0x28), slidein overlay on ticket dock anchor.
+	if( flTime <= hud->m_flKeyTime )
+		return;
+	const int siIdx = gHUD.GetSpriteIndex( "slidein" );
+	if( !siIdx )
+		return;
+	wrect_t si = gHUD.GetSpriteRect( siIdx );
+	if( hud->m_bTicketSlide256 )
+	{
+		SPR_Set( gHUD.GetSprite( siIdx ), 255, 0x82, 0 );
+		si.right = si.left + 0x100;
+		si.bottom = si.top + 0x82;
+		SPR_DrawAdditive( 0, x, y, &si );
+	}
+	else if( hud->m_bTicketSlide190 )
+	{
+		SPR_Set( gHUD.GetSprite( siIdx ), 255, 0xbe, 0 );
+		si.right = si.left + 0xbe;
+		si.bottom = si.top + 0xbe;
+		SPR_DrawAdditive( 0, x, y, &si );
+	}
+}
+
+// ref @0x1007532c — horizontal armor_bar drain strip (distinct from needle @0x100738a6).
+static void SGTC_DrawArmorBarStrip( CHudSgtc *hud )
+{
+	if( hud->m_flArmorBar <= 0.0f )
+		return;
+
+	float frac = hud->m_flArmorBar / 100.0f; // rodata @0x100a1d30
+	if( frac < 0.0f )
+		frac = 0.0f;
+	if( frac > 1.0f )
+		frac = 1.0f;
+
+	const int barIdx = gHUD.GetSpriteIndex( "armor_bar" );
+	if( !barIdx )
+		return;
+
+	wrect_t rc = gHUD.GetSpriteRect( barIdx );
+	const int fullW = rc.right - rc.left;
+	const int drawW = (int)( fullW * frac );
+	if( drawW <= 0 )
+		return;
+	rc.right = rc.left + drawW;
+
+	const int tintG = (int)( 200.0f * ( 1.0f - frac ) ); // ref @0x1009548e chain
+	const int tintR = (int)( 200.0f * frac );
+	SPR_Set( gHUD.GetSprite( barIdx ), tintR, tintG, 0 );
+	SPR_DrawAdditive( 0, 0x1c, ScreenHeight - 0x18, &rc );
 }
 
 // ref @0x1004b45a / TeamNames VGUI @0x10057bed — fill DAT_100e1a34[0..0x1b] from resource bytes.
@@ -1167,6 +1226,8 @@ int CHudSgtc::Draw( float flTime )
 		}
 	}
 
+	SGTC_DrawArmorBarStrip( this );
+
 	if( m_fZatTouchActive && m_flZatTouchTime + 2.0f > flTime && gHUD.GetSpriteIndex( "zat_touch" ) )
 	{
 		wrect_t zt = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "zat_touch" ) );
@@ -1248,6 +1309,8 @@ void CHudSgtc::Reset( void )
 	m_iTicketSlideOffset = 0;
 	m_iTicketSlideRemain = 0;
 	m_bTicketDockLayout78 = 0;
+	m_bTicketSlide256 = 0;
+	m_bTicketSlide190 = 0;
 	m_cTicketSlideDir = 0;
 	m_iProgress = 0;
 	m_iProgressIcon = 0;
@@ -1304,6 +1367,8 @@ int CHudSgtc::MsgFunc_TicketMode( const char *pszName, int iSize, void *pbuf )
 		m_iTicketSlideOffset = 0;
 		m_iTicketSlideRemain = 0xc00;	// ref DAT_100f6fb0 initial @0x10074ad7
 		m_bTicketDockLayout78 = 0;
+	m_bTicketSlide256 = 0;
+	m_bTicketSlide190 = 0;
 	}
 	m_iFlags |= HUD_ACTIVE;
 	return 1;
