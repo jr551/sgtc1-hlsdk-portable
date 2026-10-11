@@ -49,7 +49,7 @@ SGTC_ADD_TO_PLAYER( CCouteau )
 
 BOOL CCouteau::Deploy( void )
 {
-	return DefaultDeploy( "models/v_couteau.mdl", "models/p_couteau.mdl", SGTC_DRAW, "crowbar" );
+	return SGTC_DEPLOY( 2, "models/v_couteau.mdl", "models/p_couteau.mdl", SGTC_DRAW, "crowbar" );
 }
 
 void CCouteau::PrimaryAttack( void )

@@ -54,7 +54,7 @@ SGTC_ADD_TO_PLAYER( CLanceJaffa )
 
 BOOL CLanceJaffa::Deploy( void )
 {
-	return DefaultDeploy( "models/v_lancegoa.mdl", "models/p_lancegoa.mdl", SGTC_DRAW, "egon" );
+	return SGTC_DEPLOY( 1, "models/v_lancegoa.mdl", "models/p_lancegoa.mdl", SGTC_DRAW, "egon" );
 }
 
 void CLanceJaffa::PrimaryAttack( void )

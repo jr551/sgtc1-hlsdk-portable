@@ -50,7 +50,7 @@ SGTC_ADD_TO_PLAYER( CCoujaf )
 
 BOOL CCoujaf::Deploy( void )
 {
-	return DefaultDeploy( "models/v_coujaf.mdl", "models/p_coujaf.mdl", SGTC_DRAW, "crowbar" );
+	return SGTC_DEPLOY( 2, "models/v_coujaf.mdl", "models/p_coujaf.mdl", SGTC_DRAW, "crowbar" );
 }
 
 void CCoujaf::PrimaryAttack( void )

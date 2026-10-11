@@ -40,7 +40,7 @@ SGTC_ADD_TO_PLAYER( CFlashBang )
 
 BOOL CFlashBang::Deploy( void )
 {
-	return DefaultDeploy( "models/v_grenade.mdl", "models/p_grenade.mdl", SGTC_DRAW, "crowbar" );
+	return SGTC_DEPLOY( 2, "models/v_grenade.mdl", "models/p_grenade.mdl", SGTC_DRAW, "crowbar" );
 }
 
 void CFlashBang::Holster( int skiplocal )

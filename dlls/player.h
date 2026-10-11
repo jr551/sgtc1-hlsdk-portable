@@ -220,6 +220,7 @@ public:
 	char	m_bShieldSpawned;	// ref +0x4e4 — effect_shield entity active
 	char	m_bShieldSprint;	// ref +0x4e9 — sprint drain gate
 	char	m_bShieldLarge;		// ref +0x460 — big shield sizing on spawn
+	char	m_bWeapSubModel;	// ref +0x925 — SubModel disp flag (WeapDispSet 1/2)
 	int	m_iStamina;		// ref +0x43c — HUD Stamina usermsg byte
 	int	m_iStaminaSent;		// ref +0xa24 — last value sent to client
 	float	m_flMoveLatch;		// ref +0xa6c — stamina tick gate (now+interval)
@@ -228,6 +229,7 @@ public:
 	void SGTC_RadarScan( void );	// ref @0x135592 — Blip usermsg to client HUD
 	void SGTC_UpdateStamina( void );	// ref @0x1336e8
 	void SGTC_ShieldThinker( void );	// ref @0x1390b2 (partial port)
+	void SGTC_WeapDispSet( int mode );	// ref @0x133aca — MSG_ONE SubModel
 	void SGTC_SgtcThink( void );	// ref @0x13963a — called from PostThink @0x1405b3
 
 	virtual void Spawn( void );

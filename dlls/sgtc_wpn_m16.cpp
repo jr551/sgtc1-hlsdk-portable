@@ -48,7 +48,7 @@ SGTC_ADD_TO_PLAYER( CM16 )
 
 BOOL CM16::Deploy( void )
 {
-	return DefaultDeploy( "models/v_m16.mdl", "models/p_m16.mdl", SGTC_DRAW, "mp5" );
+	return SGTC_DEPLOY( 2, "models/v_m16.mdl", "models/p_m16.mdl", SGTC_DRAW, "mp5" );
 }
 
 SGTC_GUN_PRIMARY( CM16, m_usFire, SGTC_BULLET_M16, VECTOR_CONE_5DEGREES, 1, 8192, 8, 2, 0.1 )

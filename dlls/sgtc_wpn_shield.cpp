@@ -60,7 +60,7 @@ SGTC_ADD_TO_PLAYER( CShieldGun )
 
 BOOL CShieldGun::Deploy( void )
 {
-	return DefaultDeploy( "models/v_shield.mdl", "models/p_shield.mdl", SGTC_DRAW, "gauss" );
+	return SGTC_DEPLOY( 1, "models/v_shield.mdl", "models/p_shield.mdl", SGTC_DRAW, "gauss" );
 }
 
 void CShieldGun::PrimaryAttack( void )

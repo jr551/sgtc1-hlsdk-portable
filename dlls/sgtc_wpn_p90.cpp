@@ -49,7 +49,7 @@ SGTC_ADD_TO_PLAYER( CP90 )
 
 BOOL CP90::Deploy( void )
 {
-	return DefaultDeploy( "models/v_p90.mdl", "models/p_p90.mdl", SGTC_DRAW, "mp5" );
+	return SGTC_DEPLOY( 2, "models/v_p90.mdl", "models/p_p90.mdl", SGTC_DRAW, "mp5" );
 }
 
 SGTC_GUN_PRIMARY( CP90, m_usFire, SGTC_BULLET_P90, VECTOR_CONE_6DEGREES, 1, 8192, 6, 1, 0.07 )

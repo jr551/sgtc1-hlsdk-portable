@@ -64,7 +64,7 @@ SGTC_ADD_TO_PLAYER( CInvis )
 
 BOOL CInvis::Deploy( void )
 {
-	return DefaultDeploy( "models/v_invis.mdl", "models/p_invis.mdl", SGTC_DRAW, "python" );
+	return SGTC_DEPLOY( 2, "models/v_invis.mdl", "models/p_invis.mdl", SGTC_DRAW, "python" );
 }
 
 void CInvis::PrimaryAttack( void )

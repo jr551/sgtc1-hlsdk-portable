@@ -46,7 +46,7 @@ SGTC_ADD_TO_PLAYER( CReetou )
 
 BOOL CReetou::Deploy( void )
 {
-	return DefaultDeploy( "models/v_reetou.mdl", "models/p_reetou.mdl", SGTC_DRAW, "gauss" );
+	return SGTC_DEPLOY( 1, "models/v_reetou.mdl", "models/p_reetou.mdl", SGTC_DRAW, "gauss" );
 }
 
 void CReetou::PrimaryAttack( void )

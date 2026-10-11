@@ -40,7 +40,7 @@ SGTC_ADD_TO_PLAYER( CMustardGrenade )
 
 BOOL CMustardGrenade::Deploy( void )
 {
-	return DefaultDeploy( "models/v_mustardgrenade.mdl", "models/p_mustardgrenade.mdl", SGTC_DRAW, "crowbar" );
+	return SGTC_DEPLOY( 2, "models/v_mustardgrenade.mdl", "models/p_mustardgrenade.mdl", SGTC_DRAW, "crowbar" );
 }
 
 void CMustardGrenade::PrimaryAttack( void )

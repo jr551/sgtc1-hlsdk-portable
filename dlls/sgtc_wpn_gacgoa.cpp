@@ -42,7 +42,7 @@ SGTC_ADD_TO_PLAYER( CGrenadeChoc )
 
 BOOL CGrenadeChoc::Deploy( void )
 {
-	return DefaultDeploy( "models/v_gacgoa.mdl", "models/p_gacgoa.mdl", SGTC_DRAW, "crowbar" );
+	return SGTC_DEPLOY( 2, "models/v_gacgoa.mdl", "models/p_gacgoa.mdl", SGTC_DRAW, "crowbar" );
 }
 
 void CGrenadeChoc::PrimaryAttack( void )

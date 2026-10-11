@@ -50,7 +50,7 @@ SGTC_ADD_TO_PLAYER( CM92s )
 
 BOOL CM92s::Deploy( void )
 {
-	return DefaultDeploy( "models/v_m92s.mdl", "models/p_m92s.mdl", SGTC_DRAW, "onehanded" );
+	return SGTC_DEPLOY( 2, "models/v_m92s.mdl", "models/p_m92s.mdl", SGTC_DRAW, "onehanded" );
 }
 
 void CM92s::M92sFire( float flSpread, float flCycleTime )

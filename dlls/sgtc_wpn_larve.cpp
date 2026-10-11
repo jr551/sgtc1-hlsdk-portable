@@ -50,7 +50,7 @@ SGTC_ADD_TO_PLAYER( CLarve )
 
 BOOL CLarve::Deploy( void )
 {
-	return DefaultDeploy( "models/v_larve.mdl", "models/p_larve.mdl", SGTC_DRAW, "squeak" );
+	return SGTC_DEPLOY( 2, "models/v_larve.mdl", "models/p_larve.mdl", SGTC_DRAW, "squeak" );
 }
 
 void CLarve::PrimaryAttack( void )

@@ -45,7 +45,7 @@ SGTC_ADD_TO_PLAYER( CBigLanceJaffa )
 
 BOOL CBigLanceJaffa::Deploy( void )
 {
-	return DefaultDeploy( "models/v_deathglider.mdl", "models/p_deathglider.mdl", SGTC_DRAW, "egon" );
+	return SGTC_DEPLOY( 1, "models/v_deathglider.mdl", "models/p_deathglider.mdl", SGTC_DRAW, "egon" );
 }
 
 void CBigLanceJaffa::PrimaryAttack( void )

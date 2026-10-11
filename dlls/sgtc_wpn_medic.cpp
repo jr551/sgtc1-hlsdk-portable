@@ -45,7 +45,7 @@ BOOL CMedicx::IsUseable( void )
 
 BOOL CMedicx::Deploy( void )
 {
-	return DefaultDeploy( "models/v_medic.mdl", "models/p_medic.mdl", SGTC_DRAW, "onehanded" );
+	return SGTC_DEPLOY( 2, "models/v_medic.mdl", "models/p_medic.mdl", SGTC_DRAW, "onehanded" );
 }
 
 void CMedicx::PrimaryAttack( void )

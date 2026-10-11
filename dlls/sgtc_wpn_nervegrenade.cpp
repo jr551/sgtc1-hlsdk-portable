@@ -40,7 +40,7 @@ SGTC_ADD_TO_PLAYER( CNerveGrenade )
 
 BOOL CNerveGrenade::Deploy( void )
 {
-	return DefaultDeploy( "models/v_nervegrenade.mdl", "models/p_nervegrenade.mdl", SGTC_DRAW, "crowbar" );
+	return SGTC_DEPLOY( 2, "models/v_nervegrenade.mdl", "models/p_nervegrenade.mdl", SGTC_DRAW, "crowbar" );
 }
 
 void CNerveGrenade::PrimaryAttack( void )

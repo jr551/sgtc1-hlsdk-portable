@@ -49,7 +49,7 @@ SGTC_ADD_TO_PLAYER( CBatonSupplice )
 
 BOOL CBatonSupplice::Deploy( void )
 {
-	return DefaultDeploy( "models/v_batsup.mdl", "models/p_batsup.mdl", SGTC_DRAW, "crowbar" );
+	return SGTC_DEPLOY( 2, "models/v_batsup.mdl", "models/p_batsup.mdl", SGTC_DRAW, "crowbar" );
 }
 
 void CBatonSupplice::Holster( int skiplocal )

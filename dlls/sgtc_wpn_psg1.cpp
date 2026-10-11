@@ -45,7 +45,7 @@ SGTC_ADD_TO_PLAYER( CPsg1 )
 
 BOOL CPsg1::Deploy( void )
 {
-	return DefaultDeploy( "models/v_psg1.mdl", "models/p_psg1.mdl", SGTC_DRAW, "bow" );
+	return SGTC_DEPLOY( 2, "models/v_psg1.mdl", "models/p_psg1.mdl", SGTC_DRAW, "bow" );
 }
 
 SGTC_GUN_PRIMARY( CPsg1, m_usFire, SGTC_BULLET_PSG1, VECTOR_CONE_1DEGREES, 1, 8192, 40, 0, 1.0 )

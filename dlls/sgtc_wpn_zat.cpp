@@ -46,7 +46,7 @@ SGTC_ADD_TO_PLAYER( CZat )
 
 BOOL CZat::Deploy( void )
 {
-	return DefaultDeploy( "models/v_zat.mdl", "models/p_zat.mdl", SGTC_DRAW, "onehanded" );
+	return SGTC_DEPLOY( 1, "models/v_zat.mdl", "models/p_zat.mdl", SGTC_DRAW, "onehanded" );
 }
 
 void CZat::PrimaryAttack( void )

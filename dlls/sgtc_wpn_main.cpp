@@ -49,7 +49,7 @@ SGTC_ADD_TO_PLAYER( CMainDieu )
 
 BOOL CMainDieu::Deploy( void )
 {
-	return DefaultDeploy( "models/v_main.mdl", "models/p_main.mdl", SGTC_DRAW, "egon" );
+	return SGTC_DEPLOY( 1, "models/v_main.mdl", "models/p_main.mdl", SGTC_DRAW, "egon" );
 }
 
 void CMainDieu::PrimaryAttack( void )

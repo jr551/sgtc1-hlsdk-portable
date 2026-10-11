@@ -45,7 +45,7 @@ BOOL CMedicxgoa::IsUseable( void )
 
 BOOL CMedicxgoa::Deploy( void )
 {
-	return DefaultDeploy( "models/v_goaregen.mdl", "models/p_goaregen.mdl", SGTC_DRAW, "egon" );
+	return SGTC_DEPLOY( 1, "models/v_goaregen.mdl", "models/p_goaregen.mdl", SGTC_DRAW, "egon" );
 }
 
 void CMedicxgoa::PrimaryAttack( void )

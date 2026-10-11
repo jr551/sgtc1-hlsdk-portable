@@ -52,7 +52,7 @@ SGTC_ADD_TO_PLAYER( CTacgun )
 
 BOOL CTacgun::Deploy( void )
 {
-	return DefaultDeploy( "models/v_tac.mdl", "models/p_tac.mdl", SGTC_DRAW, "trip" );
+	return SGTC_DEPLOY( 2, "models/v_tac.mdl", "models/p_tac.mdl", SGTC_DRAW, "trip" );
 }
 
 void CTacgun::Holster( int skiplocal )

@@ -40,7 +40,7 @@ SGTC_ADD_TO_PLAYER( CSmokeGrenade )
 
 BOOL CSmokeGrenade::Deploy( void )
 {
-	return DefaultDeploy( "models/v_smokegrenade.mdl", "models/p_smokegrenade.mdl", SGTC_DRAW, "crowbar" );
+	return SGTC_DEPLOY( 2, "models/v_smokegrenade.mdl", "models/p_smokegrenade.mdl", SGTC_DRAW, "crowbar" );
 }
 
 void CSmokeGrenade::PrimaryAttack( void )

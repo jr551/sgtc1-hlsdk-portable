@@ -44,7 +44,7 @@ SGTC_ADD_TO_PLAYER( CZatarc )
 
 BOOL CZatarc::Deploy( void )
 {
-	return DefaultDeploy( "models/v_zar.mdl", "models/p_zar.mdl", SGTC_DRAW, "egon" );
+	return SGTC_DEPLOY( 1, "models/v_zar.mdl", "models/p_zar.mdl", SGTC_DRAW, "egon" );
 }
 
 void CZatarc::PrimaryAttack( void )

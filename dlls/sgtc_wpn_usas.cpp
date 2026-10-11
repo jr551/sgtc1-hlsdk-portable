@@ -50,7 +50,7 @@ SGTC_ADD_TO_PLAYER( CUsas )
 
 BOOL CUsas::Deploy( void )
 {
-	return DefaultDeploy( "models/v_usas.mdl", "models/p_usas.mdl", SGTC_DRAW, "mp5" );
+	return SGTC_DEPLOY( 2, "models/v_usas.mdl", "models/p_usas.mdl", SGTC_DRAW, "mp5" );
 }
 
 void CUsas::PrimaryAttack( void )

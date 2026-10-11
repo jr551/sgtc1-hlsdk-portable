@@ -5,6 +5,7 @@
 #include "util.h"
 #include "cbase.h"
 #include "player.h"
+#include "weapons.h"
 #include "sgtc_rules.h"
 #include "sgtc_shield.h"
 
@@ -126,6 +127,29 @@ void CBasePlayer::SGTC_RadarScan( void )
 	}
 
 	m_flRadarNext = gpGlobals->time + 0.25f;
+}
+
+// ref @0x133aca — toggle +0x925, MSG_ONE gmsgSubModel: 0,0,mode,iMaxAmmo1().
+void CBasePlayer::SGTC_WeapDispSet( int mode )
+{
+	if( mode == 1 )
+		m_bWeapSubModel = 1;
+	else if( mode == 2 )
+		m_bWeapSubModel = 0;
+
+	if( !gmsgSubModel )
+		return;
+
+	int iMaxAmmo = 0;
+	if( m_pActiveItem )
+		iMaxAmmo = ((CBasePlayerWeapon *)m_pActiveItem)->iMaxAmmo1();
+
+	MESSAGE_BEGIN( MSG_ONE, gmsgSubModel, NULL, pev );
+	WRITE_BYTE( 0 );
+	WRITE_BYTE( 0 );
+	WRITE_BYTE( mode );
+	WRITE_BYTE( iMaxAmmo );
+	MESSAGE_END();
 }
 
 // ref @0x1336e8 — MSG_ONE gmsgStamina when m_iStamina (+0x43c) != m_iStaminaSent (+0xa24).

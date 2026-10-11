@@ -40,7 +40,7 @@ SGTC_ADD_TO_PLAYER( CNarcoGrenade )
 
 BOOL CNarcoGrenade::Deploy( void )
 {
-	return DefaultDeploy( "models/v_narcogrenade.mdl", "models/p_narcogrenade.mdl", SGTC_DRAW, "crowbar" );
+	return SGTC_DEPLOY( 2, "models/v_narcogrenade.mdl", "models/p_narcogrenade.mdl", SGTC_DRAW, "crowbar" );
 }
 
 void CNarcoGrenade::PrimaryAttack( void )

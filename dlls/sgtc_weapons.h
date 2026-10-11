@@ -112,6 +112,10 @@ enum SGTCWeaponId
 #define SGTC_AMMO_MUSTARD "Mustard Grenade"
 #define SGTC_AMMO_GACG "GrenadeChoc"
 
+// ref CBasePlayer::WeapDispSet @0x133aca — called at start of each SGTC Deploy.
+#define SGTC_DEPLOY( disp, vmdl, pmdl, anim, ext ) \
+	( m_pPlayer->SGTC_WeapDispSet( disp ), DefaultDeploy( vmdl, pmdl, anim, ext ) )
+
 // Common SGTC deploy/idle helper: every class uses DefaultDeploy with its
 // v_/p_ models and a stock-style animation extension.
 #define SGTC_DECLARE_WEAPON() \
