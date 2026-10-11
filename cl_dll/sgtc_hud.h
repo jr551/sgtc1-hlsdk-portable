@@ -84,6 +84,7 @@ public:
 	int m_iPortraitHp[3];		// +0x44/48/4c
 	char m_szPortraitName[32];
 	int m_iPortraitId;		// last byte
+	int m_iPortraitActiveTeam;	// ref DAT_100f70c8 (AddPortrait team filter)
 
 	int m_iAboutMeSelf;		// ref +0x20
 	int m_iAboutMePlayer;		// ref +0x40
@@ -99,12 +100,17 @@ public:
 	int m_iProgressTeam[SGTC_BLIP_SLOTS];	// ref DAT_100e1aa4[28]
 	int m_iProgressEnd;		// ref DAT_100e1b98
 
-	// ref FUN_10072502 portrait ring (+0x64,+0x264,+0x1568,+0x15ec,+0x164)
-	int m_iPortraitSlotId[SGTC_PORTRAIT_SLOTS];
-	int m_iPortraitSlotAux[SGTC_PORTRAIT_SLOTS];
-	int m_iPortraitSlotFlash[SGTC_PORTRAIT_SLOTS];
-	int m_iPortraitSlotGray[SGTC_PORTRAIT_SLOTS];
-	int m_iPortraitSlotEnt[SGTC_PORTRAIT_SLOTS];
+	// ref FUN_10072502 / FUN_10072694 portrait ring
+	int m_iPortraitSlotId[SGTC_PORTRAIT_SLOTS];		// +0x64
+	float m_flPortraitSlotHpPct[SGTC_PORTRAIT_SLOTS];	// +0xe4 (param_2)
+	int m_iPortraitSlotTeam[SGTC_PORTRAIT_SLOTS];		// +0x164
+	int m_iPortraitSlotAux[SGTC_PORTRAIT_SLOTS];		// +0x1e4
+	int m_iPortraitSlotEnt[SGTC_PORTRAIT_SLOTS];		// +0x264
+	int m_iPortraitSlotHp[SGTC_PORTRAIT_SLOTS][3];		// +0x2e4/+0x364/+0x3e4
+	char m_szPortraitSlotName[SGTC_PORTRAIT_SLOTS][32];	// +0x464 (strdup in ref)
+	int m_iPortraitSlotColor[SGTC_PORTRAIT_SLOTS];		// +0x4e4
+	int m_iPortraitSlotFlash[SGTC_PORTRAIT_SLOTS];		// +0x1568
+	int m_iPortraitSlotGray[SGTC_PORTRAIT_SLOTS];		// +0x15ec
 };
 
 extern CHudSgtc g_SgtcHud;

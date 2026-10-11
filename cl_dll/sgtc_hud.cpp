@@ -72,10 +72,125 @@ static void SGTC_InitPortraitSlots( CHudSgtc *hud )
 	for( int i = 0; i < SGTC_PORTRAIT_SLOTS; i++ )
 	{
 		hud->m_iPortraitSlotId[i] = 0;
+		hud->m_flPortraitSlotHpPct[i] = 0;
+		hud->m_iPortraitSlotTeam[i] = 0;
 		hud->m_iPortraitSlotAux[i] = 0;
+		hud->m_iPortraitSlotEnt[i] = 0;
+		hud->m_iPortraitSlotHp[i][0] = 0;
+		hud->m_iPortraitSlotHp[i][1] = 0;
+		hud->m_iPortraitSlotHp[i][2] = 0;
+		hud->m_szPortraitSlotName[i][0] = 0;
+		hud->m_iPortraitSlotColor[i] = 0;
 		hud->m_iPortraitSlotFlash[i] = 0;
 		hud->m_iPortraitSlotGray[i] = 0x7d;
-		hud->m_iPortraitSlotEnt[i] = 0;
+	}
+}
+
+// ref FUN_10072694 — upsert portrait column cell for active team.
+static void SGTC_UpdatePortraitSlot( CHudSgtc *hud, int spr, float hpPct, int team, int aux, int ent,
+	int hp0, int hp1, int hp2, const char *name, int colorId )
+{
+	if( !spr || !ent || !name || !name[0] )
+		return;
+
+	int hit = -1;
+	for( int i = 0; i < SGTC_PORTRAIT_SLOTS; i++ )
+	{
+		if( hud->m_iPortraitSlotEnt[i] == ent && hud->m_iPortraitSlotId[i] != 0 )
+		{
+			hit = i;
+			break;
+		}
+	}
+
+	if( hit < 0 && team == hud->m_iPortraitActiveTeam )
+	{
+		for( int i = 0; i < SGTC_PORTRAIT_SLOTS; i++ )
+		{
+			if( hud->m_iPortraitSlotId[i] == 0 )
+			{
+				hit = i;
+				break;
+			}
+		}
+	}
+
+	if( hit < 0 )
+		return;
+
+	int oldTeam = hud->m_iPortraitSlotTeam[hit];
+	hud->m_iPortraitSlotId[hit] = spr;
+	hud->m_flPortraitSlotHpPct[hit] = hpPct;
+	hud->m_iPortraitSlotTeam[hit] = team;
+	hud->m_iPortraitSlotAux[hit] = aux;
+	hud->m_iPortraitSlotEnt[hit] = ent;
+	hud->m_iPortraitSlotHp[hit][0] = hp0;
+	hud->m_iPortraitSlotHp[hit][1] = hp1;
+	hud->m_iPortraitSlotHp[hit][2] = hp2;
+	strncpy( hud->m_szPortraitSlotName[hit], name, sizeof( hud->m_szPortraitSlotName[hit] ) - 1 );
+	hud->m_iPortraitSlotColor[hit] = colorId;
+	if( oldTeam != team )
+	{
+		for( int i = 0; i < SGTC_PORTRAIT_SLOTS; i++ )
+		{
+			if( hud->m_iPortraitSlotEnt[i] != 0 && hud->m_iPortraitSlotEnt[i] != hud->m_iPortraitEnt )
+			{
+				hud->m_iPortraitSlotId[i] = 0;
+				hud->m_flPortraitSlotHpPct[i] = 0;
+				hud->m_iPortraitSlotTeam[i] = 0;
+				hud->m_iPortraitSlotAux[i] = 0;
+				hud->m_iPortraitSlotEnt[i] = 0;
+				hud->m_iPortraitSlotFlash[i] = 0;
+				hud->m_iPortraitSlotGray[i] = 0x7d;
+				hud->m_szPortraitSlotName[i][0] = 0;
+			}
+		}
+	}
+}
+
+// ref FUN_100772f2 — portrait name, avatar, HP bar (abbreviated).
+static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, char dim )
+{
+	if( !hud->m_iPortraitSlotId[slot] )
+		return;
+
+	const char *avatar = hud->m_szPortraitSlotName[slot];
+	if( !avatar[0] )
+		return;
+
+	int r = 168, g = 211, b = 255;
+	switch( hud->m_iPortraitSlotColor[slot] & 0x1f )
+	{
+	case 1: r = 255; g = 0; b = 0; break;
+	case 2: r = 255; g = 130; b = 0; break;
+	case 3: r = 255; g = 255; b = 0; break;
+	case 4: r = 130; g = 255; b = 0; break;
+	case 5: r = 0; g = 255; b = 0; break;
+	default: break;
+	}
+	if( dim )
+		r = g = b = 0;
+
+	DrawConsoleString( px, py - 12, avatar );
+	if( SGTC_Sprite( avatar, NULL ) )
+	{
+		wrect_t av;
+		SGTC_Sprite( avatar, &av );
+		SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( avatar ) ), r, g, b );
+		SPR_DrawAdditive( 0, px + 8, py, &av );
+	}
+
+	float frac = hud->m_flPortraitSlotHpPct[slot] / 100.0f;
+	if( frac < 0.0f )
+		frac = 0.0f;
+	if( frac > 1.0f )
+		frac = 1.0f;
+	if( frac > 0.0f && !dim )
+	{
+		int barX = px + 8;
+		int barY = py + 56;
+		FillRGBA( barX, barY, 64, 4, 30, 30, 30, 255 );
+		FillRGBA( barX, barY, (int)( 64 * frac ), 4, 0, 130, 0, 255 );
 	}
 }
 
@@ -90,10 +205,13 @@ int CHudSgtc::Draw( float flTime )
 		if( m_iPortraitSlotEnt[i] != 0 && m_iPortraitSlotEnt[i] != m_iPortraitEnt )
 		{
 			m_iPortraitSlotId[i] = 0;
+			m_flPortraitSlotHpPct[i] = 0;
+			m_iPortraitSlotTeam[i] = 0;
 			m_iPortraitSlotAux[i] = 0;
+			m_iPortraitSlotEnt[i] = 0;
 			m_iPortraitSlotFlash[i] = 0;
 			m_iPortraitSlotGray[i] = 0x7d;
-			m_iPortraitSlotEnt[i] = 0;
+			m_szPortraitSlotName[i][0] = 0;
 		}
 	}
 
@@ -163,11 +281,25 @@ int CHudSgtc::Draw( float flTime )
 	}
 
 	cvar_t *cvPort = SGTC_Cvar( "view_portraits" );
-	if( cvPort && cvPort->value > 0.0f && m_iPortraitEnt )
+	if( cvPort && cvPort->value > 0.0f )
 	{
 		SGTC_DrawSprite( "port_left", lx + 8, ly - 104 );
 		SGTC_DrawSprite( "port_mid", lx + 24, ly - 104 );
 		SGTC_DrawSprite( "port_right", lx + 104, ly - 104 );
+		int col = 0;
+		for( int i = 0; i < SGTC_PORTRAIT_SLOTS; i++ )
+		{
+			if( !m_iPortraitSlotId[i] )
+				continue;
+			if( m_iPortraitActiveTeam && m_iPortraitSlotTeam[i] != m_iPortraitActiveTeam )
+				continue;
+			int py = ly - 96 - col * 72;
+			if( py < 0 )
+				break;
+			char dim = ( m_iPortraitSlotEnt[i] != m_iPortraitEnt ) ? 1 : 0;
+			SGTC_DrawPortraitCell( this, i, lx + 24, py, dim );
+			col++;
+		}
 	}
 
 	if( m_iBlipProgress > 0 && gHUD.GetSpriteIndex( "pbar" ) )
@@ -229,6 +361,7 @@ void CHudSgtc::Reset( void )
 	memset( m_iPortraitHp, 0, sizeof( m_iPortraitHp ) );
 	m_szPortraitName[0] = 0;
 	m_iPortraitId = 0;
+	m_iPortraitActiveTeam = 0;
 	m_iAboutMeSelf = 0;
 	m_iAboutMePlayer = 0;
 	m_iKeyMode = 0;
@@ -485,6 +618,7 @@ int CHudSgtc::MsgFunc_AddPortrait( const char *pszName, int iSize, void *pbuf )
 
 	if( m_iPortraitX == x )
 	{
+		m_iPortraitActiveTeam = i3;
 		m_flPortraitTime = (float)t;
 		m_iPortraitId = id;
 		m_iPortraitHp[0] = hp0;
@@ -493,11 +627,12 @@ int CHudSgtc::MsgFunc_AddPortrait( const char *pszName, int iSize, void *pbuf )
 		if( spr )
 		{
 			m_iPortraitSprite = spr;
-			m_iPortraitEnt = spr; // ref resolves via FUN_10072923/10051180
+			m_iPortraitEnt = x;
 		}
-		(void)i3; (void)i4;
 		strncpy( m_szPortraitName, name, sizeof( m_szPortraitName ) - 1 );
 	}
+	SGTC_UpdatePortraitSlot( this, spr, (float)t, i3, i4, x, hp0, hp1, hp2, name, id );
+	m_iFlags |= HUD_ACTIVE;
 	return 1;
 }
 
