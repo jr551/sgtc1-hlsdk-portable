@@ -47,6 +47,7 @@ void *g_pKeepVGUISupport = (void *)InitVGUISupportAPI;
 
 void InitInput( void );
 void EV_HookEvents( void );
+#include "sgtc_protocol.h"
 void IN_Commands( void );
 
 /*
@@ -204,6 +205,7 @@ so the HUD can reinitialize itself.
 int DLLEXPORT HUD_VidInit( void )
 {
 	gHUD.VidInit();
+	SGTC_ClientHUD_VidInit();
 
 	VGui_Startup();
 
@@ -224,6 +226,7 @@ void DLLEXPORT HUD_Init( void )
 {
 	InitInput();
 	gHUD.Init();
+	SGTC_ClientHUD_Init();
 	Scheme_Init();
 }
 

@@ -30,6 +30,7 @@
 #include "event_api.h"
 #include "eventscripts.h"
 #include "sgtc_protocol.h"
+#include "sgtc_hud.h"
 
 #include <string.h>
 
@@ -104,13 +105,10 @@
 	X( Progress ) \
 	X( Blip )
 
-// One drain stub per message, same shape as stock hud.cpp __MsgFunc_ValClass.
-// "Unused" handlers are intentional: the server owns the payload layout.
 #define X( name ) \
 	static int __MsgFunc_##name( const char *pszName, int iSize, void *pbuf ) \
 	{ \
-		(void)pszName; (void)iSize; (void)pbuf; \
-		return 1; \
+		return g_SgtcHud.MsgFunc_##name( pszName, iSize, pbuf ); \
 	}
 SGTC_MSG_LIST
 #undef X
@@ -120,6 +118,19 @@ void SGTC_ClientProtocol_InitMessages( void )
 #define X( name ) gEngfuncs.pfnHookUserMsg( #name, __MsgFunc_##name );
 SGTC_MSG_LIST
 #undef X
+}
+
+void SGTC_ClientHUD_Init( void )
+{
+	g_SgtcHud.Init();
+	SGTC_ClientProtocol_InitMessages();
+	SGTC_ClientProtocol_HookEvents();
+}
+
+void SGTC_ClientHUD_VidInit( void )
+{
+	SGTC_ClientProtocol_VidInit();
+	g_SgtcHud.VidInit();
 }
 
 int SGTC_CustomMessageCount( void )

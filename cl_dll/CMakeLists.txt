@@ -122,6 +122,7 @@ set (CLDLL_SOURCES
 	view.cpp
 	../public/safe_snprintf.c
 	sgtc_protocol.cpp
+	sgtc_hud.cpp
 	sgtc_vgui.cpp
 	sgtc_weapons_client.cpp
 )

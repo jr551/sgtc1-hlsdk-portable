@@ -9,6 +9,8 @@
 
 // Called once from HUD_Init (after stock CHud::Init).
 void SGTC_ClientProtocol_InitMessages( void );
+void SGTC_ClientHUD_Init( void );
+void SGTC_ClientHUD_VidInit( void );
 // Called from the event-hook chain (after stock Game_HookEvents).
 void SGTC_ClientProtocol_HookEvents( void );
 // Called from HUD_VidInit (after stock CHud::VidInit) — SPR_Loads SGTC sprites.
