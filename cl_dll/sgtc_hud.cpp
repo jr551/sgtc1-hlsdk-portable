@@ -53,7 +53,8 @@ static void SGTC_DrawVoteCastMenu( float flTime )
 {
 	if( g_iSgtcVoteCount < 0 || g_iSgtcVoteCount >= 5 )
 		return;
-	if( flTime <= g_flSgtcVoteAnim )
+	// ref @0x10076374 — while flTime < g_flSgtcVoteAnim, confirm @0x10076623.
+	if( flTime < g_flSgtcVoteAnim )
 	{
 		if( g_iSgtcVoteSel >= 0 )
 		{
