@@ -83,6 +83,7 @@ int gmsgTicketMode = 0;
 int gmsgHudInfoMode = 0;
 int gmsgConcuss = 0;
 int gmsgHasKey = 0;
+int g_iSgtcMapType = 0;
 int gmsgStamina = 0;
 int gmsgSubModel = 0;
 int gmsgArmor = 0;
@@ -539,7 +540,13 @@ BOOL CStargateTeamDM::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 		ChangePlayerTeam( pPlayer, TeamWithFewestPlayers(), TRUE, TRUE );
 		return TRUE;
 	}
-	if( FStrEq( pcmd, "showmenu" ) || FStrEq( pcmd, "menuselect" ) || FStrEq( pcmd, "classe" ) )
+	if( FStrEq( pcmd, "menuselect" ) )
+	{
+		if( CMD_ARGC() >= 2 )
+			pPlayer->SGTC_MenuselectBombKey( atoi( CMD_ARGV( 1 ) ) );
+		return TRUE;
+	}
+	if( FStrEq( pcmd, "showmenu" ) || FStrEq( pcmd, "classe" ) )
 		return TRUE; // VGUI-less client stub handles display
 	return CHalfLifeTeamplay::ClientCommand( pPlayer, pcmd );
 }
@@ -1155,7 +1162,7 @@ BOOL CStargateReplicateur::ClientCommand( CBasePlayer *pPlayer, const char *pcmd
 	if( FStrEq( pcmd, "menuselect" ) )
 	{
 		if( CMD_ARGC() >= 2 )
-			atoi( CMD_ARGV( 1 ) ); // ref reads arg, ignores
+			pPlayer->SGTC_MenuselectBombKey( atoi( CMD_ARGV( 1 ) ) );
 		return TRUE;
 	}
 	if( FStrEq( pcmd, "jointeam" ) )
@@ -1517,6 +1524,7 @@ BOOL CItemObjective::MyTouch( CBasePlayer *pPlayer )
 {
 	// Mirrors stock CItemSecurity::MyTouch (items.cpp:292).
 	pPlayer->m_rgItems[ITEM_SECURITY] += 1;
+	pPlayer->m_iInBombZone++;	// ref CItemSecurity::MyTouch @0xfd819
 	MESSAGE_BEGIN( MSG_ONE, gmsgHasKey, NULL, pPlayer->edict() );
 		WRITE_BYTE( pPlayer->m_rgItems[ITEM_SECURITY] );
 		WRITE_BYTE( 0 ); // ref HasKey REG size 2 (key + vote byte)

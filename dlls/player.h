@@ -209,6 +209,7 @@ public:
 	int	m_iProgressTeam[28];	// ref +0x93c: Progress team bytes (28 slots)
 	char	m_bBombKeyWarnSent;	// ref +0x927: HasKey bomb-zone warn latch
 	int	m_iBombKeyTimer;	// ref +0x90c: bomb-zone warn countdown
+	char	m_bBombZoneKeyLatch;	// ref +0x44c: HasKey sync while in bomb zone
 	float	m_flZoneTime;		// ref +0x498: last capture-zone touch (now+0.3)
 	int	m_iZoneId;		// ref +0x4cc: owning capture-zone id
 	int	m_iCapFlags;		// ref +0x4a4: cleared on capture-zone touch
@@ -236,6 +237,9 @@ public:
 	void SGTC_ShieldThinker( void );	// ref @0x1390b2 (partial port)
 	void SGTC_WeapDispSet( int mode );	// ref @0x133aca — MSG_ONE SubModel
 	void SGTC_SendProgressIfDirty( void );	// ref @0x139f18 — MSG_ONE gmsgProgress
+	void SGTC_TryBombKeyCampWarn( void );	// ref @0x1398ef — MSG_ONE HasKey camp warn
+	void SGTC_SyncBombZoneHasKey( void );	// ref @0x13a438 — HasKey on zone/key transitions
+	void SGTC_MenuselectBombKey( int sel );	// ref ClientCommand @0xcb456 — menuselect <=4
 	void SGTC_SgtcThink( void );	// ref @0x13963a — called from PostThink @0x1405b3
 
 	virtual void Spawn( void );

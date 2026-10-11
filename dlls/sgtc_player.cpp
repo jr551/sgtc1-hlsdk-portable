@@ -284,6 +284,66 @@ void CBasePlayer::SGTC_SendProgressIfDirty( void )
 	m_iNukeBonusSent = m_iNukeBonus;
 }
 
+// ref @0x1398ef — one-shot camp warn: HasKey(m_iInBombZone, 1).
+void CBasePlayer::SGTC_TryBombKeyCampWarn( void )
+{
+	if( m_bBombKeyWarnSent )
+		return;
+	if( m_iBombKeyTimer > 0 )
+		return;
+
+	const float flNow = gpGlobals->time;
+	if( flNow == CVAR_GET_FLOAT( "tourny" ) )
+		return;
+	if( flNow == CVAR_GET_FLOAT( "allowmodevote" ) )
+		return;
+	if( g_iSgtcMapType == 1 )
+		return;
+	if( !gmsgHasKey )
+		return;
+
+	MESSAGE_BEGIN( MSG_ONE, gmsgHasKey, NULL, pev );
+	WRITE_BYTE( m_iInBombZone );
+	WRITE_BYTE( 1 );
+	MESSAGE_END();
+	m_bBombKeyWarnSent = 1;
+}
+
+// ref @0x13a438 — clamp key count, HasKey on enter/leave bomb zone state.
+void CBasePlayer::SGTC_SyncBombZoneHasKey( void )
+{
+	if( m_iInBombZone > 1 )
+		m_iInBombZone = 1;
+
+	BOOL bSend = FALSE;
+	if( m_iInBombZone > 0 )
+	{
+		if( !m_bBombZoneKeyLatch )
+			bSend = TRUE;
+	}
+	else if( m_bBombZoneKeyLatch == 1 )
+		bSend = TRUE;
+
+	if( bSend && gmsgHasKey )
+	{
+		MESSAGE_BEGIN( MSG_ONE, gmsgHasKey, NULL, pev );
+		WRITE_BYTE( m_iInBombZone );
+		WRITE_BYTE( 0 );
+		MESSAGE_END();
+	}
+
+	m_bBombZoneKeyLatch = ( m_iInBombZone > 0 ) ? 1 : 0;
+}
+
+// ref ClientCommand @0xcb456 — menuselect arg <=4 arms bomb-key warn timer.
+void CBasePlayer::SGTC_MenuselectBombKey( int sel )
+{
+	if( sel > 4 )
+		return;
+	m_iBombKeyTimer = sel + 1;
+	m_bBombKeyWarnSent = 0;
+}
+
 // ref CBasePlayer::SgtcThink @0x13963a (full body ~7 KB; tail @0x13a404).
 void CBasePlayer::SGTC_SgtcThink( void )
 {
@@ -298,8 +358,10 @@ void CBasePlayer::SGTC_SgtcThink( void )
 	if( IsOnLadder() && m_bShieldWall )
 		m_bShieldWall = 0;
 
+	SGTC_TryBombKeyCampWarn();
 	SGTC_SendProgressIfDirty();
 	SGTC_TryStaminaDrainFromMovement( this );
 	SGTC_ShieldThinker();
 	SGTC_RadarScan();
+	SGTC_SyncBombZoneHasKey();
 }
