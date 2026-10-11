@@ -188,7 +188,14 @@ void CZatProj::ProjTouch( CBaseEntity *pOther )
 			if( pOwner )
 				pAttacker = pOwner->pev;
 		}
-		pOther->TakeDamage( pev, pAttacker, m_flDamage, DMG_SHOCK );
+		if( pOther->IsPlayer() )
+		{
+			CBasePlayer *pHit = (CBasePlayer *)pOther;
+			if( pHit->IsAlive() )
+				pHit->Zat( pAttacker );
+		}
+		else
+			pOther->TakeDamage( pev, pAttacker, m_flDamage, DMG_SHOCK );
 	}
 	EMIT_SOUND_DYN( ENT( pev ), CHAN_WEAPON, "weapons/zatimpact.wav", 1.0f, ATTN_NORM, 0, PITCH_NORM );
 	UTIL_Remove( this );

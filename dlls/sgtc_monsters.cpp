@@ -8,6 +8,7 @@
 #include "util.h"
 #include "cbase.h"
 #include "monsters.h"
+#include "player.h"
 #include "weapons.h"
 #include "soundent.h"
 #include "skill.h"
@@ -988,7 +989,15 @@ void CSGTCZatBoom::Discharge( void )
 	CBaseEntity *pEnt = NULL;
 	while ( ( pEnt = UTIL_FindEntityInSphere( pEnt, pev->origin, 192.0f ) ) != NULL )
 	{
-		if ( pEnt != this && pEnt->pev->takedamage != DAMAGE_NO )
+		if ( pEnt == this || pEnt->pev->takedamage == DAMAGE_NO )
+			continue;
+		if( pEnt->IsPlayer() )
+		{
+			CBasePlayer *pHit = (CBasePlayer *)pEnt;
+			if( pHit->IsAlive() )
+				pHit->Zat( pev );
+		}
+		else
 			pEnt->TakeDamage( pev, pev, 80.0f, DMG_SHOCK );
 	}
 	EMIT_SOUND_DYN( ENT( pev ), CHAN_BODY, "weapons/zatblow.wav", 1.0, ATTN_NORM, 0, PITCH_NORM );

@@ -4,8 +4,10 @@
 #include "extdll.h"
 #include "util.h"
 #include "cbase.h"
+#include "monsters.h"
 #include "player.h"
 #include "weapons.h"
+#include "shake.h"
 #include "sgtc_rules.h"
 #include "sgtc_shield.h"
 
@@ -398,6 +400,94 @@ void CBasePlayer::SGTC_MenuselectBombKey( int sel )
 		return;
 	m_iBombKeyTimer = sel + 1;
 	m_bBombKeyWarnSent = 0;
+}
+
+// ref @0x1336b8 — if shield sprint, snap pev+0x14c (armorvalue) to 220.
+void CBasePlayer::SnagInvis( void )
+{
+	if( m_bShieldSprint )
+		pev->armorvalue = 220.0f;	// rodata @0x1d6f9c
+}
+
+// ref @0x13720e — personal shield leg hit from enemy fire.
+void CBasePlayer::SGTC_TryShieldTraceHit( entvars_t *pevAttacker, TraceResult *ptr )
+{
+	if( !pevAttacker || !ptr )
+		return;
+	if( ptr->iHitgroup != HITGROUP_RIGHTLEG )
+		return;
+	if( m_bSnagInvisLatch )
+		return;
+	if( m_bShieldWall )
+		return;
+	if( pevAttacker->team == pev->team )
+		return;
+
+	m_bShieldTraceHit = 1;
+	m_flShieldTraceTime = gpGlobals->time;	// ref @0x13726a
+}
+
+// ref @0x13e995 — expire +0xa78 after ~2s from +0xa68.
+void CBasePlayer::SGTC_TickShieldTraceLatch( void )
+{
+	static const float kShieldTraceHold = 2.0f;	// rodata @0x1d2e20
+
+	if( !m_bShieldTraceHit )
+		return;
+	if( gpGlobals->time - m_flShieldTraceTime < kShieldTraceHold )
+		return;
+
+	m_bShieldTraceHit = 0;
+	pev->renderfx = 0;	// ref pev+0x15c
+	pev->armorvalue = 0.0f;	// rodata @0x1d2e24
+	pev->rendercolor = Vector( 255, 255, 255 );	// rodata @0x1d2e28
+}
+
+// ref @0x13378a — zat stun from zat_proj / zatboom on players.
+void CBasePlayer::Zat( entvars_t *pevInflictor )
+{
+	m_bZatLatch = 1;
+
+	if( m_bSnagInvisLatch || m_bShieldWall )
+		return;
+	if( pevInflictor && pevInflictor->team == pev->team )
+		return;
+
+	float flDmg;
+	if( m_bZatTouchFlag )
+	{
+		if( pevInflictor && pevInflictor->frags > pev->frags )
+			flDmg = 2000.0f;	// rodata @0x1d6fa8
+		else
+			flDmg = 80.0f;	// rodata @0x1d6fa4
+	}
+	else
+		flDmg = 10.0f;	// rodata @0x1d6fac
+
+	TakeDamage( pevInflictor, pevInflictor, flDmg, DMG_SHOCK );
+
+	if( !m_bZatTouchFlag && gmsgZatTouch )
+	{
+		MESSAGE_BEGIN( MSG_ONE, gmsgZatTouch, NULL, pev );
+		MESSAGE_END();
+	}
+
+	m_bZatTouchFlag = 1;
+
+	pev->armorvalue = 2.0f;	// rodata @0x1d6fb0
+	pev->rendercolor.x = 25.0f;	// @0x1d6fb4
+	pev->rendercolor.y = 10.0f;	// @0x1d6fac (reuse)
+	pev->rendercolor.z = 255.0f;	// @0x1d6fb8
+	m_bShieldSprint = 0;
+	SnagInvis();
+	pev->maxspeed = 50.0f;	// rodata @0x1d6fbc
+
+	m_iStamina -= 60;
+	if( m_iStamina < 0 )
+		m_iStamina = 0;
+	SGTC_UpdateStamina();
+
+	UTIL_ScreenFade( this, g_vecZero, 0.0f, 100.0f, 0, FFADE_IN );	// ref @0x1339f9
 }
 
 // ref @0x139814 — arm 0.2s window (rodata 0x1d7530), expire +0xa3e, copy to +0x4e8.

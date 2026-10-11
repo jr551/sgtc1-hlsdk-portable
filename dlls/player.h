@@ -228,6 +228,9 @@ public:
 	char	m_bShieldSprint;	// ref +0x4e9 — sprint drain gate
 	char	m_bShieldLarge;		// ref +0x460 — big shield sizing on spawn
 	char	m_bWeapSubModel;	// ref +0x925 — SubModel disp flag (WeapDispSet 1/2)
+	char	m_bZatLatch;		// ref +0x928 — set Zat @0x1337a2, cleared TakeDamage @0x13876d
+	char	m_bSnagInvisLatch;	// ref +0x4de — invis snag latch (Spawn copies +0x4df)
+	char	m_bSnagInvisFlag;	// ref +0x4df — armed by invis weapon, copied to latch on Spawn
 	int	m_iStamina;		// ref +0x43c — HUD Stamina usermsg byte
 	int	m_iStaminaSent;		// ref +0xa24 — last value sent to client
 	char	m_bLanceStunFlag;	// ref +0xa3e — set by CLanceProj::ProjTouch @0xfeb57
@@ -250,6 +253,10 @@ public:
 	void SGTC_SyncBombZoneHasKey( void );	// ref @0x13a438 — HasKey on zone/key transitions
 	void SGTC_MenuselectBombKey( int sel );	// ref ClientCommand @0xcb456 — menuselect <=4
 	void SGTC_SgtcThink( void );	// ref @0x13963a — called from PostThink @0x1405b3
+	void Zat( entvars_t *pevInflictor );	// ref @0x13378a — zat_proj / zatboom
+	void SnagInvis( void );	// ref @0x1336b8
+	void SGTC_TryShieldTraceHit( entvars_t *pevAttacker, TraceResult *ptr );	// ref TraceAttack @0x13720e
+	void SGTC_TickShieldTraceLatch( void );	// ref CheckTimeBasedDamage @0x13e995
 
 	virtual void Spawn( void );
 	void Pain( void );

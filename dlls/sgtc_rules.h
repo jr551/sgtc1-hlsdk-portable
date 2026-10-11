@@ -51,6 +51,7 @@ extern int gmsgStamina;
 extern int gmsgSubModel;
 extern int gmsgProgress;
 extern int gmsgHasKey;
+extern int gmsgZatTouch;
 extern int g_iSgtcMapType;	// ref MapType @0x236594 (skip camp warn when ==1)
 void SGTC_LinkUserMessages( void );
 void SGTC_InitTrigger( CBaseToggle *pTrigger );

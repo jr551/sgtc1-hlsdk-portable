@@ -383,6 +383,8 @@ void CBasePlayer::TraceAttack( entvars_t *pevAttacker, float flDamage, Vector ve
 {
 	if( pev->takedamage )
 	{
+		SGTC_TryShieldTraceHit( pevAttacker, ptr );
+
 		m_LastHitGroup = ptr->iHitgroup;
 
 		switch( ptr->iHitgroup )
@@ -451,6 +453,8 @@ int CBasePlayer::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, fl
 	// Already dead
 	if( !IsAlive() )
 		return 0;
+
+	m_bZatLatch = 0;	// ref TakeDamage @0x13876d
 
 	// go take the damage first
 	CBaseEntity *pAttacker = CBaseEntity::Instance( pevAttacker );
@@ -2122,6 +2126,8 @@ void CBasePlayer::PreThink( void )
 
 void CBasePlayer::CheckTimeBasedDamage() 
 {
+	SGTC_TickShieldTraceLatch();
+
 	int i;
 	BYTE bDuration = 0;
 

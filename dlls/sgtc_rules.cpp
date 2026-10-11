@@ -134,6 +134,7 @@ void SGTC_LinkUserMessages( void )
 	gmsgEnvAddRing = REG_USER_MSG( "AddRing", -1 );
 	gmsgChangeParticuleState = REG_USER_MSG( "ChgPartSt", 2 );
 	gmsgRadio = REG_USER_MSG( "Radio", 2 );	// ref registers Radio LAST (LinkUserMessages @0x142d44 tail)
+	gmsgZatTouch = REG_USER_MSG( "ZatTouch", 0 );
 }
 
 // ---------------------------------------------------------------------------
