@@ -181,6 +181,15 @@ static int SGTC_ProgressSlotStep( const CHudSgtc *hud, int slot )
 	return hud->m_iProgressTeam[slot - 14];
 }
 
+// ref FUN_1002a9ca tail @0x1002acc2: chip stays up when captured (team==1) unless st==2 or raw step==0.
+static int SGTC_ProgressSlotChipVisible( const CHudSgtc *hud, int slot )
+{
+	const int st = hud->m_iProgressTeamUiState[slot];
+	if( st == 2 || hud->m_iProgressSlotX[slot] == 0 )
+		return 0;
+	return hud->m_iProgressTeam[slot] == 1;
+}
+
 // ref VGUI panel update @0x1002abe2 — per-slot team progress chip state (no widgets on Xash).
 static void SGTC_TickProgressTeamUi( CHudSgtc *hud )
 {
@@ -245,7 +254,7 @@ static void SGTC_DrawProgressTeamUi( CHudSgtc *hud )
 	int xWalk = 0;
 	for( int i = 0; i < SGTC_BLIP_SLOTS; i++ )
 	{
-		if( hud->m_iProgressTeamUiState[i] != 1 )
+		if( !SGTC_ProgressSlotChipVisible( hud, i ) )
 		{
 			xWalk += SGTC_ProgressSlotStep( hud, i );
 			continue;
@@ -1314,11 +1323,7 @@ int CHudSgtc::MsgFunc_Progress( const char *pszName, int iSize, void *pbuf )
 	m_iProgressEnd = READ_BYTE();
 
 	if( m_iProgress == 0 )
-	{
-		m_iBlipProgress = 0;
-		memset( m_iProgressTeamUiState, 0, sizeof( m_iProgressTeamUiState ) );
-		m_iProgressIconCursor = 0;
-	}
+		m_iBlipProgress = 0; // ref FUN_10076c5f: no DAT_100e1b1c / DAT_100e1b90 reset on Progress msg
 	if( m_iProgress == 100 )
 		m_iBlipProgress = 100;
 	m_iFlags |= HUD_ACTIVE;
