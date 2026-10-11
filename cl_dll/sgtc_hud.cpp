@@ -19,11 +19,19 @@ static void SGTC_DrawLocalizedHudLine( int x, int y, const char *token, int r, i
 	gHUD.DrawHudString( x, y, ScreenWidth, text, r, g, b );
 }
 
-// ref @0x10076306 / @0x1007636f — DrawHudString x=ScreenWidth-0xdc, y=0x14, iMaxX=0x26c.
+// ref @0x10076306 / @0x1007636f — DrawHudString x=0x14, y=ScreenHeight-0xdc, iMaxX=0x26c (ds:0x100ed4c4).
 static void SGTC_DrawVotePromptLine( const char *token, int r, int g, int b )
 {
 	const char *text = CHudTextMessage::BufferedLocaliseTextString( token );
-	gHUD.DrawHudString( ScreenWidth - 220, 20, 620, text, r, g, b );
+	gHUD.DrawHudString( 20, ScreenHeight - 220, 620, text, r, g, b );
+}
+
+// ref @0x10076464 — vote cast lines: x=ScreenWidth/3, iMaxX=ScreenWidth/3+0x12c.
+static void SGTC_DrawVoteCastHudLine( int y, const char *token, int r, int g, int b )
+{
+	const char *text = CHudTextMessage::BufferedLocaliseTextString( token );
+	const int x = ScreenWidth / 3;
+	gHUD.DrawHudString( x, y, x + 300, text, r, g, b );
 }
 
 static void SGTC_VoteFormatCenter( int modeIndex )
@@ -60,8 +68,8 @@ static void SGTC_DrawVoteCastMenu( float flTime )
 {
 	if( g_iSgtcVoteCount < 0 || g_iSgtcVoteCount >= 5 )
 		return;
-	// ref @0x10076374 — flTime > g_flSgtcVoteAnim → confirm @0x10076623 (sel>=0).
-	if( flTime > g_flSgtcVoteAnim )
+	// ref @0x10076374 — flTime >= g_flSgtcVoteAnim → confirm @0x10076623 (sel>=0).
+	if( flTime >= g_flSgtcVoteAnim )
 	{
 		if( g_iSgtcVoteSel >= 0 )
 		{
@@ -76,16 +84,15 @@ static void SGTC_DrawVoteCastMenu( float flTime )
 	static const char *modeTok[] = {
 		"1. #MODE0", "2. #MODE1", "3. #MODE2", "4. #MODE3", "5. #MODE4"
 	};
-	const int bx = ScreenWidth / 3 + 300;
-	const int by = ScreenHeight / 2;
-	SGTC_DrawLocalizedHudLine( bx, by - 50, "#SELPREF", 255, 100, 100 );
-	const int modeY[] = { by - 30, by - 15, by, by + 15, by + 30 };
+	const int midY = ScreenHeight / 2;
+	SGTC_DrawVoteCastHudLine( midY - 50, "#SELPREF", 100, 100, 255 );
+	const int modeY[] = { midY - 30, midY - 15, midY, midY + 15, midY + 30 };
 	for( int i = 0; i < 5; i++ )
 	{
 		int r = 255, g = 255, b = 255;
 		if( i == g_iSgtcVoteSel )
 			r = 0;	// ref @0x1007646f — selected line r=0, g/b=0xff
-		SGTC_DrawLocalizedHudLine( bx, modeY[i], modeTok[i], r, g, b );
+		SGTC_DrawVoteCastHudLine( modeY[i], modeTok[i], r, g, b );
 	}
 }
 
@@ -513,9 +520,15 @@ int CHudSgtc::Draw( float flTime )
 	if( m_iPortraitActiveTeam )
 	{
 		if( g_iSgtcVoteCount < 0 && g_iSgtcVoteSel < 0 && g_iSgtcVoteCount < 5 )
-			SGTC_DrawVotePromptLine( "#PLZVOTE", 255, 255, 255 );
-		if( flTime > m_flKeyTime )
-			SGTC_DrawVotePromptLine( "#CAMPWARN", 255, 255, 255 );
+		{
+			const int c = m_iBlipProgress + 100;
+			SGTC_DrawVotePromptLine( "#PLZVOTE", c, c, 255 );
+		}
+		if( flTime >= m_flKeyTime )
+		{
+			const int c = m_iBlipProgress + 100;
+			SGTC_DrawVotePromptLine( "#CAMPWARN", 255, c, c );
+		}
 	}
 
 	SGTC_DrawVoteCastMenu( flTime );
