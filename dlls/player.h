@@ -231,6 +231,7 @@ public:
 	char	m_bLanceStunLatch;	// ref +0x4e8 — latched copy of +0xa3e (SgtcThink)
 	char	m_bShieldSprint;	// ref +0x4e9 — sprint drain gate
 	char	m_bShieldLarge;		// ref +0x460 — big shield sizing on spawn
+	char	m_bNukeViewSnap;	// ref +0x463 — SgtcThink copies view_ofs @0x1398ac
 	char	m_bWeapSubModel;	// ref +0x925 — SubModel disp flag (WeapDispSet 1/2)
 	char	m_bZatLatch;		// ref +0x928 — set Zat @0x1337a2, cleared TakeDamage @0x13876d
 	char	m_bSnagInvisLatch;	// ref +0x4de — invis snag latch (Spawn copies +0x4df)
@@ -257,6 +258,7 @@ public:
 	void SGTC_TickZatTouchMaintain( void );	// ref @0x139db0 — pev+0x160==1 zat FX sustain
 	void SGTC_TickClearZatShieldPe( void );	// ref @0x139e51 — restore armor/render after zat
 	void SGTC_TickNukeChargeExpiry( void );	// ref @0x139edb — clear +0x45c when charge time elapsed
+	void SGTC_TickNukeViewSnap( void );	// ref @0x1398ac — pev+0x174 view_ofs (0,0,-10)
 	void SGTC_TickShieldEnergyAndMaxspeed( void );	// ref @0x13a15c — shield pev+0x14c, maxspeed
 	void SGTC_SyncShieldEnergyFromContents( void );	// ref @0x13a3a5 — PointContents → pev+0x14c
 	void SGTC_TryBombKeyCampWarn( void );	// ref @0x1398ef — MSG_ONE HasKey camp warn

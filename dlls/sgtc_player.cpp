@@ -595,6 +595,17 @@ void CBasePlayer::SGTC_TickLanceStunLatch( void )
 	m_bLanceStunLatch = m_bLanceStunFlag;
 }
 
+// ref @0x1398ac — while +0x463, copy rodata (0,0,-10) into pev+0x174 (ref view_ofs).
+void CBasePlayer::SGTC_TickNukeViewSnap( void )
+{
+	static const float kViewSnapZ = -10.0f;	// rodata @0x1d7548 (via ebx-0x2d4d8)
+
+	if( !m_bNukeViewSnap )
+		return;
+
+	pev->view_ofs = Vector( 0.0f, 0.0f, kViewSnapZ );
+}
+
 // ref @0x139db0 — while pev+0x160 (health marker) == 1, latch +0x3fc and sustain zat visuals.
 void CBasePlayer::SGTC_TickZatTouchMaintain( void )
 {
@@ -623,7 +634,7 @@ void CBasePlayer::SGTC_TickClearZatShieldPe( void )
 {
 	static const float kShieldCap = 255.0f;	// rodata @0x1d7540
 
-	if( pev->armorvalue > gpGlobals->time )
+	if( pev->armorvalue <= gpGlobals->time )
 		return;
 	if( m_bShieldSprint )
 		return;
@@ -658,6 +669,7 @@ void CBasePlayer::SGTC_SgtcThink( void )
 		m_bShieldWall = 0;
 
 	SGTC_TickLanceStunLatch();
+	SGTC_TickNukeViewSnap();
 	SGTC_TryBombKeyCampWarn();
 	SGTC_TickWeapSubModelDisp( this );
 	SGTC_TickCloakPulse();

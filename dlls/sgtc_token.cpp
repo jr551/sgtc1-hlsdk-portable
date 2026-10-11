@@ -126,6 +126,11 @@ int CToken::Activator( CBaseEntity *pPlayer )
 		{
 			if( pl->m_iNukeCharge < 100 )
 			{
+				if( !pl->m_bNukeViewSnap && pl->pev->weaponanim == 0 )
+				{
+					pl->SetAnimation( (PLAYER_ANIM)4 );	// ref @0x145323 push 4
+					pl->m_bNukeViewSnap = 1;
+				}
 				pl->m_iNukeCharge++;
 				pl->m_flNukeChargeTime = gpGlobals->time + 0.15f;
 				return 0;
