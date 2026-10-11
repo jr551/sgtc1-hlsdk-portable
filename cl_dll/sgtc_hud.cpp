@@ -53,8 +53,8 @@ static void SGTC_DrawVoteCastMenu( float flTime )
 {
 	if( g_iSgtcVoteCount < 0 || g_iSgtcVoteCount >= 5 )
 		return;
-	// ref @0x10076374 — while flTime < g_flSgtcVoteAnim, confirm @0x10076623.
-	if( flTime < g_flSgtcVoteAnim )
+	// ref @0x10076374 — flTime > g_flSgtcVoteAnim → confirm @0x10076623 (sel>=0).
+	if( flTime > g_flSgtcVoteAnim )
 	{
 		if( g_iSgtcVoteSel >= 0 )
 		{
@@ -134,6 +134,66 @@ static void SGTC_DrawSprite( const char *name, int x, int y )
 	wrect_t rc;
 	if( SGTC_Sprite( name, &rc ) )
 		SPR_DrawAdditive( 0, x, y, &rc );
+}
+
+// ref CHudSgtc::Draw @0x100738a6 — tac overlay tri-strip → sprite layers (tacdisp + tac_*).
+static void SGTC_TickArmorTacOverlay( CHudSgtc *hud, float flTime )
+{
+	if( hud->m_iArmorState == 1 )
+	{
+		hud->m_flArmorTacPhase = flTime;
+		hud->m_iArmorState = 2;
+		return;
+	}
+	if( hud->m_iArmorState == 3 || ( hud->m_iArmorState == 2 && hud->m_iTacDispActive ) )
+	{
+		hud->m_flArmorTacPhase = flTime;
+		hud->m_iArmorState = 0;
+	}
+}
+
+static void SGTC_DrawArmorTacOverlay( CHudSgtc *hud, float flTime, int lx, int ly )
+{
+	if( !hud->m_iArmorOverlay && !hud->m_iTacDispActive && hud->m_iArmorState == 0 )
+		return;
+
+	SGTC_TickArmorTacOverlay( hud, flTime );
+
+	const int tx = lx + 36;
+	const int ty = ly - 44;
+
+	wrect_t base;
+	if( SGTC_Sprite( "tacdisp", &base ) )
+		SPR_DrawAdditive( 0, tx, ty, &base );
+
+	float armorPts = hud->m_flArmorBar;
+	if( hud->m_iArmorParam > 0 )
+		armorPts = (float)hud->m_iArmorParam;
+	if( armorPts <= 2000.0f )
+	{
+		if( armorPts <= 100.0f )
+			armorPts *= 100.0f;
+	}
+
+	const char *layer = "tac_green";
+	if( armorPts > 5000.0f )
+		layer = "tac_red";
+	else if( armorPts > 2000.0f )
+		layer = "tac_yellow";
+
+	int r = 0, g = 0, b = 255;
+	if( hud->m_iArmorTeamTint )
+	{
+		g = 255;
+		b = 0;
+	}
+
+	wrect_t tint;
+	if( !SGTC_Sprite( layer, &tint ) )
+		return;
+
+	SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( layer ) ), r, g, b );
+	SPR_DrawAdditive( 0, tx, ty, &tint );
 }
 
 static void SGTC_DrawBarNeedle( const char *bar, const char *needle, int x, int y, float frac )
@@ -313,6 +373,7 @@ int CHudSgtc::Draw( float flTime )
 	float life = (float)gHUD.m_Health.m_iHealth;
 	SGTC_DrawBarNeedle( "life_bar", "needle", lx + 24, ly + 28, life / 100.0f );
 	SGTC_DrawBarNeedle( "armor_bar", "needle", lx + 48, ly + 28, m_flArmorBar / 100.0f );
+	SGTC_DrawArmorTacOverlay( this, flTime, lx, ly );
 	SGTC_DrawBarNeedle( "stamn_bar", "needle", lx + 72, ly + 28, (float)s_iSgtcStaminaByte / 100.0f );
 
 	if( m_iHasKey )
@@ -452,6 +513,7 @@ void CHudSgtc::Reset( void )
 	m_iArmorOverlay = 0;
 	m_iArmorState = 0;
 	m_iArmorParam = 0;
+	m_flArmorTacPhase = 0;
 	m_iBlipProgress = 0;
 	m_iRadarFocusX = 0;
 	m_iRadarFocusY = 0;

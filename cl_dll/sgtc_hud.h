@@ -65,6 +65,7 @@ public:
 	int m_iArmorOverlay;		// ref +0x1684
 	int m_iArmorState;		// ref +0x1690
 	int m_iArmorParam;		// ref +0x168c
+	float m_flArmorTacPhase;	// ref tri-strip +0x14 (anim clock @0x100739bd)
 
 	int m_iBlipProgress;		// ref +0x1674 (Progress msg cmd 0/100)
 
