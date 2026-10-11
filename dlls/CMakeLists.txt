@@ -25,11 +25,17 @@ project (SVDLL)
 
 set (SVDLL_LIBRARY server)
 
+option( SGTC_EXPORT_ALL_SYMBOLS "Export class methods for tests/stub_engine (logic parity harness)" OFF )
+
 if(NOT MSVC)
 	add_compile_options(-fno-exceptions) # GCC/Clang flag
 	add_compile_options(-fno-rtti) # GCC/Clang flag
 	add_compile_options(-Wno-invalid-offsetof) # GCC/Clang flag
-	add_compile_options(-fvisibility=hidden) # GCC/Clang flag
+	if( SGTC_EXPORT_ALL_SYMBOLS )
+		add_compile_options(-fvisibility=default) # must win over any CMAKE_CXX_FLAGS hidden
+	else()
+		add_compile_options(-fvisibility=hidden) # GCC/Clang flag
+	endif()
 	add_definitions(-D_LINUX) # It seems enough for all non-Win32 systems
 	add_definitions(-Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf -D_vsnprintf=vsnprintf )
 	if(CMAKE_BUILD_TYPE MATCHES "Release"

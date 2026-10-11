@@ -721,7 +721,7 @@ int CHudSgtc::Draw( float flTime )
 			const int bgX = ScreenWidth / 2 - 0x47;
 			const int bgY = ScreenHeight - ScreenHeight / 4 - 7;
 			SPR_Set( gHUD.GetSprite( bgIdx ), 120, 120, 120 ); // ref @0x100751ef: push 0x78,0x78,0x78
-			SPR_DrawAdditive( 0, bgX, bgY, &bg );
+			SPR_DrawHoles( 0, bgX, bgY, &bg ); // ref @0x1007520b: call ds:0x100ed728 (SPR_DrawHoles)
 		}
 
 		const int fIdx = gHUD.GetSpriteIndex( "pbar" );
@@ -744,7 +744,7 @@ int CHudSgtc::Draw( float flTime )
 			const int r = (int)( 180.0f * rem );               // 180.0f @ds:0x1009eff8
 			const int g = (int)( 180.0f - 180.0f * rem );
 			SPR_Set( gHUD.GetSprite( fIdx ), r, g, 0 );
-			SPR_DrawAdditive( 0, fillX, fillY, &fr );
+			SPR_DrawHoles( 0, fillX, fillY, &fr ); // ref @0x10075315: call ds:0x100ed728 (SPR_DrawHoles)
 		}
 	}
 
