@@ -41,6 +41,9 @@ cvar_t teamoverride	= { "mp_teamoverride","1" };
 cvar_t defaultteam	= { "mp_defaultteam","0" };
 cvar_t allowmonsters	= { "mp_allowmonsters","0", FCVAR_SERVER };
 cvar_t bhopcap		= { "mp_bhopcap", "1", FCVAR_SERVER };
+cvar_t corpsephysics = { "corpsephysics", "0", FCVAR_SERVER };
+cvar_t corpse_effects = { "corpse_effects", "1", FCVAR_SERVER };
+cvar_t resetflagtime = { "resetflagtime", "15", FCVAR_SERVER };
 
 cvar_t allow_spectators = { "allow_spectators", "0", FCVAR_SERVER };	// 0 prevents players from being spectators
 
@@ -471,6 +474,9 @@ void GameDLLInit( void )
 	CVAR_REGISTER( &weaponstay );
 	CVAR_REGISTER( &selfgauss );
 	CVAR_REGISTER( &satchelfix );
+	CVAR_REGISTER( &corpsephysics );
+	CVAR_REGISTER( &corpse_effects );
+	CVAR_REGISTER( &resetflagtime );
 	CVAR_REGISTER( &forcerespawn );
 	CVAR_REGISTER( &flashlight );
 	CVAR_REGISTER( &aimcrosshair );

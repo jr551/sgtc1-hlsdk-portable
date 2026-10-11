@@ -44,6 +44,7 @@ extern "C" int g_bhopcap;
 void InitInput( void );
 void EV_HookEvents( void );
 void IN_Commands( void );
+#include "sgtc_protocol.h"
 
 int __MsgFunc_Bhopcap( const char *pszName, int iSize, void *pbuf )
 {
@@ -236,6 +237,7 @@ so the HUD can reinitialize itself.
 int DLLEXPORT HUD_VidInit( void )
 {
 	gHUD.VidInit();
+	SGTC_ClientHUD_VidInit();
 #ifdef USE_VGUI_FOR_GOLDSOURCE_SUPPORT
 	vgui::Panel* root=(vgui::Panel*)gEngfuncs.VGui_GetPanel();
 	if (root) {
@@ -272,6 +274,7 @@ void DLLEXPORT HUD_Init( void )
 {
 	InitInput();
 	gHUD.Init();
+	SGTC_ClientHUD_Init();
 
 	gEngfuncs.pfnHookUserMsg( "Bhopcap", __MsgFunc_Bhopcap );
 }

@@ -108,7 +108,12 @@ set (CLDLL_SOURCES
 	util.cpp
 	view.cpp
 	scoreboard.cpp
-	MOTD.cpp)
+	MOTD.cpp
+	sgtc_protocol.cpp
+	sgtc_hud.cpp
+	sgtc_env.cpp
+	sgtc_vgui.cpp
+	sgtc_weapons_client.cpp)
 
 include_directories (. hl/ ../dlls ../dlls/wpn_shared ../common ../engine ../pm_shared ../game_shared ../public ../utils/false_vgui/include)
 

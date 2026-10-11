@@ -197,6 +197,21 @@ public:
 
 	char m_szTeamName[TEAM_NAME_LENGTH];
 
+	// --- StargateTC extension fields (ref CBasePlayer extra offsets) ---
+	float	m_flNukeGrace;
+	float	m_flNukeChargeTime;
+	int	m_iNukeCharge;
+	int	m_iInBombZone;
+	int	m_iNukeBonus;
+	float	m_flZoneTime;
+	int	m_iZoneId;
+	int	m_iCapFlags;
+	char	m_bZoneFlag;
+	int	m_iCapFlags2;
+	int	m_iHasNVG;
+	float	m_flGateTravel;
+	int	m_iGateTeam;
+
 	virtual void Spawn( void );
 	void Pain( void );
 

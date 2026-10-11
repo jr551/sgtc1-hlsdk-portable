@@ -115,6 +115,43 @@ set (SVDLL_SOURCES
 	schedule.cpp
 	scientist.cpp
 	scripted.cpp
+	sgtc_gate.cpp
+	sgtc_monsters.cpp
+	sgtc_rules.cpp
+	sgtc_bolt.cpp
+	sgtc_lanceproj.cpp
+	sgtc_links.cpp
+	sgtc_token.cpp
+	sgtc_zones.cpp
+	sgtc_misc.cpp
+
+	sgtc_wpn_ammo_psg1.cpp
+	sgtc_wpn_batsup.cpp
+	sgtc_wpn_couteau.cpp
+	sgtc_wpn_coujaf.cpp
+	sgtc_wpn_flashbang.cpp
+	sgtc_wpn_gacgoa.cpp
+	sgtc_wpn_glstaff.cpp
+	sgtc_wpn_goaregen.cpp
+	sgtc_wpn_invis.cpp
+	sgtc_wpn_lance.cpp
+	sgtc_wpn_larve.cpp
+	sgtc_wpn_main.cpp
+	sgtc_wpn_medic.cpp
+	sgtc_wpn_m16.cpp
+	sgtc_wpn_m92s.cpp
+	sgtc_wpn_mustardgrenade.cpp
+	sgtc_wpn_narcogrenade.cpp
+	sgtc_wpn_nervegrenade.cpp
+	sgtc_wpn_p90.cpp
+	sgtc_wpn_psg1.cpp
+	sgtc_wpn_reetou.cpp
+	sgtc_wpn_shield.cpp
+	sgtc_wpn_smokegrenade.cpp
+	sgtc_wpn_tacgun.cpp
+	sgtc_wpn_usas.cpp
+	sgtc_wpn_zat.cpp
+	sgtc_wpn_zatarc.cpp
 	shotgun.cpp
 	singleplay_gamerules.cpp
 	skill.cpp
