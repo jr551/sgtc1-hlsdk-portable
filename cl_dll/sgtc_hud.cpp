@@ -161,10 +161,11 @@ static void SGTC_TickBlipBarProgress( CHudSgtc *hud, float flTime )
 	if( hud->m_iProgress <= 0 || hud->m_iProgress >= 100 )
 		return;
 
-	if( flTime >= hud->m_flBlipProgressLatch )
+	// ref @0x100750db: x87 `test ah,0x41` after comparing flTime to the latch => strict flTime > latch.
+	if( flTime > hud->m_flBlipProgressLatch )
 	{
 		hud->m_iBlipProgress++;
-		hud->m_flBlipProgressLatch = flTime + 0.05f; // ref fadd @0x10075115 (ds:0x10094a78)
+		hud->m_flBlipProgressLatch = flTime + 0.15f; // ref fadd QWORD @0x10075115 (ds:0x10094a78 = 0.15)
 	}
 
 	const int iFloor = hud->m_iProgress - 7;
@@ -709,17 +710,41 @@ int CHudSgtc::Draw( float flTime )
 	SGTC_TickBlipPulse( this );
 	SGTC_TickBlipBarProgress( this, flTime );
 
-	if( m_iBlipProgress > 0 && m_iBlipProgress < 0x65 && gHUD.GetSpriteIndex( "pbar" ) )
+	// ref pbar block @0x10075156: pbare is the gray container, pbar is the top-drained fill.
+	if( m_iBlipProgress > 0 && m_iBlipProgress < 0x65 )
 	{
-		wrect_t bar = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "pbar" ) );
-		int x = ScreenWidth / 2 - bar.right / 2;
-		int y = ScreenHeight - 48;
-		SPR_DrawAdditive( 0, x, y, &bar );
-		if( gHUD.GetSpriteIndex( "pbare" ) )
+		const int bgIdx = gHUD.GetSpriteIndex( "pbare" );
+		if( bgIdx > 0 )
 		{
-			wrect_t fill = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "pbare" ) );
-			fill.right = (int)( fill.right * ( m_iBlipProgress / 100.0f ) );
-			SPR_DrawAdditive( 0, x, y, &fill );
+			// ref @0x1007517c: bgX = ScreenWidth/2 - 0x47, bgY = ScreenHeight - ScreenHeight/4 - 7.
+			wrect_t bg = gHUD.GetSpriteRect( bgIdx );
+			const int bgX = ScreenWidth / 2 - 0x47;
+			const int bgY = ScreenHeight - ScreenHeight / 4 - 7;
+			SPR_Set( gHUD.GetSprite( bgIdx ), 120, 120, 120 ); // ref @0x100751ef: push 0x78,0x78,0x78
+			SPR_DrawAdditive( 0, bgX, bgY, &bg );
+		}
+
+		const int fIdx = gHUD.GetSpriteIndex( "pbar" );
+		if( fIdx > 0 )
+		{
+			// ref @0x10075222: fillX = ScreenWidth/2 - 0x40, fillY = ScreenHeight - ScreenHeight/4.
+			wrect_t fr = gHUD.GetSpriteRect( fIdx );
+			const int fillX = ScreenWidth / 2 - 0x40;
+			const int fillY = ScreenHeight - ScreenHeight / 4;
+
+			int p = m_iBlipProgress;
+			if( p < 0 )
+				p = 0;
+			const double rem = ( 100.0 - p ) / 100.0; // ref fsubr/fdiv ds:0x100a1d30 (100.0)
+
+			// ref @0x10075296: rect.top -= (int)(rect.top * rem); left/right/bottom untouched.
+			fr.top = fr.top - (int)( fr.top * rem );
+
+			// ref @0x100752db: SPR_Set( h, (int)(180*rem), (int)(180-180*rem), 0 ).
+			const int r = (int)( 180.0f * rem );               // 180.0f @ds:0x1009eff8
+			const int g = (int)( 180.0f - 180.0f * rem );
+			SPR_Set( gHUD.GetSprite( fIdx ), r, g, 0 );
+			SPR_DrawAdditive( 0, fillX, fillY, &fr );
 		}
 	}
 
