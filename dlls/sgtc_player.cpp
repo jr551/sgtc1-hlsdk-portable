@@ -502,6 +502,53 @@ void CBasePlayer::Zat( entvars_t *pevInflictor )
 	UTIL_ScreenFade( this, g_vecZero, 0.0f, 100.0f, 0, FFADE_IN );	// ref @0x1339f9
 }
 
+// ref helper @0x1abc1c — Manhattan 3d distance as int.
+static int SGTC_Endo_distance3d( const Vector &a, const Vector &b )
+{
+	return (int)fabs( a.x - b.x ) + (int)fabs( a.y - b.y ) +
+		(int)fabs( a.z - b.z );
+}
+
+// ref @0x139c13 — team spawn info proximity + camp latch (+0x4a4/+0x4a8/+0x4b4).
+void CBasePlayer::SGTC_TickSpawnCampProximity( void )
+{
+	static const float kProxExtendSec = 1.0f;	// rodata @0x1d7548
+	static const float kCampTouchSec = 0.3f;	// rodata @0x1d754c
+	static const int kNearSpawnDist = 0xc7;
+	static const int kCampDist = 0xc8;
+
+	const char *pszSpawnClass = NULL;
+	if( pev->team == 1 )
+		pszSpawnClass = "info_player_goauld";
+	else if( pev->team == 2 )
+		pszSpawnClass = "info_player_torri";
+	else
+		return;
+
+	CBaseEntity *pSpawn = NULL;
+	while( ( pSpawn = UTIL_FindEntityByClassname( pSpawn, pszSpawnClass ) ) != NULL )
+	{
+		if( SGTC_Endo_distance3d( pev->origin, pSpawn->pev->origin ) <= kNearSpawnDist )
+		{
+			m_flSpawnProxDeadline = gpGlobals->time + kProxExtendSec;
+			break;
+		}
+	}
+
+	const int iDistRef = SGTC_Endo_distance3d( pev->origin, m_vecSpawnCampRef );
+	BOOL bCampTick = FALSE;
+	if( iDistRef > kCampDist )
+		bCampTick = TRUE;
+	else if( gpGlobals->time >= m_flSpawnProxDeadline )
+		bCampTick = TRUE;
+
+	if( bCampTick )
+	{
+		m_vecSpawnCampRef = pev->origin;
+		m_flSpawnCampTouch = gpGlobals->time + kCampTouchSec;
+	}
+}
+
 // ref @0x139b26 — holster clears SubModel disp (+0x925) via WeapDispSet(2) when +0xcd4 empty.
 static void SGTC_TickWeapSubModelDisp( CBasePlayer *p )
 {
@@ -568,6 +615,7 @@ void CBasePlayer::SGTC_SgtcThink( void )
 	SGTC_ShieldThinker();
 	SGTC_TickWeapSubModelDisp( this );
 	SGTC_TickCloakPulse();
+	SGTC_TickSpawnCampProximity();
 	SGTC_RadarScan();
 	SGTC_SyncBombZoneHasKey();
 }

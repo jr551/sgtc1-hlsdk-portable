@@ -157,7 +157,7 @@ void CTriggerCapture::CaptureTouch( CBaseEntity *pOther )
 		if( pl->IsAlive() )	// ref vtable+0xa8
 		{
 			pl->m_bZoneFlag = 0;
-			pl->m_iCapFlags = 0;
+			pl->m_flSpawnCampTouch = 0.0f;
 			pl->m_flNukeChargeTime = 0;	// ref +0x40c (unmapped reuse)
 			pl->m_iCapFlags2 = 0;
 		}

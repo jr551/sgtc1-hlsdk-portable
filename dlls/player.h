@@ -213,7 +213,9 @@ public:
 	char	m_bBombZoneKeyLatch;	// ref +0x44c: HasKey sync while in bomb zone
 	float	m_flZoneTime;		// ref +0x498: last capture-zone touch (now+0.3)
 	int	m_iZoneId;		// ref +0x4cc: owning capture-zone id
-	int	m_iCapFlags;		// ref +0x4a4: cleared on capture-zone touch
+	float	m_flSpawnCampTouch;	// ref +0x4a4: spawn-camp latch (now+0.3) / cleared on capture touch
+	float	m_flSpawnProxDeadline;	// ref +0x4a8: extended while near team spawn info
+	Vector	m_vecSpawnCampRef;	// ref +0x4b4: camp position snapshot
 	char	m_bZoneFlag;		// ref +0x3e2: cleared on capture-zone touch
 	int	m_iCapFlags2;		// ref +0xa70: cleared on capture-zone touch
 	int	m_iHasNVG;		// ref +0xe1c: set by item_NVG
@@ -250,6 +252,7 @@ public:
 	void SGTC_SendProgressIfDirty( void );	// ref @0x139f18 — MSG_ONE gmsgProgress
 	void SGTC_TickLanceStunLatch( void );	// ref @0x139814 — lance stun timer + latch
 	void SGTC_TickCloakPulse( void );	// ref @0x139b5d — cloak pulse while +0x448
+	void SGTC_TickSpawnCampProximity( void );	// ref @0x139c13 — info_player_goauld/torri scan
 	void SGTC_TickShieldEnergyAndMaxspeed( void );	// ref @0x13a15c — shield pev+0x14c, maxspeed
 	void SGTC_SyncShieldEnergyFromContents( void );	// ref @0x13a3a5 — PointContents → pev+0x14c
 	void SGTC_TryBombKeyCampWarn( void );	// ref @0x1398ef — MSG_ONE HasKey camp warn
