@@ -224,6 +224,7 @@ public:
 	float	m_flRadarNext;		// ref +0x49c: next CBasePlayer::RadarScan tick
 	int	m_iShieldCharge;	// ref +0x158 — shield weapon charge 0..9 (ShieldThinker)
 	float	m_flShieldLatch;	// ref +0x3f8
+	float	m_flSgtcLatch3fc;	// ref +0x3fc — zat-maintain latch (rodata 0.125 @0x1d7528)
 	float	m_flShieldThinkNext;	// ref +0x404
 	char	m_bShieldWall;		// ref +0x3e0 — deploy personal shield
 	char	m_bShieldSpawned;	// ref +0x4e4 — effect_shield entity active
@@ -253,6 +254,9 @@ public:
 	void SGTC_TickLanceStunLatch( void );	// ref @0x139814 — lance stun timer + latch
 	void SGTC_TickCloakPulse( void );	// ref @0x139b5d — cloak pulse while +0x448
 	void SGTC_TickSpawnCampProximity( void );	// ref @0x139c13 — info_player_goauld/torri scan
+	void SGTC_TickZatTouchMaintain( void );	// ref @0x139db0 — pev+0x160==1 zat FX sustain
+	void SGTC_TickClearZatShieldPe( void );	// ref @0x139e51 — restore armor/render after zat
+	void SGTC_TickNukeChargeExpiry( void );	// ref @0x139edb — clear +0x45c when charge time elapsed
 	void SGTC_TickShieldEnergyAndMaxspeed( void );	// ref @0x13a15c — shield pev+0x14c, maxspeed
 	void SGTC_SyncShieldEnergyFromContents( void );	// ref @0x13a3a5 — PointContents → pev+0x14c
 	void SGTC_TryBombKeyCampWarn( void );	// ref @0x1398ef — MSG_ONE HasKey camp warn

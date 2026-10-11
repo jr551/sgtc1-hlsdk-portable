@@ -563,8 +563,11 @@ static void SGTC_TickWeapSubModelDisp( CBasePlayer *p )
 void CBasePlayer::SGTC_TickCloakPulse( void )
 {
 	static const float kCloakPulseSec = 0.2f;	// rodata @0x1d754a
+	static const float kCloakHealthGate = 100.0f;	// rodata @0x1d753c — pev+0x160
 
 	if( !m_bSgtcCloakTick )
+		return;
+	if( pev->health != kCloakHealthGate )
 		return;
 	if( gpGlobals->time < pev->animtime )
 		return;
@@ -592,6 +595,54 @@ void CBasePlayer::SGTC_TickLanceStunLatch( void )
 	m_bLanceStunLatch = m_bLanceStunFlag;
 }
 
+// ref @0x139db0 — while pev+0x160 (health marker) == 1, latch +0x3fc and sustain zat visuals.
+void CBasePlayer::SGTC_TickZatTouchMaintain( void )
+{
+	static const float kHealthGate = 1.0f;	// rodata @0x1d7548
+	static const float kLatch3fc = 0.125f;	// rodata @0x1d7528
+	static const float kZatArmor = 1.0f;	// rodata @0x1d7548 (reuse)
+
+	if( pev->health != kHealthGate )
+		return;
+
+	m_flSgtcLatch3fc = kLatch3fc;
+	m_iStamina = 0;
+
+	if( !m_bZatTouchFlag )
+		return;
+
+	pev->renderfx = kRenderFxGlowShell;	// ref pev+0x15c = 0x13
+	pev->armorvalue = kZatArmor;
+	pev->rendercolor.x = 25.0f;	// rodata @0x1d7550
+	pev->rendercolor.y = 10.0f;	// rodata @0x1d7554
+	pev->rendercolor.z = 255.0f;	// rodata @0x1d7540
+}
+
+// ref @0x139e51 — when armor latch expired and not sprinting past gate travel, restore PE shield colors.
+void CBasePlayer::SGTC_TickClearZatShieldPe( void )
+{
+	static const float kShieldCap = 255.0f;	// rodata @0x1d7540
+
+	if( pev->armorvalue > gpGlobals->time )
+		return;
+	if( m_bShieldSprint )
+		return;
+	if( m_flGateTravel == gpGlobals->time )
+		return;
+
+	pev->armorvalue = kShieldCap;
+	pev->renderfx = kRenderFxNone;
+	pev->rendermode = kRenderNormal;
+}
+
+// ref @0x139edb — drop nuke arm counter when +0x42c charge window ends.
+void CBasePlayer::SGTC_TickNukeChargeExpiry( void )
+{
+	if( m_flNukeChargeTime > gpGlobals->time )
+		return;
+	m_iNukeCharge = 0;
+}
+
 // ref CBasePlayer::SgtcThink @0x13963a (full body ~7 KB; tail @0x13a404).
 void CBasePlayer::SGTC_SgtcThink( void )
 {
@@ -608,14 +659,17 @@ void CBasePlayer::SGTC_SgtcThink( void )
 
 	SGTC_TickLanceStunLatch();
 	SGTC_TryBombKeyCampWarn();
+	SGTC_TickWeapSubModelDisp( this );
+	SGTC_TickCloakPulse();
+	SGTC_TickSpawnCampProximity();
+	SGTC_TickZatTouchMaintain();
+	SGTC_TickClearZatShieldPe();
+	SGTC_TickNukeChargeExpiry();
 	SGTC_SendProgressIfDirty();
 	SGTC_TickMoveLatchAndStaminaDrain( this );
 	SGTC_TickShieldEnergyAndMaxspeed();
 	SGTC_SyncShieldEnergyFromContents();
 	SGTC_ShieldThinker();
-	SGTC_TickWeapSubModelDisp( this );
-	SGTC_TickCloakPulse();
-	SGTC_TickSpawnCampProximity();
 	SGTC_RadarScan();
 	SGTC_SyncBombZoneHasKey();
 }
