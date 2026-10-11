@@ -2618,11 +2618,11 @@ void CBasePlayer::PostThink()
 	if( g_fGameOver )
 		goto pt_end;	// intermission or finale
 
+	// ref PostThink @0x1405b3 → SgtcThink @0x13963a (runs before alive-only PostThink body).
+	SGTC_SgtcThink();
+
 	if( !IsAlive() )
 		goto pt_end;
-
-	// ref PostThink @0x1405b3 → SgtcThink @0x13963a (StargateTC per-player tick).
-	SGTC_SgtcThink();
 
 	// Handle Tank controlling
 	if( m_pTank != 0 )

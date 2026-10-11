@@ -233,6 +233,8 @@ public:
 	char	m_bLanceStunLatch;	// ref +0x4e8 — latched copy of +0xa3e (SgtcThink)
 	char	m_bShieldSprint;	// ref +0x4e9 — sprint drain gate
 	char	m_bShieldLarge;		// ref +0x460 — big shield sizing on spawn
+	char	m_bSgtcPad461;		// ref +0x461 (unused in .so)
+	char	m_bSgtcBadGuy;		// ref +0x462 — ??-BAD-GUY-?? netname trap @0x1397a7
 	char	m_bNukeViewSnap;	// ref +0x463 — SgtcThink copies view_ofs @0x1398ac
 	char	m_bWeapSubModel;	// ref +0x925 — SubModel disp flag (WeapDispSet 1/2)
 	char	m_bZatLatch;		// ref +0x928 — set Zat @0x1337a2, cleared TakeDamage @0x13876d

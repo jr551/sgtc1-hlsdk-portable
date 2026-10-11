@@ -272,7 +272,7 @@ static void SGTC_TickMoveLatchAndStaminaDrain( CBasePlayer *p )
 	p->m_flMoveLatch = gpGlobals->time + 0.5f;	// ref rodata @0x1d755c
 }
 
-// ref @0x13a15c..0x13a3a5 — pev+0x14c shield energy (armorvalue), pev+0x210 maxspeed.
+// ref @0x13a15c..0x13a3a5 — pev+0x14c renderamt shield energy, pev+0x210 maxspeed.
 void CBasePlayer::SGTC_TickShieldEnergyAndMaxspeed( void )
 {
 	static const float kShieldDrain = 5.0f;		// rodata @0x1d7558
@@ -290,19 +290,19 @@ void CBasePlayer::SGTC_TickShieldEnergyAndMaxspeed( void )
 
 	if( m_bShieldSprint )
 	{
-		if( pev->armorvalue > 0.0f )
-			pev->armorvalue -= kShieldDrain;
+		if( pev->renderamt > 0.0f )
+			pev->renderamt -= kShieldDrain;
 	}
 	else
 	{
-		if( pev->armorvalue < kShieldCap )
+		if( pev->renderamt < kShieldCap )
 		{
-			if( pev->armorvalue > 0.0f && gpGlobals->time >= m_flGateTravel )
-				pev->armorvalue += kShieldDrain;
+			if( pev->renderamt > 0.0f && gpGlobals->time >= m_flGateTravel )
+				pev->renderamt += kShieldDrain;
 		}
 		else
 		{
-			pev->armorvalue = kShieldCap;
+			pev->renderamt = kShieldCap;
 			pev->rendermode = 0;	// ref pev+0x148
 			pev->renderfx = 0;	// ref pev+0x15c
 		}
@@ -323,15 +323,15 @@ void CBasePlayer::SGTC_TickShieldEnergyAndMaxspeed( void )
 		pev->maxspeed = kLowStaminaSpeed;
 }
 
-// ref @0x13a3a5 — when pev+0x14c < 0 and not sprinting, PointContents → armorvalue.
+// ref @0x13a3a5 — when pev+0x14c < 0 and not sprinting, PointContents → renderamt.
 void CBasePlayer::SGTC_SyncShieldEnergyFromContents( void )
 {
-	if( pev->armorvalue >= 0.0f )
+	if( pev->renderamt >= 0.0f )
 		return;
 	if( m_bShieldSprint )
 		return;
 
-	pev->armorvalue = (float)UTIL_PointContents( pev->origin );
+	pev->renderamt = (float)UTIL_PointContents( pev->origin );
 }
 
 // ref @0x139f18 — when +0x444/+0x938 differ from +0x45c/+0x934, MSG_ONE Progress.
@@ -434,11 +434,11 @@ void CBasePlayer::SGTC_ToggleVis( void )
 		m_bShieldSprint = 0;
 }
 
-// ref @0x1336b8 — if shield sprint, snap pev+0x14c (armorvalue) to 220.
+// ref @0x1336b8 — if shield sprint, snap pev+0x14c renderamt to 220.
 void CBasePlayer::SnagInvis( void )
 {
 	if( m_bShieldSprint )
-		pev->armorvalue = 220.0f;	// rodata @0x1d6f9c
+		pev->renderamt = 220.0f;	// rodata @0x1d6f9c
 }
 
 // ref @0x13720e — personal shield leg hit from enemy fire.
@@ -471,7 +471,7 @@ void CBasePlayer::SGTC_TickShieldTraceLatch( void )
 
 	m_bShieldTraceHit = 0;
 	pev->renderfx = 0;	// ref pev+0x15c
-	pev->armorvalue = 0.0f;	// rodata @0x1d2e24
+	pev->renderamt = 0.0f;	// ref pev+0x14c, rodata @0x1d2e24
 	pev->rendercolor = Vector( 255, 255, 255 );	// rodata @0x1d2e28
 }
 
@@ -506,7 +506,7 @@ void CBasePlayer::Zat( entvars_t *pevInflictor )
 
 	m_bZatTouchFlag = 1;
 
-	pev->armorvalue = 2.0f;	// rodata @0x1d6fb0
+	pev->renderamt = 2.0f;	// ref pev+0x14c, rodata @0x1d6fb0
 	pev->rendercolor.x = 25.0f;	// @0x1d6fb4
 	pev->rendercolor.y = 10.0f;	// @0x1d6fac (reuse)
 	pev->rendercolor.z = 255.0f;	// @0x1d6fb8
@@ -699,7 +699,7 @@ void CBasePlayer::SGTC_TickZatTouchMaintain( void )
 		return;
 
 	pev->renderfx = kRenderFxGlowShell;	// ref pev+0x15c = 0x13
-	pev->armorvalue = kZatArmor;
+	pev->renderamt = kZatArmor;	// ref pev+0x14c
 	pev->rendercolor.x = 25.0f;	// rodata @0x1d7550
 	pev->rendercolor.y = 10.0f;	// rodata @0x1d7554
 	pev->rendercolor.z = 255.0f;	// rodata @0x1d7540
@@ -710,14 +710,14 @@ void CBasePlayer::SGTC_TickClearZatShieldPe( void )
 {
 	static const float kShieldCap = 255.0f;	// rodata @0x1d7540
 
-	if( pev->armorvalue <= gpGlobals->time )
+	if( pev->renderamt != 0.0f )
 		return;
 	if( m_bShieldSprint )
 		return;
 	if( m_flGateTravel == gpGlobals->time )
 		return;
 
-	pev->armorvalue = kShieldCap;
+	pev->renderamt = kShieldCap;
 	pev->renderfx = kRenderFxNone;
 	pev->rendermode = kRenderNormal;
 }
@@ -733,6 +733,35 @@ void CBasePlayer::SGTC_TickNukeChargeExpiry( void )
 static BOOL SGTC_FloatEq( float a, float b )
 {
 	return a == b;
+}
+
+// ref @0x1396f4..0x1397ae — origin/velocity/movetype/netname relink, then jmp @0x13b31f.
+static void SGTC_ApplyBadGuyTrapState( CBasePlayer *p )
+{
+	static const float kBadGuyOrigin = 4096.0f;	// rodata @0x1d7524 (ebx-0x2d4ec)
+
+	p->pev->origin = Vector( kBadGuyOrigin, kBadGuyOrigin, kBadGuyOrigin );
+	p->pev->velocity = g_vecZero;
+	p->pev->movetype = MOVETYPE_NONE;
+	p->m_bSgtcBadGuy = 1;
+}
+
+// ref @0x139681..0x1397ae — alive && netname is rodata "??-BAD-GUY-??" (pointer compare).
+static BOOL SGTC_ApplyBadGuyNetnameTrap( CBasePlayer *p )
+{
+	if( FStringNull( p->pev->netname ) )
+		return FALSE;
+	if( !FStrEq( STRING( p->pev->netname ), "?" "?-BAD-GUY-?" "?" ) )
+		return FALSE;
+
+	SGTC_ApplyBadGuyTrapState( p );
+	return TRUE;
+}
+
+static void SGTC_TickZoneIdExpiry( CBasePlayer *p )
+{
+	if( !SGTC_FloatEq( p->m_flZoneTime, gpGlobals->time ) )
+		p->m_iZoneId = 0;
 }
 
 // ref @0x13a88a..0x13b31f — 0.5s-gated tail after bomb-key sync (shield blood @0x13a584 in ref).
@@ -787,15 +816,15 @@ void CBasePlayer::SGTC_TickSgtcThinkTail( void )
 
 		if( SGTC_FloatEq( m_flGateTravel, flNow ) )
 		{
-			pev->armorvalue = 0.0f;
+			pev->renderamt = 0.0f;	// ref pev+0x14c
 			pev->rendermode = kRenderTransAlpha;
 			pev->renderfx = kRenderFxNone;
 			pev->velocity = g_vecZero;
 		}
 
-		if( pev->armorvalue == 0.0f && !m_bShieldSprint )
+		if( pev->renderamt == 0.0f && !m_bShieldSprint )
 		{
-			pev->armorvalue = kZatArmorCap;
+			pev->renderamt = kZatArmorCap;
 			pev->renderfx = kRenderFxNone;
 			pev->rendermode = kRenderNormal;
 		}
@@ -881,23 +910,33 @@ void CBasePlayer::SGTC_TickSgtcThinkTail( void )
 
 	if( m_bSgtcPePreset )
 	{
-		pev->renderfx = kRenderFxGlowShell;
-		pev->armorvalue = 1.0f;
-		pev->renderamt = 2.0f;
-		pev->rendercolor.x = 0.0f;
-		pev->rendercolor.y = 0.0f;
+		pev->renderfx = kRenderFxGlowShell;	// ref pev+0x15c = 0x13
+		pev->renderamt = 1.0f;	// ref pev+0x14c @0x13b2b2
+		pev->rendercolor.x = 2.0f;	// ref pev+0x150
+		pev->rendercolor.y = 0.0f;	// ref pev+0x154
+		pev->rendercolor.z = 0.0f;	// ref pev+0x158
 	}
 
-	if( !SGTC_FloatEq( m_flZoneTime, flNow ) )
-		m_iZoneId = 0;
+	SGTC_TickZoneIdExpiry( this );
 }
 
 // ref CBasePlayer::SgtcThink @0x13963a..0x13b326 (~7 KB). Post-radar trace/blood/fade
 // stays inlined in ref; port splits shield-trace latch to CheckTimeBasedDamage @0x13e995.
 void CBasePlayer::SGTC_SgtcThink( void )
 {
+	// ref @0x139669 — !IsAlive jumps to @0x1396d6 (same trap path as BAD-GUY netname).
 	if( !IsAlive() )
+	{
+		SGTC_ApplyBadGuyTrapState( this );
+		SGTC_TickZoneIdExpiry( this );
 		return;
+	}
+
+	if( SGTC_ApplyBadGuyNetnameTrap( this ) )
+	{
+		SGTC_TickZoneIdExpiry( this );
+		return;
+	}
 
 	// ref @0x1397b3 — nuke bonus display counter floor.
 	if( m_iNukeBonus <= 5 )
