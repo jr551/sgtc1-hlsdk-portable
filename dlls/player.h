@@ -203,7 +203,12 @@ public:
 	float	m_flNukeChargeTime;	// ref +0x42c: arm-charge tick deadline (now+0.15)
 	int	m_iNukeCharge;		// ref +0x45c: arm charge, fires at 100
 	int	m_iInBombZone;		// ref +0xaec: >=1 while inside zone_bomb_target scope
-	int	m_iNukeBonus;		// ref +0x934: +4 on nuke arming
+	int	m_iNukeBonus;		// ref +0x934: +4 on nuke arming; Progress HUD icon byte
+	int	m_iProgressSentPri;	// ref +0x444: last Progress pri sent (+0x45c)
+	int	m_iNukeBonusSent;	// ref +0x938: last Progress icon sent (+0x934)
+	int	m_iProgressTeam[28];	// ref +0x93c: Progress team bytes (28 slots)
+	char	m_bBombKeyWarnSent;	// ref +0x927: HasKey bomb-zone warn latch
+	int	m_iBombKeyTimer;	// ref +0x90c: bomb-zone warn countdown
 	float	m_flZoneTime;		// ref +0x498: last capture-zone touch (now+0.3)
 	int	m_iZoneId;		// ref +0x4cc: owning capture-zone id
 	int	m_iCapFlags;		// ref +0x4a4: cleared on capture-zone touch
@@ -230,6 +235,7 @@ public:
 	void SGTC_UpdateStamina( void );	// ref @0x1336e8
 	void SGTC_ShieldThinker( void );	// ref @0x1390b2 (partial port)
 	void SGTC_WeapDispSet( int mode );	// ref @0x133aca — MSG_ONE SubModel
+	void SGTC_SendProgressIfDirty( void );	// ref @0x139f18 — MSG_ONE gmsgProgress
 	void SGTC_SgtcThink( void );	// ref @0x13963a — called from PostThink @0x1405b3
 
 	virtual void Spawn( void );

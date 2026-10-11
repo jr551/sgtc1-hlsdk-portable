@@ -49,6 +49,8 @@ extern int gmsgChangeParticuleState;
 extern int gmsgGameMode;
 extern int gmsgStamina;
 extern int gmsgSubModel;
+extern int gmsgProgress;
+extern int gmsgHasKey;
 void SGTC_LinkUserMessages( void );
 void SGTC_InitTrigger( CBaseToggle *pTrigger );
 

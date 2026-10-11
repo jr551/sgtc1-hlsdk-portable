@@ -263,6 +263,27 @@ static void SGTC_TryStaminaDrainFromMovement( CBasePlayer *p )
 	p->m_flMoveLatch = gpGlobals->time + 0.25f;
 }
 
+// ref @0x139f18 — when +0x444/+0x938 differ from +0x45c/+0x934, MSG_ONE Progress.
+void CBasePlayer::SGTC_SendProgressIfDirty( void )
+{
+	if( m_iProgressSentPri == m_iNukeCharge && m_iNukeBonusSent == m_iNukeBonus )
+		return;
+
+	if( !gmsgProgress )
+		return;
+
+	MESSAGE_BEGIN( MSG_ONE, gmsgProgress, NULL, pev );
+	WRITE_BYTE( m_iNukeCharge );
+	WRITE_BYTE( m_iNukeBonus );
+	for( int i = 0; i < 28; i++ )
+		WRITE_BYTE( m_iProgressTeam[i] );
+	WRITE_BYTE( 0 );
+	MESSAGE_END();
+
+	m_iProgressSentPri = m_iNukeCharge;
+	m_iNukeBonusSent = m_iNukeBonus;
+}
+
 // ref CBasePlayer::SgtcThink @0x13963a (full body ~7 KB; tail @0x13a404).
 void CBasePlayer::SGTC_SgtcThink( void )
 {
@@ -273,6 +294,11 @@ void CBasePlayer::SGTC_SgtcThink( void )
 	if( m_iNukeBonus <= 5 )
 		m_iNukeBonus = 6;
 
+	// ref @0x1397d4 — on ladder, drop personal shield deploy flag (+0x3e0).
+	if( IsOnLadder() && m_bShieldWall )
+		m_bShieldWall = 0;
+
+	SGTC_SendProgressIfDirty();
 	SGTC_TryStaminaDrainFromMovement( this );
 	SGTC_ShieldThinker();
 	SGTC_RadarScan();
