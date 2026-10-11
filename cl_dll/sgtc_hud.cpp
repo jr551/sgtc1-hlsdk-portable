@@ -19,6 +19,13 @@ static void SGTC_DrawLocalizedHudLine( int x, int y, const char *token, int r, i
 	gHUD.DrawHudString( x, y, ScreenWidth, text, r, g, b );
 }
 
+// ref @0x10076306 / @0x1007636f — DrawHudString x=ScreenWidth-0xdc, y=0x14, iMaxX=0x26c.
+static void SGTC_DrawVotePromptLine( const char *token, int r, int g, int b )
+{
+	const char *text = CHudTextMessage::BufferedLocaliseTextString( token );
+	gHUD.DrawHudString( ScreenWidth - 220, 20, 620, text, r, g, b );
+}
+
 static void SGTC_VoteFormatCenter( int modeIndex )
 {
 	char buf[256];
@@ -77,7 +84,7 @@ static void SGTC_DrawVoteCastMenu( float flTime )
 	{
 		int r = 255, g = 255, b = 255;
 		if( i == g_iSgtcVoteSel )
-			r = g = b = 0;
+			r = 0;	// ref @0x1007646f — selected line r=0, g/b=0xff
 		SGTC_DrawLocalizedHudLine( bx, modeY[i], modeTok[i], r, g, b );
 	}
 }
@@ -506,17 +513,9 @@ int CHudSgtc::Draw( float flTime )
 	if( m_iPortraitActiveTeam )
 	{
 		if( g_iSgtcVoteCount < 0 && g_iSgtcVoteSel < 0 && g_iSgtcVoteCount < 5 )
-		{
-			int px = m_iBlipProgress + 100;
-			int py = m_iBlipProgress + 100;
-			SGTC_DrawLocalizedHudLine( px, py, "#PLZVOTE", 255, 255, 255 );
-		}
+			SGTC_DrawVotePromptLine( "#PLZVOTE", 255, 255, 255 );
 		if( flTime > m_flKeyTime )
-		{
-			int px = m_iBlipProgress + 100;
-			int py = m_iBlipProgress + 100;
-			SGTC_DrawLocalizedHudLine( px, py, "#CAMPWARN", 255, 255, 255 );
-		}
+			SGTC_DrawVotePromptLine( "#CAMPWARN", 255, 255, 255 );
 	}
 
 	SGTC_DrawVoteCastMenu( flTime );
