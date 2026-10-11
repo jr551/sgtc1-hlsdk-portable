@@ -93,7 +93,6 @@ public:
 	int m_iAboutMePlayer;		// ref +0x40
 	int m_iKeyMode;			// ref +0x34
 	float m_flKeyTime;		// ref +0x30
-	int m_iVoteMode;		// ref DAT_100babe4
 	float m_flRoundTime;		// ref +0x16ec
 	float m_flRoundStart;		// ref +0x16e8
 	int m_iTicketModeFlag;		// ref +0x58 (TicketMode msg)
@@ -117,5 +116,10 @@ public:
 };
 
 extern CHudSgtc g_SgtcHud;
+
+// ref client.dll globals DAT_100babe4 / DAT_100babe0 / DAT_100f71e0 (vote UI).
+extern int g_iSgtcVoteCount;
+extern int g_iSgtcVoteSel;
+extern float g_flSgtcVoteAnim;
 
 #endif

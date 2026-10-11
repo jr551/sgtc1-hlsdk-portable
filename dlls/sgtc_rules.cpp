@@ -1879,31 +1879,30 @@ void CEnvLensFlare::KeyValue( KeyValueData *pkvd )
 		CPointEntity::KeyValue( pkvd );
 }
 
+static void SGTC_WriteLensFlarePayload( CEnvLensFlare *pLens )
+{
+	// ref CEnvLensFlare::SendValue @0x161184 — 10 bytes (3 COORD + 4 BYTE).
+	Vector org = pLens->m_bUseOrigin ? pLens->pev->origin : pLens->m_vecOrigin;
+	WRITE_COORD( org.x );
+	WRITE_COORD( org.y );
+	WRITE_COORD( org.z );
+	WRITE_BYTE( (int)pLens->m_vecColor.x );
+	WRITE_BYTE( (int)pLens->m_vecColor.y );
+	WRITE_BYTE( (int)pLens->m_vecColor.z );
+	WRITE_BYTE( 255 );
+}
+
 void CEnvLensFlare::SendValue( void )
 {
-	Vector org = m_bUseOrigin ? pev->origin : m_vecOrigin;
-	MESSAGE_BEGIN( MSG_ALL, gmsgEnvNewLens, org );
-		WRITE_SHORT( entindex() );
-		WRITE_COORD( org.x );
-		WRITE_COORD( org.y );
-		WRITE_COORD( org.z );
-		WRITE_BYTE( (int)m_vecColor.x );
-		WRITE_BYTE( (int)m_vecColor.y );
-		WRITE_BYTE( (int)m_vecColor.z );
+	MESSAGE_BEGIN( MSG_ALL, gmsgEnvNewLens, NULL );
+	SGTC_WriteLensFlarePayload( this );
 	MESSAGE_END();
 }
 
 void CEnvLensFlare::SendValueTo( CBasePlayer *pPlayer )
 {
-	Vector org = m_bUseOrigin ? pev->origin : m_vecOrigin;
-	MESSAGE_BEGIN( MSG_ONE, gmsgEnvNewLens, org, pPlayer->edict() );
-		WRITE_SHORT( entindex() );
-		WRITE_COORD( org.x );
-		WRITE_COORD( org.y );
-		WRITE_COORD( org.z );
-		WRITE_BYTE( (int)m_vecColor.x );
-		WRITE_BYTE( (int)m_vecColor.y );
-		WRITE_BYTE( (int)m_vecColor.z );
+	MESSAGE_BEGIN( MSG_ONE, gmsgEnvNewLens, NULL, pPlayer->pev );
+	SGTC_WriteLensFlarePayload( this );
 	MESSAGE_END();
 }
 LINK_ENTITY_TO_CLASS( env_lensflare, CEnvLensFlare );

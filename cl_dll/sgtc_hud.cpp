@@ -9,6 +9,26 @@ CHudSgtc g_SgtcHud;
 // ref FUN_10076ba2 — Stamina byte → global DAT_100f71dc.
 static int s_iSgtcStaminaByte;
 
+int g_iSgtcVoteCount = -1;	// ref DAT_100babe4 (5 = vote window)
+int g_iSgtcVoteSel = -1;	// ref DAT_100babe0 (0..4 mode highlight)
+float g_flSgtcVoteAnim = 0;	// ref DAT_100f71e0 (mode cycle timer)
+
+static void SGTC_DrawLocalizedHudLine( int x, int y, const char *token, int r, int g, int b )
+{
+	const char *text = CHudTextMessage::BufferedLocaliseTextString( token );
+	gHUD.DrawHudString( x, y, ScreenWidth, text, r, g, b );
+}
+
+static void SGTC_VoteFormatCenter( int modeIndex )
+{
+	char buf[256];
+	const char *fmt = gHUD.m_TextMessage.LookupString( "VoteMode", NULL );
+	if( !fmt || !fmt[0] )
+		fmt = "VoteMode %d";
+	snprintf( buf, sizeof( buf ), fmt, modeIndex );
+	CenterPrint( buf );
+}
+
 static void SGTC_InitPortraitSlots( CHudSgtc *hud );
 
 int CHudSgtc::Init( void )
@@ -22,6 +42,11 @@ int CHudSgtc::Init( void )
 	gEngfuncs.pfnRegisterVariable( "view_portraits", "0", FCVAR_ARCHIVE );
 	gEngfuncs.pfnRegisterVariable( "view_seeownport", "0", FCVAR_ARCHIVE );
 	SGTC_InitPortraitSlots( this );
+	// ref FUN_10072e96 — reset vote globals unless mid-countdown at 5.
+	if( g_iSgtcVoteCount != 5 )
+		g_iSgtcVoteCount = -1;
+	g_flSgtcVoteAnim = 0;
+	g_iSgtcVoteSel = -1;
 	return 1;
 }
 
@@ -327,7 +352,23 @@ int CHudSgtc::Draw( float flTime )
 	else if( m_fZatTouchActive && m_flZatTouchTime + 2.0f <= flTime )
 		m_fZatTouchActive = 0;
 
-	(void)flTime;
+	// ref @0x10076292 — vote prompts when portrait team filter active.
+	if( m_iPortraitActiveTeam )
+	{
+		if( g_iSgtcVoteCount < 0 && g_iSgtcVoteSel < 0 && g_iSgtcVoteCount < 5 )
+		{
+			int px = m_iBlipProgress + 100;
+			int py = m_iBlipProgress + 100;
+			SGTC_DrawLocalizedHudLine( px, py, "#PLZVOTE", 255, 255, 255 );
+		}
+		if( flTime > m_flKeyTime )
+		{
+			int px = m_iBlipProgress + 100;
+			int py = m_iBlipProgress + 100;
+			SGTC_DrawLocalizedHudLine( px, py, "#CAMPWARN", 255, 255, 255 );
+		}
+	}
+
 	return 1;
 }
 
@@ -372,7 +413,6 @@ void CHudSgtc::Reset( void )
 	m_iAboutMePlayer = 0;
 	m_iKeyMode = 0;
 	m_flKeyTime = 0;
-	m_iVoteMode = -1;
 	m_flRoundTime = 0;
 	m_flRoundStart = 0;
 	m_iTicketModeFlag = 0;
@@ -468,13 +508,22 @@ int CHudSgtc::MsgFunc_HasKey( const char *pszName, int iSize, void *pbuf )
 	int vote = READ_BYTE();
 	if( vote == 1 )
 	{
-		m_iVoteMode = -1;
+		g_iSgtcVoteCount = -1;
+		g_iSgtcVoteSel = -1;
 		m_iHasKey = 0;
+		g_flSgtcVoteAnim = 0;
 	}
 	else if( vote == 2 )
 	{
-		if( m_iVoteMode < 0 )
-			m_iVoteMode = 5;
+		if( g_iSgtcVoteCount >= 0 )
+			SGTC_VoteFormatCenter( g_iSgtcVoteCount );
+		else
+		{
+			g_iSgtcVoteCount = 5;
+			g_iSgtcVoteSel = -1;
+			m_iHasKey = 0;
+			g_flSgtcVoteAnim = 0;
+		}
 	}
 	return 1;
 }
@@ -655,7 +704,8 @@ int CHudSgtc::MsgFunc_Reset( const char *pszName, int iSize, void *pbuf )
 		Reset();
 	else
 		m_iPortraitEnt = arg;
-	m_iVoteMode = -1;
+	g_iSgtcVoteCount = -1;
+	g_iSgtcVoteSel = -1;
 	return 1;
 }
 
