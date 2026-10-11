@@ -608,17 +608,111 @@ static void SGTC_DrawArmorTacOverlay( CHudSgtc *hud, float flTime, int lx, int l
 	SPR_DrawAdditive( 0, tx, ty, &tint );
 }
 
-// ref CHudSgtc::Draw @0x10073f07 — radar ring slots 1..255, alpha @+0x1158 fades by 5.
-static void SGTC_DrawRadarBlips( CHudSgtc *hud, int baseX, int baseY )
+// ref @0x100740df — ring frame from global tick (truncated client time).
+static int SGTC_RadarRingFrame( int v )
 {
-	int blIdx = gHUD.GetSpriteIndex( "blip" );
+	int frame = 0;
+	if( v < 0x0b || v > 0x15d )
+		goto done;
+	if( v <= 0x0a )
+		frame = 0;
+	else if( v < 0x21 )
+		frame = 1;
+	else if( v <= 0x20 )
+		frame = 0;
+	else if( v < 0x38 )
+		frame = 2;
+	else if( v <= 0x36 )
+		frame = 0;
+	else if( v < 0x4e )
+		frame = 3;
+	else if( v <= 0x4d )
+		frame = 0;
+	else if( v < 0x65 )
+		frame = 4;
+	else if( v <= 0x64 )
+		frame = 0;
+	else if( v < 0x7b )
+		frame = 5;
+	else if( v <= 0x7a )
+		frame = 0;
+	else if( v < 0x92 )
+		frame = 6;
+	else if( v <= 0x91 )
+		frame = 0;
+	else if( v < 0xa8 )
+		frame = 7;
+	else if( v <= 0xa7 )
+		frame = 0;
+	else if( v < 0xbf )
+		frame = 8;
+	else if( v <= 0xbe )
+		frame = 0;
+	else if( v < 0xca )
+		frame = 9;
+	else if( v <= 0xc9 )
+		frame = 0;
+	else if( v < 0xec )
+		frame = 10;
+	else if( v <= 0xeb )
+		frame = 0;
+	else if( v < 0x102 )
+		frame = 11;
+	else if( v <= 0x101 )
+		frame = 0;
+	else if( v < 0x119 )
+		frame = 12;
+	else if( v <= 0x118 )
+		frame = 0;
+	else if( v < 0x12f )
+		frame = 13;
+	else if( v <= 0x12e )
+		frame = 0;
+	else if( v < 0x146 )
+		frame = 14;
+	else if( v <= 0x145 )
+		frame = 0;
+	else if( v < 0x15e )
+		frame = 15;
+done:
+	frame += 3;
+	if( frame > 0x0f )
+		frame -= 0x10;
+	return 0x0f - frame;
+}
+
+static void SGTC_RadarLayout( int &slide )
+{
+	slide = 0x68; // ref ebp-0x18 default @0x10073e40
+}
+
+// ref @0x10073eec / @0x10073f07 — 200×200 radar, typed blip frames, ring @0x10074323.
+static void SGTC_DrawRadarFull( CHudSgtc *hud, float flTime )
+{
+	int slide = 0;
+	SGTC_RadarLayout( slide );
+
+	const int radarX = ScreenWidth - 0xd0;
+	const int radarY = ScreenHeight - 0xc8 - slide; // ref 200×200 @0x10073eec
+
+	int radarIdx = gHUD.GetSpriteIndex( "radar" );
+	if( !radarIdx )
+		return;
+
+	wrect_t rcRadar = gHUD.GetSpriteRect( radarIdx );
+	rcRadar.right = rcRadar.left + 0xc8;
+	rcRadar.bottom = rcRadar.top + 0xc8;
+	SPR_DrawAdditive( 0, radarX, radarY, &rcRadar );
+
+	const int blIdx = gHUD.GetSpriteIndex( "blip" );
 	if( !blIdx )
 		return;
-	wrect_t bl = gHUD.GetSpriteRect( blIdx );
+	wrect_t blFull = gHUD.GetSpriteRect( blIdx );
 
 	for( int slot = 1; slot < SGTC_RADAR_SLOTS; slot++ )
 	{
-		if( hud->m_iRadarType[slot] <= 0 )
+		const int typ = hud->m_iRadarType[slot];
+		if( typ <= 0 )
 			continue;
 
 		int alpha = hud->m_iRadarAlpha[slot];
@@ -628,19 +722,45 @@ static void SGTC_DrawRadarBlips( CHudSgtc *hud, int baseX, int baseY )
 			continue;
 		}
 
-		int r = alpha, g = alpha, b = alpha;
+		const int tint = (int)( alpha * 0.7f ); // rodata @0x10094c10
+		int r = tint, g = tint, b = tint;
 		if( hud->m_iPortraitActiveTeam == 2 )
 			b = 0;
 
-		int bx = baseX + ( hud->m_iRadarX[slot] >> 3 );
-		int by = baseY + ( hud->m_iRadarY[slot] >> 3 );
+		const int bx = ScreenWidth - hud->m_iRadarX[slot] - 0x76;
+		const int by = hud->m_iRadarY[slot] + 0xca - slide;
+		const int frame = typ - 1;
+		if( frame < 0 )
+			continue;
+
 		SPR_Set( gHUD.GetSprite( blIdx ), r, g, b );
-		SPR_DrawAdditive( 0, bx, by, &bl );
+		SPR_DrawAdditive( frame, bx, by, &blFull );
 
 		alpha -= 5;
 		hud->m_iRadarAlpha[slot] = alpha;
 		if( alpha < 1 )
 			hud->m_iRadarType[slot] = 0;
+	}
+
+	const int ringTick = (int)gEngfuncs.GetClientTime();
+	const int ringFrame = SGTC_RadarRingFrame( ringTick );
+	int needleIdx = gHUD.GetSpriteIndex( "needle" );
+	int bigIdx = gHUD.GetSpriteIndex( "bigneedle" );
+	if( needleIdx && bigIdx )
+	{
+		SPR_Set( gHUD.GetSprite( needleIdx ), 0, 0xd2, 0xd2 );
+		wrect_t rcBig = gHUD.GetSpriteRect( bigIdx );
+		const int ringX = ScreenWidth - 0x7c;
+		const int ringY = 0xc4 - slide;
+		SPR_DrawAdditive( ringFrame, ringX, ringY, &rcBig );
+	}
+
+	if( hud->m_iRadarFocusX || hud->m_iRadarFocusY )
+	{
+		const int fx = ScreenWidth - hud->m_iRadarFocusX - 0x76;
+		const int fy = hud->m_iRadarFocusY + 0xca - slide;
+		SPR_Set( gHUD.GetSprite( blIdx ), 255, 255, 255 );
+		SPR_DrawAdditive( 0, fx, fy, &blFull );
 	}
 }
 
@@ -944,27 +1064,7 @@ int CHudSgtc::Draw( float flTime )
 
 	cvar_t *cvRadar = SGTC_Cvar( "view_radar" );
 	if( cvRadar && cvRadar->value > 0.0f )
-	{
-		int x = ScreenWidth - 220;
-		int y = ScreenHeight - 220;
-		if( gHUD.GetSpriteIndex( "radar" ) )
-		{
-			wrect_t rc = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "radar" ) );
-			SPR_DrawAdditive( 0, x, y, &rc );
-			SGTC_DrawRadarBlips( this, x, y );
-			if( gHUD.GetSpriteIndex( "blip" ) )
-			{
-				wrect_t bl = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "blip" ) );
-				if( m_iRadarFocusX || m_iRadarFocusY )
-				{
-					int fx = x + ( m_iRadarFocusX >> 3 );
-					int fy = y + ( m_iRadarFocusY >> 3 );
-					SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( "blip" ) ), 255, 255, 255 );
-					SPR_DrawAdditive( 0, fx, fy, &bl );
-				}
-			}
-		}
-	}
+		SGTC_DrawRadarFull( this, flTime );
 
 	SGTC_DrawAnnounceScroller( this, flTime );
 	SGTC_TickTicketDock( this, flTime );
@@ -1365,8 +1465,9 @@ int CHudSgtc::MsgFunc_Blip( const char *pszName, int iSize, void *pbuf )
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
 	int type = READ_BYTE();
-	int rx = (int)READ_COORD();
-	int ry = (int)READ_COORD();
+	// ref FUN_100770dd — slot coords are wire int16 (×8), not READ_COORD float.
+	int rx = READ_SHORT();
+	int ry = READ_SHORT();
 
 	if( type == 0x32 )
 	{
