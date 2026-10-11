@@ -55,6 +55,7 @@ extern int gmsgZatTouch;
 extern int g_iSgtcMapType;	// ref MapType @0x236594 (skip camp warn when ==1)
 void SGTC_LinkUserMessages( void );
 void SGTC_InitTrigger( CBaseToggle *pTrigger );
+BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd );	// ref ClientCommand hurtinvert/recallall
 
 // Mode-selecting installer. Stock InstallGameRules() (gamerules.cpp:310)
 // cannot know about SGTC classes; the one-line hook is documented in the

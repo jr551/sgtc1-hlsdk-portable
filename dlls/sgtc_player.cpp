@@ -606,6 +606,62 @@ void CBasePlayer::SGTC_TickNukeViewSnap( void )
 	pev->view_ofs = Vector( 0.0f, 0.0f, kViewSnapZ );
 }
 
+// ref @0x1399cf — hurtinvert preset PE colors; when +0x4c0 sum == 0, copy recallall RGB.
+void CBasePlayer::SGTC_TickHurtInvertPeFx( void )
+{
+	static const float kZero = 0.0f;		// rodata @0x1d752c (ebx-0x2d4e8)
+	static const float kAmt255 = 255.0f;	// rodata @0x1d7540 (ebx-0x2d4d4)
+	static const float kTwo = 2.0f;		// rodata @0x1d7544 (ebx-0x2d4d0)
+	static const float kOne = 1.0f;		// rodata @0x1d7548 (ebx-0x2d4cc)
+
+	if( m_bHurtInvertFx )
+	{
+		pev->rendermode = kRenderTransAdd;	// ref pev+0x148 = 5
+		pev->renderamt = kAmt255;
+		pev->rendercolor.x = kTwo;
+		pev->rendercolor.y = kZero;
+		pev->rendercolor.z = kZero;
+		pev->renderfx = kRenderFxGlowShell;	// ref pev+0x15c = 0x13
+		pev->renderamt = kOne;
+		pev->rendercolor.x = kAmt255;
+		pev->rendercolor.y = kAmt255;
+		pev->rendercolor.z = kTwo;
+	}
+
+	const float flSum = m_vecHurtInvertRgb.x + m_vecHurtInvertRgb.y + m_vecHurtInvertRgb.z;
+	if( flSum != kZero )
+		return;
+
+	pev->renderfx = kRenderFxGlowShell;
+	pev->renderamt = kOne;
+	pev->rendercolor = m_vecHurtInvertRgb;
+}
+
+// ref ClientCommand @0xc94c1 hurtinvert, @0xc9301 recallall.
+BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
+{
+	if( FStrEq( pcmd, "hurtinvert" ) )
+	{
+		if( !pPlayer->m_bShieldLarge )
+			return TRUE;
+		pPlayer->m_bHurtInvertFx ^= 1;
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "recallall" ) )
+	{
+		if( CMD_ARGC() <= 2 )
+			return TRUE;
+
+		pPlayer->m_vecHurtInvertRgb.x = (float)atoi( CMD_ARGV( 1 ) );
+		pPlayer->m_vecHurtInvertRgb.y = (float)atoi( CMD_ARGV( 2 ) );
+		pPlayer->m_vecHurtInvertRgb.z = (float)atoi( CMD_ARGV( 3 ) );
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
 // ref @0x139db0 — while pev+0x160 (health marker) == 1, latch +0x3fc and sustain zat visuals.
 void CBasePlayer::SGTC_TickZatTouchMaintain( void )
 {
@@ -671,6 +727,7 @@ void CBasePlayer::SGTC_SgtcThink( void )
 	SGTC_TickLanceStunLatch();
 	SGTC_TickNukeViewSnap();
 	SGTC_TryBombKeyCampWarn();
+	SGTC_TickHurtInvertPeFx();
 	SGTC_TickWeapSubModelDisp( this );
 	SGTC_TickCloakPulse();
 	SGTC_TickSpawnCampProximity();

@@ -520,6 +520,9 @@ void CStargateTeamDM::ClientDisconnected( edict_t *pClient )
 
 BOOL CStargateTeamDM::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 {
+	if( SGTC_HandleClientCommand( pPlayer, pcmd ) )
+		return TRUE;
+
 	// Verified commands: menuselect/jointeam/showmenu/autopick/classe/radio.
 	if( FStrEq( pcmd, "jointeam" ) )
 	{
@@ -980,6 +983,9 @@ void CStargateUnas::DeathNotice( CBasePlayer *pVictim, entvars_t *pKiller, entva
 
 BOOL CStargateUnas::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 {
+	if( SGTC_HandleClientCommand( pPlayer, pcmd ) )
+		return TRUE;
+
 	if( FStrEq( pcmd, "jointeam" ) )
 	{
 		if( CMD_ARGC() < 2 )
@@ -1160,6 +1166,9 @@ void CStargateReplicateur::ChangePlayerTeam( CBasePlayer *pPlayer,
 // ref @0x17e19a — menuselect drains, jointeam: 1=Replic else Torri.
 BOOL CStargateReplicateur::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 {
+	if( SGTC_HandleClientCommand( pPlayer, pcmd ) )
+		return TRUE;
+
 	if( g_VoiceGameMgr.ClientCommand( pPlayer, pcmd ) )
 		return TRUE;
 	if( FStrEq( pcmd, "menuselect" ) )
