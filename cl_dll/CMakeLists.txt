@@ -121,6 +121,9 @@ set (CLDLL_SOURCES
 	util.cpp
 	view.cpp
 	../public/safe_snprintf.c
+	sgtc_protocol.cpp
+	sgtc_vgui.cpp
+	sgtc_weapons_client.cpp
 )
 
 list(APPEND CLDLL_SOURCES

@@ -25,6 +25,7 @@
 #include	"teamplay_gamerules.h"
 #include	"skill.h"
 #include	"game.h"
+#include	"sgtc_rules.h"
 
 extern edict_t *EntSelectSpawnPoint( CBaseEntity *pPlayer );
 
@@ -325,6 +326,13 @@ CGameRules *InstallGameRules( void )
 	}
 	else
 	{
+		// StargateTC: ref InstallGameRules reads mp_gamemode and dispatches on
+		// the sg_/sgi_/ctp_/un_/inv_/rep_ prefix (rodata 0x1d1ab0). Non-matching
+		// values fall through to the stock teamplay/deathmatch path.
+		CGameRules *pSGTC = SGTC_InstallGameRules( CVAR_GET_STRING( "mp_gamemode" ) );
+		if( pSGTC )
+			return pSGTC;
+
 		if( teamplay.value > 0 )
 		{
 			// teamplay
