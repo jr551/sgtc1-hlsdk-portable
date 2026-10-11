@@ -111,6 +111,10 @@ public:
 	char m_bTicketSlide256;	// ref ebp-0xc4 — slidein 256×130 @0x10074ed7
 	char m_bTicketSlide190;	// ref ebp-0xc0 — slidein 190×190 @0x10074f24
 	char m_cTicketSlideDir;		// ref ebp-0xb8 this frame (1 = use +0x1698 for draw)
+	int m_iAmmoLineSlide;		// ref +0x1554 — ticket/ammoline entrance offset (0..0x1c)
+	int m_iAmmoLineStep;		// ref +0x1558 — entrance delay counter (to 0x46)
+	int m_iKeyBannerSlide;		// ref +0x155c — key/hud_top slide (0..0x9f)
+	int m_iKeyBannerStep;		// ref +0x1560 — key entrance counter (to 0x46)
 	int m_iProgress;		// ref +0x38 (Progress msg)
 	int m_iProgressIcon;		// ref DAT_100e1b94
 	int m_iProgressTeam[SGTC_BLIP_SLOTS];	// ref DAT_100e1aa4[28]

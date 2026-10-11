@@ -224,6 +224,120 @@ static void SGTC_DrawArmorBarStrip( CHudSgtc *hud )
 	SPR_DrawAdditive( 0, 0x1c, ScreenHeight - 0x18, &rc );
 }
 
+// ref @0x100754e5..0x100755e5 — stamn_bar horizontal strip (DAT_100f71dc).
+static void SGTC_DrawStaminaBarStrip( CHudSgtc *hud )
+{
+	const int stam = s_iSgtcStaminaByte;
+	if( stam <= 0 )
+		return;
+	float frac = stam / 100.0f;
+	if( frac > 1.0f )
+		frac = 1.0f;
+	const int barIdx = gHUD.GetSpriteIndex( "stamn_bar" );
+	if( !barIdx )
+		return;
+	wrect_t rc = gHUD.GetSpriteRect( barIdx );
+	const int fullW = rc.right - rc.left;
+	const int drawW = (int)( fullW * frac );
+	if( drawW <= 0 )
+		return;
+	rc.right = rc.left + drawW;
+	SPR_Set( gHUD.GetSprite( barIdx ), 0xf0, (int)( 240.0f * ( 1.0f - frac ) ), 0 );
+	SPR_DrawAdditive( 0, 0x34, ScreenHeight - 0x18, &rc );
+}
+
+static int SGTC_Sprite( const char *name, wrect_t *prc );
+
+// ref @0x10074f66..0x100750c5 — ammoline / hud_top / drugs / tac legend entrance.
+static void SGTC_TickEntranceSlides( CHudSgtc *hud )
+{
+	if( hud->m_iHudInfoMode == 0 )
+	{
+		if( hud->m_iAmmoLineSlide < 0x1d && hud->m_iAmmoLineStep < 0x46 )
+			hud->m_iAmmoLineStep++;
+		else if( hud->m_iAmmoLineSlide < 0x1d && hud->m_iAmmoLineStep >= 0x46 )
+			hud->m_iAmmoLineSlide++;
+	}
+	else if( hud->m_iHudInfoMode > 0 && hud->m_iAmmoLineSlide > 0 )
+		hud->m_iAmmoLineSlide--;
+
+	if( hud->m_iKeyMode < 1 )
+	{
+		if( hud->m_iKeyBannerSlide < 0xa0 && hud->m_iKeyBannerStep < 0x46 )
+			hud->m_iKeyBannerStep++;
+		else if( hud->m_iKeyBannerSlide < 0xa0 && hud->m_iKeyBannerStep >= 0x46 )
+			hud->m_iKeyBannerSlide += 2;
+	}
+	else
+	{
+		if( hud->m_iKeyBannerSlide > 0 )
+			hud->m_iKeyBannerSlide -= 2;
+		if( hud->m_iKeyMode > 0 && hud->m_iKeyBannerSlide == 0 )
+			hud->m_iKeyBannerStep = 0;
+	}
+}
+
+static void SGTC_DrawEntranceBanners( CHudSgtc *hud )
+{
+	wrect_t rc;
+	const int ammoIdx = gHUD.GetSpriteIndex( "ammoline" );
+	if( ammoIdx > 0 )
+	{
+		rc = gHUD.GetSpriteRect( ammoIdx );
+		const int h = rc.bottom - rc.top;
+		const int yAmmo = ScreenHeight - h - 0x37 + hud->m_iAmmoLineSlide;
+		SPR_Set( gHUD.GetSprite( ammoIdx ), 0x7d, 0x7d, 0x7d );
+		SPR_DrawHoles( 0, 0x60, yAmmo, &rc );
+
+		wrect_t bar = rc;
+		bar.right = bar.left + 199;
+		bar.bottom = bar.top + 9;
+		SPR_DrawHoles( 0, 0, ScreenHeight - 0x9f, &bar );
+	}
+
+	if( hud->m_iTicketModeFlag )
+	{
+		const int topIdx = gHUD.GetSpriteIndex( "hud_top" );
+		if( topIdx > 0 )
+		{
+			rc = gHUD.GetSpriteRect( topIdx );
+			rc.right = rc.left + 0xb0;
+			rc.bottom = rc.top + 0x30;
+			const int x = -0x14 - hud->m_iKeyBannerSlide;
+			const int y = ScreenHeight - 0x15e;
+			SPR_Set( gHUD.GetSprite( topIdx ), 0x7d, 0x7d, 0x7d );
+			SPR_DrawHoles( 0, x, y, &rc );
+		}
+	}
+
+	if( hud->m_iKeyMode > 0 && hud->m_iKeyBannerSlide == 0 && SGTC_Sprite( "drugs", &rc ) )
+	{
+		const int dIdx = gHUD.GetSpriteIndex( "drugs" );
+		wrect_t dr = gHUD.GetSpriteRect( dIdx );
+		dr.right = dr.left + 0x6b;
+		dr.bottom = dr.top + ( dr.bottom - dr.top ) + 8;
+		SPR_Set( gHUD.GetSprite( dIdx ), 0x78, 0x78, 0x78 );
+		SPR_DrawHoles( 0, 0x4b, ScreenHeight - 0x34, &dr );
+	}
+
+	if( hud->m_iHudInfoMode > 0 && hud->m_iAmmoLineSlide == 0 )
+	{
+		const char *tac = NULL;
+		if( hud->m_iHudInfoMode == 1 )
+			tac = "tac_red";
+		else if( hud->m_iHudInfoMode == 2 )
+			tac = "tac_yellow";
+		else if( hud->m_iHudInfoMode == 3 )
+			tac = "tac_green";
+		if( tac && SGTC_Sprite( tac, &rc ) )
+		{
+			const int tIdx = gHUD.GetSpriteIndex( tac );
+			SPR_Set( gHUD.GetSprite( tIdx ), 0x7d, 0x7d, 0x7d );
+			SPR_DrawHoles( 0, 0x73, ScreenHeight - 0x4c, &rc );
+		}
+	}
+}
+
 // ref @0x1004b45a / TeamNames VGUI @0x10057bed — fill DAT_100e1a34[0..0x1b] from resource bytes.
 static void SGTC_InitProgressSlotX( CHudSgtc *hud )
 {
@@ -1128,6 +1242,8 @@ int CHudSgtc::Draw( float flTime )
 	SGTC_DrawAnnounceScroller( this, flTime );
 	SGTC_TickTicketDock( this, flTime );
 	SGTC_DrawTicketDock( this, flTime );
+	SGTC_TickEntranceSlides( this );
+	SGTC_DrawEntranceBanners( this );
 	SGTC_TickProgressTeamUi( this );
 	SGTC_DrawProgressTeamUi( this );
 
@@ -1227,6 +1343,7 @@ int CHudSgtc::Draw( float flTime )
 	}
 
 	SGTC_DrawArmorBarStrip( this );
+	SGTC_DrawStaminaBarStrip( this );
 
 	if( m_fZatTouchActive && m_flZatTouchTime + 2.0f > flTime && gHUD.GetSpriteIndex( "zat_touch" ) )
 	{
@@ -1312,6 +1429,10 @@ void CHudSgtc::Reset( void )
 	m_bTicketSlide256 = 0;
 	m_bTicketSlide190 = 0;
 	m_cTicketSlideDir = 0;
+	m_iAmmoLineSlide = 0;
+	m_iAmmoLineStep = 0;
+	m_iKeyBannerSlide = 0;
+	m_iKeyBannerStep = 0;
 	m_iProgress = 0;
 	m_iProgressIcon = 0;
 	memset( m_iProgressTeam, 0, sizeof( m_iProgressTeam ) );
