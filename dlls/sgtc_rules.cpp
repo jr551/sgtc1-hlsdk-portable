@@ -1593,28 +1593,78 @@ static void SGTC_ParseVector( const char *str, Vector &out )
 		sscanf( str, "%f %f %f", &out.x, &out.y, &out.z );
 }
 
-static void SGTC_ParseColor( const char *str, Vector &out )
+static int SGTC_ColorByte( float f )
+{
+	int c = (int)f;
+	if( c < 0 )
+		c = 0;
+	if( c > 255 )
+		c = 255;
+	return c;
+}
+
+static void SGTC_ParseColor4( const char *str, float out[4] )
 {
 	int r = 128, g = 128, b = 128, a = 128;
-	if( str )
-		sscanf( str, "%d %d %d %d", &r, &g, &b, &a );
-	out = Vector( (float)r, (float)g, (float)b );
-	(void)a;
+	if( str && sscanf( str, "%d %d %d %d", &r, &g, &b, &a ) == 4 )
+	{
+		out[0] = (float)r;
+		out[1] = (float)g;
+		out[2] = (float)b;
+		out[3] = (float)a;
+	}
+}
+
+static void SGTC_ParseColor( const char *str, Vector &out )
+{
+	float c[4];
+	SGTC_ParseColor4( str, c );
+	out = Vector( c[0], c[1], c[2] );
+}
+
+static void SGTC_WriteEnvParticulePayload( CEnvParticule *p )
+{
+	// ref CEnvParticule::SendValue @0x15ec68 — 47 bytes (19 WRITE_COORD + 7 BYTE + 1 SHORT).
+	WRITE_COORD( p->pev->absmin.x );
+	WRITE_COORD( p->pev->absmin.y );
+	WRITE_COORD( p->pev->absmin.z );
+	WRITE_COORD( p->pev->absmax.x );
+	WRITE_COORD( p->pev->absmax.y );
+	WRITE_COORD( p->pev->absmax.z );
+	WRITE_COORD( p->m_vecAccel.x );
+	WRITE_COORD( p->m_vecAccel.y );
+	WRITE_COORD( p->m_vecAccel.z );
+	WRITE_COORD( p->m_vecV0.x );
+	WRITE_COORD( p->m_vecV0.y );
+	WRITE_COORD( p->m_vecV0.z );
+	WRITE_COORD( p->m_vecSpread.x );
+	WRITE_COORD( p->m_vecSpread.y );
+	WRITE_COORD( p->m_vecSpread.z );
+	for( int i = 0; i < 4; i++ )
+		WRITE_BYTE( SGTC_ColorByte( p->m_flColor[i] ) );
+	WRITE_COORD( p->m_vecSize.x );
+	WRITE_COORD( p->m_vecSize.y );
+	WRITE_COORD( p->m_flLife );
+	WRITE_COORD( p->m_flBounce );
+	WRITE_BYTE( p->m_iSprite );
+	WRITE_BYTE( p->m_iType );
+	WRITE_SHORT( p->m_iCount );
+	WRITE_BYTE( p->m_iId );
 }
 
 TYPEDESCRIPTION CEnvParticule::m_SaveData[] =
 {
 	DEFINE_FIELD( CEnvParticule, m_iCount, FIELD_INTEGER ),
+	DEFINE_FIELD( CEnvParticule, m_iId, FIELD_INTEGER ),
 	DEFINE_FIELD( CEnvParticule, m_vecAccel, FIELD_VECTOR ),
 	DEFINE_FIELD( CEnvParticule, m_vecV0, FIELD_VECTOR ),
 	DEFINE_FIELD( CEnvParticule, m_vecSpread, FIELD_VECTOR ),
 	DEFINE_FIELD( CEnvParticule, m_vecSize, FIELD_VECTOR ),
-	DEFINE_FIELD( CEnvParticule, m_vecColor, FIELD_VECTOR ),
+	DEFINE_ARRAY( CEnvParticule, m_flColor, FIELD_FLOAT, 4 ),
 	DEFINE_FIELD( CEnvParticule, m_flLife, FIELD_FLOAT ),
 	DEFINE_FIELD( CEnvParticule, m_flBounce, FIELD_FLOAT ),
 	DEFINE_FIELD( CEnvParticule, m_iSprite, FIELD_INTEGER ),
 	DEFINE_FIELD( CEnvParticule, m_iType, FIELD_INTEGER ),
-	DEFINE_FIELD( CEnvParticule, m_bActive, FIELD_BOOLEAN ),
 };
 IMPLEMENT_SAVERESTORE( CEnvParticule, CPointEntity );
 
@@ -1622,7 +1672,7 @@ void CEnvParticule::Spawn( void )
 {
 	pev->solid = SOLID_NOT;
 	pev->movetype = MOVETYPE_NONE;
-	m_bActive = TRUE;
+	SetObjectCollisionBox();
 }
 
 void CEnvParticule::Activate( void )
@@ -1634,9 +1684,14 @@ void CEnvParticule::Activate( void )
 void CEnvParticule::KeyValue( KeyValueData *pkvd )
 {
 	// Verified rodata keys (0x1d9b5f..0x1d9bbf block).
-	if( FStrEq( pkvd->szKeyName, "nombre" ) || FStrEq( pkvd->szKeyName, "id" ) )
+	if( FStrEq( pkvd->szKeyName, "nombre" ) )
 	{
 		m_iCount = atoi( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "id" ) )
+	{
+		m_iId = atoi( pkvd->szValue );
 		pkvd->fHandled = TRUE;
 	}
 	else if( FStrEq( pkvd->szKeyName, "acceleration" ) )
@@ -1656,14 +1711,16 @@ void CEnvParticule::KeyValue( KeyValueData *pkvd )
 	}
 	else if( FStrEq( pkvd->szKeyName, "taille" ) )
 	{
-		float x = 2, y = 2;
-		sscanf( pkvd->szValue, "%f %f", &x, &y );
-		m_vecSize = Vector( x, y, 0 );
+		int x = 2, y = 2;
+		if( sscanf( pkvd->szValue, "%d %d", &x, &y ) == 2 )
+			m_vecSize = Vector( (float)x, (float)y, 0 );
+		else
+			m_vecSize = Vector( 2, 2, 0 );
 		pkvd->fHandled = TRUE;
 	}
 	else if( FStrEq( pkvd->szKeyName, "_couleur" ) )
 	{
-		SGTC_ParseColor( pkvd->szValue, m_vecColor );
+		SGTC_ParseColor4( pkvd->szValue, m_flColor );
 		pkvd->fHandled = TRUE;
 	}
 	else if( FStrEq( pkvd->szKeyName, "vie" ) )
@@ -1692,54 +1749,38 @@ void CEnvParticule::KeyValue( KeyValueData *pkvd )
 
 void CEnvParticule::Reset( void )
 {
-	m_bActive = TRUE;
+	MESSAGE_BEGIN( MSG_ALL, gmsgChangeParticuleState );
+		WRITE_BYTE( m_iId );
+		WRITE_BYTE( FBitSet( pev->spawnflags, 1 ) ? 1 : 0 );
+	MESSAGE_END();
 }
 
 void CEnvParticule::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
 {
-	if( ShouldToggle( useType, m_bActive ) )
-		m_bActive = !m_bActive;
+	if( !ShouldToggle( useType, FBitSet( pev->spawnflags, 1 ) ) )
+		return;
+	if( FBitSet( pev->spawnflags, 1 ) )
+		pev->spawnflags &= ~1;
+	else
+		pev->spawnflags |= 1;
 	MESSAGE_BEGIN( MSG_ALL, gmsgChangeParticuleState );
-		WRITE_SHORT( entindex() );
-		WRITE_BYTE( m_bActive ? 1 : 0 );
+		WRITE_BYTE( m_iId );
+		WRITE_BYTE( FBitSet( pev->spawnflags, 1 ) ? 1 : 0 );
 	MESSAGE_END();
 	(void)pActivator; (void)pCaller; (void)value;
 }
 
 void CEnvParticule::SendValue( void )
 {
-	MESSAGE_BEGIN( MSG_ALL, gmsgEnvParticule, pev->origin );
-		WRITE_SHORT( entindex() );
-		WRITE_COORD( pev->origin.x );
-		WRITE_COORD( pev->origin.y );
-		WRITE_COORD( pev->origin.z );
-		WRITE_SHORT( m_iCount );
-		WRITE_COORD( m_vecAccel.x );
-		WRITE_COORD( m_vecAccel.y );
-		WRITE_COORD( m_vecAccel.z );
-		WRITE_COORD( m_vecV0.x );
-		WRITE_COORD( m_vecV0.y );
-		WRITE_COORD( m_vecV0.z );
-		WRITE_BYTE( (int)m_vecColor.x );
-		WRITE_BYTE( (int)m_vecColor.y );
-		WRITE_BYTE( (int)m_vecColor.z );
-		WRITE_BYTE( m_iSprite );
-		WRITE_BYTE( m_iType );
-		WRITE_BYTE( m_bActive ? 1 : 0 );
+	MESSAGE_BEGIN( MSG_ALL, gmsgEnvParticule, NULL );
+	SGTC_WriteEnvParticulePayload( this );
 	MESSAGE_END();
 }
 
 void CEnvParticule::SendValueTo( CBasePlayer *pPlayer )
 {
-	MESSAGE_BEGIN( MSG_ONE, gmsgEnvParticule, pev->origin, pPlayer->edict() );
-		WRITE_SHORT( entindex() );
-		WRITE_COORD( pev->origin.x );
-		WRITE_COORD( pev->origin.y );
-		WRITE_COORD( pev->origin.z );
-		WRITE_SHORT( m_iCount );
-		WRITE_BYTE( m_iSprite );
-		WRITE_BYTE( m_iType );
-		WRITE_BYTE( m_bActive ? 1 : 0 );
+	MESSAGE_BEGIN( MSG_ONE, gmsgEnvParticule, NULL, pPlayer->pev );
+	SGTC_WriteEnvParticulePayload( this );
 	MESSAGE_END();
 }
 LINK_ENTITY_TO_CLASS( env_particule, CEnvParticule );
@@ -1762,30 +1803,48 @@ void CEnvRain::KeyValue( KeyValueData *pkvd )
 		CEnvParticule::KeyValue( pkvd );
 }
 
+static void SGTC_RainEnsureCount( CEnvRain *pRain )
+{
+	if( pRain->m_iCount != 0 )
+	{
+		if( pRain->m_iCount < 0 )
+			pRain->m_iCount = -pRain->m_iCount;
+		return;
+	}
+	const float vol = ( pRain->pev->absmax.x - pRain->pev->absmin.x ) *
+		( pRain->pev->absmax.y - pRain->pev->absmin.y ) *
+		( pRain->pev->absmax.z - pRain->pev->absmin.z );
+	pRain->m_iCount = (int)( pRain->m_flDensity * vol );
+	if( pRain->m_iCount < 0 )
+		pRain->m_iCount = -pRain->m_iCount;
+}
+
+static void SGTC_WriteEnvRainPayload( CEnvRain *pRain )
+{
+	// ref CEnvRain::SendValue @0x15f82a — 15 bytes (6 COORD + BYTE + SHORT).
+	WRITE_COORD( pRain->pev->absmin.x );
+	WRITE_COORD( pRain->pev->absmin.y );
+	WRITE_COORD( pRain->pev->absmin.z );
+	WRITE_COORD( pRain->pev->absmax.x );
+	WRITE_COORD( pRain->pev->absmax.y );
+	WRITE_COORD( pRain->pev->absmax.z );
+	WRITE_BYTE( pRain->m_iSprite );
+	WRITE_SHORT( pRain->m_iCount );
+}
+
 void CEnvRain::SendValue( void )
 {
-	MESSAGE_BEGIN( MSG_ALL, gmsgEnvRain, pev->origin );
-		WRITE_SHORT( entindex() );
-		WRITE_COORD( pev->origin.x );
-		WRITE_COORD( pev->origin.y );
-		WRITE_COORD( pev->origin.z );
-		WRITE_SHORT( m_iCount );
-		WRITE_COORD( m_flDensity );
-		WRITE_BYTE( m_iSprite );
-		WRITE_BYTE( m_iType );
-		WRITE_BYTE( m_bActive ? 1 : 0 );
+	SGTC_RainEnsureCount( this );
+	MESSAGE_BEGIN( MSG_ALL, gmsgEnvRain, NULL );
+	SGTC_WriteEnvRainPayload( this );
 	MESSAGE_END();
 }
 
 void CEnvRain::SendValueTo( CBasePlayer *pPlayer )
 {
-	MESSAGE_BEGIN( MSG_ONE, gmsgEnvRain, pev->origin, pPlayer->edict() );
-		WRITE_SHORT( entindex() );
-		WRITE_COORD( pev->origin.x );
-		WRITE_COORD( pev->origin.y );
-		WRITE_COORD( pev->origin.z );
-		WRITE_SHORT( m_iCount );
-		WRITE_BYTE( m_bActive ? 1 : 0 );
+	SGTC_RainEnsureCount( this );
+	MESSAGE_BEGIN( MSG_ONE, gmsgEnvRain, NULL, pPlayer->pev );
+	SGTC_WriteEnvRainPayload( this );
 	MESSAGE_END();
 }
 LINK_ENTITY_TO_CLASS( env_rain, CEnvRain );
@@ -1851,36 +1910,36 @@ LINK_ENTITY_TO_CLASS( env_lensflare, CEnvLensFlare );
 
 TYPEDESCRIPTION CEnvFountain::m_SaveData[] =
 {
+	DEFINE_FIELD( CEnvFountain, m_iId, FIELD_INTEGER ),
 	DEFINE_FIELD( CEnvFountain, m_iCount, FIELD_INTEGER ),
-	DEFINE_FIELD( CEnvFountain, m_vecAccel, FIELD_VECTOR ),
-	DEFINE_FIELD( CEnvFountain, m_vecDir, FIELD_VECTOR ),
-	DEFINE_FIELD( CEnvFountain, m_vecSize, FIELD_VECTOR ),
-	DEFINE_FIELD( CEnvFountain, m_vecColor, FIELD_VECTOR ),
 	DEFINE_FIELD( CEnvFountain, m_flMinAngle, FIELD_FLOAT ),
 	DEFINE_FIELD( CEnvFountain, m_flMaxAngle, FIELD_FLOAT ),
-	DEFINE_FIELD( CEnvFountain, m_flMinRadius, FIELD_FLOAT ),
-	DEFINE_FIELD( CEnvFountain, m_flMaxRadius, FIELD_FLOAT ),
 	DEFINE_FIELD( CEnvFountain, m_flMinVel, FIELD_FLOAT ),
 	DEFINE_FIELD( CEnvFountain, m_flMaxVel, FIELD_FLOAT ),
+	DEFINE_FIELD( CEnvFountain, m_flMinRadius, FIELD_FLOAT ),
+	DEFINE_FIELD( CEnvFountain, m_flMaxRadius, FIELD_FLOAT ),
+	DEFINE_FIELD( CEnvFountain, m_vecDir, FIELD_VECTOR ),
+	DEFINE_FIELD( CEnvFountain, m_vecOrigine, FIELD_VECTOR ),
+	DEFINE_FIELD( CEnvFountain, m_vecSize, FIELD_VECTOR ),
+	DEFINE_ARRAY( CEnvFountain, m_flColor, FIELD_FLOAT, 4 ),
 	DEFINE_FIELD( CEnvFountain, m_flLife, FIELD_FLOAT ),
 	DEFINE_FIELD( CEnvFountain, m_flBounce, FIELD_FLOAT ),
 	DEFINE_FIELD( CEnvFountain, m_iSprite, FIELD_INTEGER ),
 	DEFINE_FIELD( CEnvFountain, m_iType, FIELD_INTEGER ),
-	DEFINE_FIELD( CEnvFountain, m_bActive, FIELD_BOOLEAN ),
 };
 IMPLEMENT_SAVERESTORE( CEnvFountain, CPointEntity );
 
 void CEnvFountain::KeyValue( KeyValueData *pkvd )
 {
-	// Verified rodata keys (0x1d9b5f..0x1d9c22 block).
+	// Verified rodata keys (0x1d9be5..0x1d9c51 block).
 	if( FStrEq( pkvd->szKeyName, "nombre" ) )
 	{
 		m_iCount = atoi( pkvd->szValue );
 		pkvd->fHandled = TRUE;
 	}
-	else if( FStrEq( pkvd->szKeyName, "acceleration" ) )
+	else if( FStrEq( pkvd->szKeyName, "id" ) )
 	{
-		SGTC_ParseVector( pkvd->szValue, m_vecAccel );
+		m_iId = atoi( pkvd->szValue );
 		pkvd->fHandled = TRUE;
 	}
 	else if( FStrEq( pkvd->szKeyName, "directeur" ) )
@@ -1888,16 +1947,23 @@ void CEnvFountain::KeyValue( KeyValueData *pkvd )
 		SGTC_ParseVector( pkvd->szValue, m_vecDir );
 		pkvd->fHandled = TRUE;
 	}
+	else if( FStrEq( pkvd->szKeyName, "origine" ) )
+	{
+		SGTC_ParseVector( pkvd->szValue, m_vecOrigine );
+		pkvd->fHandled = TRUE;
+	}
 	else if( FStrEq( pkvd->szKeyName, "taille" ) )
 	{
-		float x = 2, y = 2;
-		sscanf( pkvd->szValue, "%f %f", &x, &y );
-		m_vecSize = Vector( x, y, 0 );
+		int x = 2, y = 2;
+		if( sscanf( pkvd->szValue, "%d %d", &x, &y ) == 2 )
+			m_vecSize = Vector( (float)x, (float)y, 0 );
+		else
+			m_vecSize = Vector( 2, 2, 0 );
 		pkvd->fHandled = TRUE;
 	}
 	else if( FStrEq( pkvd->szKeyName, "_couleur" ) )
 	{
-		SGTC_ParseColor( pkvd->szValue, m_vecColor );
+		SGTC_ParseColor4( pkvd->szValue, m_flColor );
 		pkvd->fHandled = TRUE;
 	}
 	else if( FStrEq( pkvd->szKeyName, "minAngle" ) )
@@ -1956,44 +2022,60 @@ void CEnvFountain::KeyValue( KeyValueData *pkvd )
 
 void CEnvFountain::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
 {
-	if( ShouldToggle( useType, m_bActive ) )
-		m_bActive = !m_bActive;
+	if( !ShouldToggle( useType, FBitSet( pev->spawnflags, 1 ) ) )
+		return;
+	if( FBitSet( pev->spawnflags, 1 ) )
+		pev->spawnflags &= ~1;
+	else
+		pev->spawnflags |= 1;
 	MESSAGE_BEGIN( MSG_ALL, gmsgChangeParticuleState );
-		WRITE_SHORT( entindex() );
-		WRITE_BYTE( m_bActive ? 1 : 0 );
+		WRITE_BYTE( m_iId );
+		WRITE_BYTE( FBitSet( pev->spawnflags, 1 ) ? 1 : 0 );
 	MESSAGE_END();
 	(void)pActivator; (void)pCaller; (void)value;
 }
 
+static void SGTC_WriteEnvFountainPayload( CEnvFountain *p )
+{
+	// ref CEnvFountain::SendValue @0x1605c2 — 45 bytes.
+	WRITE_COORD( p->pev->origin.x );
+	WRITE_COORD( p->pev->origin.y );
+	WRITE_COORD( p->pev->origin.z );
+	WRITE_COORD( p->m_flMinRadius );
+	WRITE_COORD( p->m_flMaxRadius );
+	WRITE_COORD( p->m_vecOrigine.x );
+	WRITE_COORD( p->m_vecOrigine.y );
+	WRITE_COORD( p->m_vecOrigine.z );
+	WRITE_COORD( p->m_flMinAngle );
+	WRITE_COORD( p->m_flMaxAngle );
+	WRITE_COORD( p->m_flMinVel );
+	WRITE_COORD( p->m_flMaxVel );
+	WRITE_COORD( p->m_vecDir.x );
+	WRITE_COORD( p->m_vecDir.y );
+	WRITE_COORD( p->m_vecDir.z );
+	for( int i = 0; i < 4; i++ )
+		WRITE_BYTE( SGTC_ColorByte( p->m_flColor[i] ) );
+	WRITE_COORD( p->m_vecSize.x );
+	WRITE_COORD( p->m_vecSize.y );
+	WRITE_COORD( p->m_flLife );
+	WRITE_COORD( p->m_flBounce );
+	WRITE_BYTE( p->m_iSprite );
+	WRITE_BYTE( p->m_iType );
+	WRITE_SHORT( p->m_iCount );
+	WRITE_BYTE( p->m_iId );
+}
+
 void CEnvFountain::SendValue( void )
 {
-	MESSAGE_BEGIN( MSG_ALL, gmsgEnvFountain, pev->origin );
-		WRITE_SHORT( entindex() );
-		WRITE_COORD( pev->origin.x );
-		WRITE_COORD( pev->origin.y );
-		WRITE_COORD( pev->origin.z );
-		WRITE_SHORT( m_iCount );
-		WRITE_COORD( m_vecDir.x );
-		WRITE_COORD( m_vecDir.y );
-		WRITE_COORD( m_vecDir.z );
-		WRITE_BYTE( (int)m_vecColor.x );
-		WRITE_BYTE( (int)m_vecColor.y );
-		WRITE_BYTE( (int)m_vecColor.z );
-		WRITE_BYTE( m_iSprite );
-		WRITE_BYTE( m_iType );
-		WRITE_BYTE( m_bActive ? 1 : 0 );
+	MESSAGE_BEGIN( MSG_ALL, gmsgEnvFountain, NULL );
+	SGTC_WriteEnvFountainPayload( this );
 	MESSAGE_END();
 }
 
 void CEnvFountain::SendValueTo( CBasePlayer *pPlayer )
 {
-	MESSAGE_BEGIN( MSG_ONE, gmsgEnvFountain, pev->origin, pPlayer->edict() );
-		WRITE_SHORT( entindex() );
-		WRITE_COORD( pev->origin.x );
-		WRITE_COORD( pev->origin.y );
-		WRITE_COORD( pev->origin.z );
-		WRITE_SHORT( m_iCount );
-		WRITE_BYTE( m_bActive ? 1 : 0 );
+	MESSAGE_BEGIN( MSG_ONE, gmsgEnvFountain, NULL, pPlayer->pev );
+	SGTC_WriteEnvFountainPayload( this );
 	MESSAGE_END();
 }
 LINK_ENTITY_TO_CLASS( env_fountain, CEnvFountain );

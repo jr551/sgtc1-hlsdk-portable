@@ -44,7 +44,7 @@ int CClientEnv::MsgFunc_ClearEnv( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// ref FUN_1006fc89 — 15 float coords + 4 color bytes + 2 flags + short + id.
+// ref FUN_1006fc89 — 19 WRITE_COORD + 7 BYTE + 1 SHORT (47 bytes, "EnvFull").
 int CClientEnv::MsgFunc_EnvFull( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
@@ -55,23 +55,20 @@ int CClientEnv::MsgFunc_EnvFull( const char *pszName, int iSize, void *pbuf )
 	memset( e, 0, sizeof( *e ) );
 	e->active = 1;
 
-	// 9 floats: min[3] max[3] vel[3]
-	for( int i = 0; i < 3; i++ ) e->min[i] = READ_FLOAT();
-	for( int i = 0; i < 3; i++ ) e->max[i] = READ_FLOAT();
-	for( int i = 0; i < 3; i++ ) e->vel[i] = READ_FLOAT();
-	// +0x4c +0x50 +0x54 = acc[3]
-	for( int i = 0; i < 3; i++ ) e->acc[i] = READ_FLOAT();
-	// 4 color bytes /255 → +0x60,+0x64,+0x68,+0x6c
+	for( int i = 0; i < 3; i++ ) e->min[i] = READ_COORD();
+	for( int i = 0; i < 3; i++ ) e->max[i] = READ_COORD();
+	for( int i = 0; i < 3; i++ ) e->vel[i] = READ_COORD();
+	for( int i = 0; i < 3; i++ ) e->acc[i] = READ_COORD();
+	for( int i = 0; i < 3; i++ ) e->msec[i] = READ_COORD();
 	for( int i = 0; i < 4; i++ ) e->color[i] = READ_BYTE();
-	// +0x58 +0x5c +0x70 +0x80 floats
-	e->parms[0] = READ_FLOAT();
-	e->parms[1] = READ_FLOAT();
-	e->parms[2] = READ_FLOAT();
-	e->radius  = READ_FLOAT();
-	e->flags = READ_BYTE();		// +0x84
-	e->type  = READ_BYTE();		// +0x88
-	e->spr   = READ_SHORT();	// +0x8c
-	e->id    = READ_BYTE();		// +0xac
+	e->parms[0] = READ_COORD();
+	e->parms[1] = READ_COORD();
+	e->parms[2] = READ_COORD();
+	e->radius  = READ_COORD();
+	e->flags = READ_BYTE();
+	e->type  = READ_BYTE();
+	e->spr   = READ_SHORT();
+	e->id    = READ_BYTE();
 	e->state = 0;
 	return 1;
 }
