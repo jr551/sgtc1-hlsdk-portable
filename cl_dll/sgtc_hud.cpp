@@ -26,6 +26,35 @@ static void SGTC_DrawVotePromptLine( const char *token, int r, int g, int b )
 	gHUD.DrawHudString( 20, ScreenHeight - 220, 620, text, r, g, b );
 }
 
+// ref @0x100761dd — pulse m_iBlipPulse toward 0x9b using byte @+0x1685 as direction.
+static void SGTC_TickBlipPulse( CHudSgtc *hud )
+{
+	if( hud->m_iBlipPulse < 0x9b && !hud->m_cBlipPulseDir )
+		hud->m_iBlipPulse++;
+	else if( hud->m_iBlipPulse > 0 && hud->m_cBlipPulseDir )
+		hud->m_iBlipPulse--;
+
+	if( hud->m_iBlipPulse <= 0 || hud->m_iBlipPulse >= 0x9b )
+		hud->m_cBlipPulseDir = hud->m_cBlipPulseDir ? 0 : 1;
+}
+
+// ref @0x100750c5 — ramp m_iBlipProgress toward m_iProgress while 0 < progress < 100.
+static void SGTC_TickBlipBarProgress( CHudSgtc *hud, float flTime )
+{
+	if( hud->m_iProgress <= 0 || hud->m_iProgress >= 100 )
+		return;
+
+	if( flTime >= hud->m_flBlipProgressLatch )
+	{
+		hud->m_iBlipProgress++;
+		hud->m_flBlipProgressLatch = flTime + 0.05f; // ref fadd @0x10075115 (ds:0x10094a78)
+	}
+
+	const int iFloor = hud->m_iProgress - 7;
+	if( hud->m_iBlipProgress < iFloor )
+		hud->m_iBlipProgress = hud->m_iProgress;
+}
+
 // ref @0x10076464 — vote cast lines: x=ScreenWidth/3, iMaxX=ScreenWidth/3+0x12c.
 static void SGTC_DrawVoteCastHudLine( int y, const char *token, int r, int g, int b )
 {
@@ -494,7 +523,10 @@ int CHudSgtc::Draw( float flTime )
 		}
 	}
 
-	if( m_iBlipProgress > 0 && gHUD.GetSpriteIndex( "pbar" ) )
+	SGTC_TickBlipPulse( this );
+	SGTC_TickBlipBarProgress( this, flTime );
+
+	if( m_iBlipProgress > 0 && m_iBlipProgress < 0x65 && gHUD.GetSpriteIndex( "pbar" ) )
 	{
 		wrect_t bar = gHUD.GetSpriteRect( gHUD.GetSpriteIndex( "pbar" ) );
 		int x = ScreenWidth / 2 - bar.right / 2;
@@ -521,12 +553,12 @@ int CHudSgtc::Draw( float flTime )
 	{
 		if( g_iSgtcVoteCount < 0 && g_iSgtcVoteSel < 0 && g_iSgtcVoteCount < 5 )
 		{
-			const int c = m_iBlipProgress + 100;
+			const int c = m_iBlipPulse + 100;
 			SGTC_DrawVotePromptLine( "#PLZVOTE", c, c, 255 );
 		}
 		if( flTime >= m_flKeyTime )
 		{
-			const int c = m_iBlipProgress + 100;
+			const int c = m_iBlipPulse + 100;
 			SGTC_DrawVotePromptLine( "#CAMPWARN", 255, c, c );
 		}
 	}
@@ -556,7 +588,10 @@ void CHudSgtc::Reset( void )
 	m_iArmorState = 0;
 	m_iArmorParam = 0;
 	m_flArmorTacPhase = 0;
+	m_iBlipPulse = 0;
 	m_iBlipProgress = 0;
+	m_flBlipProgressLatch = 0;
+	m_cBlipPulseDir = 0;
 	m_iRadarFocusX = 0;
 	m_iRadarFocusY = 0;
 	memset( m_iRadarType, 0, sizeof( m_iRadarType ) );
