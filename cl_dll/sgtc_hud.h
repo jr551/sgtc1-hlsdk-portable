@@ -15,6 +15,7 @@ class CHudSgtc : public CHudBase
 public:
 	int Init( void );
 	int VidInit( void );
+	void Think( void );
 	int Draw( float flTime );
 	void Reset( void );
 

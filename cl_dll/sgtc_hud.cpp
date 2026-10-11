@@ -29,6 +29,58 @@ static void SGTC_VoteFormatCenter( int modeIndex )
 	CenterPrint( buf );
 }
 
+// ref @0x100612d2 — votecastmenu client command (cycles vote mode index).
+static void SGTC_VoteCastMenu_f( void )
+{
+	if( g_iSgtcVoteCount >= 5 )
+		return;
+	const float now = gHUD.m_flTime;
+	if( now <= g_flSgtcVoteAnim )
+	{
+		g_iSgtcVoteSel = 0;
+		g_flSgtcVoteAnim = now + 5.0f;
+	}
+	else
+	{
+		g_flSgtcVoteAnim = now + 0.5f;
+		g_iSgtcVoteSel++;
+		if( g_iSgtcVoteSel > 4 )
+			g_iSgtcVoteSel = 0;
+	}
+}
+
+static void SGTC_DrawVoteCastMenu( float flTime )
+{
+	if( g_iSgtcVoteCount < 0 || g_iSgtcVoteCount >= 5 )
+		return;
+	if( flTime <= g_flSgtcVoteAnim )
+	{
+		if( g_iSgtcVoteSel >= 0 )
+		{
+			SGTC_VoteFormatCenter( g_iSgtcVoteSel );
+			gEngfuncs.pfnPlaySoundByName( "buttons/rt_button.wav", 1.0f );
+			g_iSgtcVoteCount = g_iSgtcVoteSel;
+			g_iSgtcVoteSel = -1;
+		}
+		return;
+	}
+
+	static const char *modeTok[] = {
+		"1. #MODE0", "2. #MODE1", "3. #MODE2", "4. #MODE3", "5. #MODE4"
+	};
+	const int bx = ScreenWidth / 3 + 300;
+	const int by = ScreenHeight / 2;
+	SGTC_DrawLocalizedHudLine( bx, by - 50, "#SELPREF", 255, 100, 100 );
+	const int modeY[] = { by - 30, by - 15, by, by + 15, by + 30 };
+	for( int i = 0; i < 5; i++ )
+	{
+		int r = 255, g = 255, b = 255;
+		if( i == g_iSgtcVoteSel )
+			r = g = b = 0;
+		SGTC_DrawLocalizedHudLine( bx, modeY[i], modeTok[i], r, g, b );
+	}
+}
+
 static void SGTC_InitPortraitSlots( CHudSgtc *hud );
 
 int CHudSgtc::Init( void )
@@ -41,6 +93,7 @@ int CHudSgtc::Init( void )
 	gEngfuncs.pfnRegisterVariable( "view_radar", "0", FCVAR_ARCHIVE );
 	gEngfuncs.pfnRegisterVariable( "view_portraits", "0", FCVAR_ARCHIVE );
 	gEngfuncs.pfnRegisterVariable( "view_seeownport", "0", FCVAR_ARCHIVE );
+	gEngfuncs.pfnAddCommand( "votecastmenu", SGTC_VoteCastMenu_f );
 	SGTC_InitPortraitSlots( this );
 	// ref FUN_10072e96 — reset vote globals unless mid-countdown at 5.
 	if( g_iSgtcVoteCount != 5 )
@@ -53,6 +106,11 @@ int CHudSgtc::Init( void )
 int CHudSgtc::VidInit( void )
 {
 	return 1;
+}
+
+void CHudSgtc::Think( void )
+{
+	(void)0;
 }
 
 static cvar_t *SGTC_Cvar( const char *name )
@@ -368,6 +426,8 @@ int CHudSgtc::Draw( float flTime )
 			SGTC_DrawLocalizedHudLine( px, py, "#CAMPWARN", 255, 255, 255 );
 		}
 	}
+
+	SGTC_DrawVoteCastMenu( flTime );
 
 	return 1;
 }
