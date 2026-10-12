@@ -2,7 +2,14 @@
 #include "hud.h"
 #include "cl_util.h"
 #include "parsemsg.h"
+#include "ammohistory.h"
 #include "sgtc_hud.h"
+
+// defined in ammo.cpp — hud.txt-style slot lookup inside a client_sprite_t list.
+client_sprite_t *GetSpriteList( client_sprite_t *pList, const char *psz, int iRes, int iCount );
+#include <stdio.h>
+#include <math.h>
+#include <string.h>
 
 CHudSgtc g_SgtcHud;
 
@@ -118,7 +125,12 @@ static void SGTC_TickTicketDock( CHudSgtc *hud, float flTime )
 	hud->m_cTicketSlideDir = (char)slideDir;
 }
 
-// ref @0x10075f37 — peel overlay (+0x1684): G% ammoline bar vs +0x168c baseline.
+// ref @0x10075719-0x1007582d — peel overlay (+0x1684 active): pct = (+0x1704*100)/+0x168c
+// (@0x1007571f-0x1007575c; +0x168c latches +0x1704 when zero @0x1007571f).  Bar rect from
+// +0x1738: right = ftol(pct/0x10095a48*0x1009b3f8), bottom = 0x12 (@0x10075781-0x100757b7);
+// sprite +0x1734, drawn at (0x4f, H-0x23) via SPR_DrawHoles (@0x10075805/0x10075825).
+// Tint verified @0x100757ba-0x100757d4: ftol(pct/0x10095a48*0x10095a48)+100 == (int)pct + 100,
+// skipped when <= 100 (@0x100757da) — matches the port's `pct + 100` guard exactly.
 static void SGTC_DrawTicketDockPeel( CHudSgtc *hud )
 {
 	if( !hud->m_iArmorParam )
@@ -141,46 +153,11 @@ static void SGTC_DrawTicketDockPeel( CHudSgtc *hud )
 	SPR_DrawHoles( 0, 0x4f, ScreenHeight - 0x23, &rc );
 }
 
-// ref @0x10075f37 / @0x10075f5b — center 2points + G / (T%0x3c) during live round.
-static void SGTC_DrawTwoPointsRow( CHudSgtc *hud, float flTime )
+// ref @0x10075e22-0x10075e4b / @0x10076033-0x1007605c — HUD digit width, i.e.
+// GetSpriteRect(number_0).right - .left (same value CHud::DrawHudNumber uses @hud_redraw.cpp:330).
+static int SGTC_DigitWidth( void )
 {
-	if( !hud->m_iTicketModeFlag || hud->m_iKeyMode )
-		return;
-	if( hud->m_flRoundTime <= 0.0f )
-		return;
-	const float rem = hud->m_flRoundTime - ( flTime - hud->m_flRoundStart );
-	if( rem <= 0.0f )
-		return;
-
-	int cx = ScreenWidth / 2;
-	int cy = ScreenHeight - 0x8e;
-	if( cy < (int)( ScreenHeight / 9 ) )
-		cy = ScreenHeight / 9;
-
-	const int twoIdx = gHUD.GetSpriteIndex( "2points" );
-	wrect_t dot;
-	int dotW = 8;
-	if( twoIdx > 0 )
-	{
-		dot = gHUD.GetSpriteRect( twoIdx );
-		dotW = dot.right - dot.left;
-		if( dotW <= 0 )
-			dotW = 8;
-	}
-
-	const int spriteW = dotW;
-	int leftNumX = cx - ( ( spriteW * 9 + ( spriteW * 9 >> 31 & 3 ) ) >> 2 ) - 0x12;
-	gHUD.DrawHudNumber( leftNumX, cy, DHN_DRAWZERO, hud->m_iGtickets, 0xa8, 0xd3, 0xff );
-
-	if( twoIdx > 0 )
-	{
-		SPR_Set( gHUD.GetSprite( twoIdx ), 0xa8, 0xd3, 0xff );
-		SPR_DrawHoles( 0, cx - ( ( spriteW + ( spriteW >> 31 & 7 ) ) >> 3 ), cy, &dot );
-	}
-
-	const int tMod = hud->m_iTtickets % 0x3c;
-	const int rightNumX = cx + ( ( spriteW * 3 + ( spriteW * 3 >> 31 & 7 ) ) >> 3 );
-	gHUD.DrawHudNumber( rightNumX, cy, DHN_2DIGITS | DHN_DRAWZERO, tMod, 0xa8, 0xd3, 0xff );
+	return gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).right - gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).left;
 }
 
 static void SGTC_DrawTicketDock( CHudSgtc *hud, float flTime )
@@ -233,13 +210,14 @@ static void SGTC_DrawTicketDock( CHudSgtc *hud, float flTime )
 	}
 	else
 	{
-		// ref @0x10074f0e — G/T counts when +0x1684 idle.
+		// ref @0x10074f0e — Think-fed ammo counters (+0x1704 @x=0x82, +0x1708 @x=0x46),
+		// not the +0x5c/+0x60 ticket tallies.
 		const int numY = ScreenHeight - 0x25;
-		if( hud->m_iGtickets > 0 )
-			gHUD.DrawHudNumber( 0x46, numY, DHN_DRAWZERO, hud->m_iGtickets, 0xa8, 0xd3, 0xff );
-		if( hud->m_iTtickets > 0 )
-			gHUD.DrawHudNumber( 0x82, numY, DHN_DRAWZERO, hud->m_iTtickets, 0xa8, 0xd3, 0xff );
-		if( hud->m_iGtickets > 0 && hud->m_iTtickets > 0 )
+		if( hud->m_iDockAmmoG > 0 )
+			gHUD.DrawHudNumber( 0x46, numY, DHN_DRAWZERO, hud->m_iDockAmmoG, 0xa8, 0xd3, 0xff );
+		if( hud->m_iDockAmmoT > 0 )
+			gHUD.DrawHudNumber( 0x82, numY, DHN_DRAWZERO, hud->m_iDockAmmoT, 0xa8, 0xd3, 0xff );
+		if( hud->m_iDockAmmoG > 0 && hud->m_iDockAmmoT > 0 )
 		{
 			const int ammoIdx = gHUD.GetSpriteIndex( "ammoline" );
 			if( ammoIdx > 0 )
@@ -325,6 +303,32 @@ static void SGTC_DrawStaminaBarStrip( CHudSgtc *hud )
 	SPR_DrawAdditive( 0, 0x34, ScreenHeight - 0x18, &rc );
 }
 
+// ref @0x10074f66-0x100750be — life_bar horizontal drain strip at (4, H-0x18).
+// pct = abs((int)m_flPortraitTime), clamped >=0; rem = (100-pct)/100.
+// The sprite rect's top shrinks toward the bottom (top = bottom - rem*height),
+// i.e. the bar drains upward as pct falls.  Tint = SPR_Set(180*rem, 180-180*rem, 0).
+// Drawn only while 0 < m_flPortraitTime < 101 — effectively degenerate in ref
+// (m_flPortraitTime is a large timestamp) but reproduced for parity.
+static void SGTC_DrawLifeStrip( CHudSgtc *hud )
+{
+	if( !( hud->m_flPortraitTime > 0.0f && hud->m_flPortraitTime < 101.0f ) )
+		return;
+	int pct = (int)fabs( hud->m_flPortraitTime );
+	if( pct < 0 )
+		pct = 0;
+	const float rem = ( 100.0f - pct ) / 100.0f;
+
+	const int barIdx = gHUD.GetSpriteIndex( "life_bar" );
+	if( barIdx <= 0 )
+		return;
+	wrect_t rc = gHUD.GetSpriteRect( barIdx );
+	const int h = rc.bottom - rc.top;
+	rc.top = rc.bottom - (int)( h * rem );
+
+	SPR_Set( gHUD.GetSprite( barIdx ), (int)( 180.0f * rem ), (int)( 180.0f - 180.0f * rem ), 0 );
+	SPR_DrawAdditive( 0, 4, ScreenHeight - 0x18, &rc );	// ref ds:0x100ed72c
+}
+
 static int SGTC_Sprite( const char *name, wrect_t *prc );
 
 // ref @0x10074f66..0x100750c5 — ammoline / hud_top / drugs / tac legend entrance.
@@ -351,8 +355,8 @@ static void SGTC_TickEntranceSlides( CHudSgtc *hud )
 	{
 		if( hud->m_iKeyBannerSlide > 0 )
 			hud->m_iKeyBannerSlide -= 2;
-		if( hud->m_iKeyMode > 0 && hud->m_iKeyBannerSlide == 0 )
-			hud->m_iKeyBannerStep = 0;
+		// ref @0x100759de-0x10075a58 — the tick never clears +0x1560; the bombkey banner block
+		// (@0x10075ade) does once the slide reaches 0.
 	}
 }
 
@@ -374,29 +378,61 @@ static void SGTC_DrawEntranceBanners( CHudSgtc *hud )
 		SPR_DrawHoles( 0, 0, ScreenHeight - 0x9f, &bar );
 	}
 
-	if( hud->m_iTicketModeFlag )
+	// ref @0x10075abb-0x10075b84 — bombkey banner (+0x1cf8 handle / +0x1cfc rect) at (0x2f, H-0x140),
+	// tint (0,0x64,0), SPR_DrawHoles; shown while key mode is up and the banner slide is home.
+	// Reaches @0x10075abb (m_iKeyMode>0), @0x10075ad1 (slide==0), @0x10075ade (step clear).
+	if( hud->m_iKeyMode > 0 && hud->m_iKeyBannerSlide == 0 )
 	{
-		const int topIdx = gHUD.GetSpriteIndex( "hud_top" );
-		if( topIdx > 0 )
+		hud->m_iKeyBannerStep = 0;	// ref @0x10075ade
+
+		wrect_t rcKey;
+		if( SGTC_Sprite( "bombkey", &rcKey ) )
 		{
-			rc = gHUD.GetSpriteRect( topIdx );
-			rc.right = rc.left + 0xb0;
-			rc.bottom = rc.top + 0x30;
-			const int x = -0x14 - hud->m_iKeyBannerSlide;
-			const int y = ScreenHeight - 0x15e;
-			SPR_Set( gHUD.GetSprite( topIdx ), 0x7d, 0x7d, 0x7d );
-			SPR_DrawHoles( 0, x, y, &rc );
+			SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( "bombkey" ) ), 0, 0x64, 0 );
+			SPR_DrawHoles( 0, 0x2f, ScreenHeight - 0x140, &rcKey );
 		}
 	}
 
+	// ref @0x1007582e-0x100758e0 — drugs strip at (0x4b, H-0x34), rect.right = left+0x6b,
+	// rect.bottom += 8, tint 0x78, SPR_DrawHoles (@0x100758ab/0x100758d8).  Gate in ref is the
+	// cached handle +0x170c != 0 (@0x10075834); that member has NO writer anywhere in ref/.text
+	// (objdump: the only reads are @0x10075834/0x100758b7) so the ref block is unreachable there.
 	if( hud->m_iKeyMode > 0 && hud->m_iKeyBannerSlide == 0 && SGTC_Sprite( "drugs", &rc ) )
 	{
 		const int dIdx = gHUD.GetSpriteIndex( "drugs" );
 		wrect_t dr = gHUD.GetSpriteRect( dIdx );
-		dr.right = dr.left + 0x6b;
-		dr.bottom = dr.top + ( dr.bottom - dr.top ) + 8;
+		dr.right = dr.left + 0x6b;			// ref @0x100758a2 (store to +4)
+		dr.bottom = dr.bottom + 8;			// ref @0x10075865 (store to +0xc)
 		SPR_Set( gHUD.GetSprite( dIdx ), 0x78, 0x78, 0x78 );
 		SPR_DrawHoles( 0, 0x4b, ScreenHeight - 0x34, &dr );
+	}
+
+	// ref @0x100758e1-0x10075995 — weapon-icon panel.  Gate: +0x1714 sgtcweapon
+	// HSPRITE set by Think (weapon->+0x150 via FUN_1007671c), rect from +0x1718.
+	// Rect forced to {left=0, right=0xb0, top=0, bottom=0x30} (176x48 hole crop);
+	// drawn SPR_DrawAdditive at (W-0xb6, H-0x3a), tint 0x78.
+	if( hud->m_iWeaponIconSpr != 0 )
+	{
+		wrect_t wi = hud->m_rcWeaponIcon;	// ref +0x1718 (sprite cache record)
+		wi.left = 0;				// ref @0x1007591b
+		wi.right = 0xb0;			// ref @0x1007592e (store to +4)
+		wi.top = 0;					// ref @0x10075941
+		wi.bottom = 0x30;			// ref @0x10075953 (store to +0xc)
+		SPR_Set( hud->m_iWeaponIconSpr, 0x78, 0x78, 0x78 );
+		SPR_DrawAdditive( 0, ScreenWidth - 0xb6, ScreenHeight - 0x3a, &wi );	// ref ds:0x100ed72c
+	}
+
+	// ref @0x10075a5e-0x10075ab8 — "slidein" sprite strip, drawn unconditionally after
+	// the key/hud_top slide FSM.  x = -0x14 - slide(+0x155c), y = H-0x15e, tint 0x7d,
+	// SPR_DrawHoles (ds:0x100ed728).  Slides in as +0x155c falls toward 0.
+	{
+		const int siIdx = gHUD.GetSpriteIndex( "slidein" );
+		if( siIdx > 0 )
+		{
+			wrect_t si = gHUD.GetSpriteRect( siIdx );
+			SPR_Set( gHUD.GetSprite( siIdx ), 0x7d, 0x7d, 0x7d );
+			SPR_DrawHoles( 0, -0x14 - hud->m_iKeyBannerSlide, ScreenHeight - 0x15e, &si );
+		}
 	}
 
 	if( hud->m_iHudInfoMode > 0 && hud->m_iAmmoLineSlide == 0 )
@@ -586,7 +622,11 @@ static void SGTC_DrawVoteCastMenu( float flTime )
 	{
 		if( g_iSgtcVoteSel >= 0 )
 		{
-			SGTC_VoteFormatCenter( g_iSgtcVoteSel );
+			// ref @0x10076623 — confirm sends ClientCmd("VoteMode %d") server-side,
+			// plays rt_button.wav, latches DAT_100babe4=sel, DAT_100babe0=-1.
+			char cmd[260];
+			snprintf( cmd, sizeof( cmd ), "VoteMode %d\n", g_iSgtcVoteSel );
+			ClientCmd( cmd );
 			gEngfuncs.pfnPlaySoundByName( "buttons/rt_button.wav", 1.0f );
 			g_iSgtcVoteCount = g_iSgtcVoteSel;
 			g_iSgtcVoteSel = -1;
@@ -749,9 +789,102 @@ int CHudSgtc::VidInit( void )
 	return 1;
 }
 
+// ref client.dll `this` object (FUN_10050582) = the ref CHudAmmo; its +0x1c is the
+// cached current-weapon WEAPON* — the same offset as CHudAmmo::m_pWeapon in this
+// SDK (CHudBase: vptr+m_pos+m_type+m_iFlags = 0x14, m_fFade @0x14, m_rgba @0x18).
+// m_pWeapon is private, so Think reads it through a layout-matched shadow.
+struct SGTC_HudAmmoLayout
+{
+	POSITION m_pos;
+	int m_type;
+	int m_iFlags;
+	float m_fFade;
+	RGBA m_rgba;
+	WEAPON *m_pWeapon;
+};
+
+static WEAPON *SGTC_CurrentWeapon( void )
+{
+	const SGTC_HudAmmoLayout *ammo =
+		reinterpret_cast<const SGTC_HudAmmoLayout *>( (const char *)&gHUD.m_Ammo + sizeof( void * ) );
+	return ammo->m_pWeapon;
+}
+
+// ref FUN_1007671c — weapon icon update. Ref caches the resolved sprite record
+// (+0x1718) whenever the sgtcweapon HSPRITE (+0x150, loaded per-weapon by
+// FUN_1004eb4b from sprites/<name>.txt slot "sgtcweapon") changes; the port
+// resolves lazily here since SDK WEAPON has no +0x150 field. [INFERENCE]
+static void SGTC_SetWeaponIcon( CHudSgtc *hud, WEAPON *pw )
+{
+	static WEAPON *s_pIconWeapon = NULL;
+	static HSPRITE s_hIcon = 0;
+	static wrect_t s_rcIcon = { 0, 0, 0, 0 };
+
+	if( pw != s_pIconWeapon )
+	{
+		s_pIconWeapon = pw;
+		s_hIcon = 0;
+		memset( &s_rcIcon, 0, sizeof( s_rcIcon ) );
+
+		if( pw )
+		{
+			char sz[256];
+			sprintf( sz, "sprites/%s.txt", pw->szName );
+			int iCount = 0;
+			client_sprite_t *pList = SPR_GetList( sz, &iCount );
+			if( pList )
+			{
+				client_sprite_t *p = GetSpriteList( pList, "sgtcweapon",
+					GetSpriteRes( ScreenWidth, ScreenHeight ), iCount );
+				if( p )
+				{
+					sprintf( sz, "sprites/%s.spr", p->szSprite );
+					s_hIcon = SPR_Load( sz );
+					s_rcIcon = p->rc;
+				}
+			}
+		}
+	}
+
+	hud->m_iWeaponIconSpr = s_hIcon;
+	hud->m_rcWeaponIcon = s_rcIcon;
+}
+
+// ref FUN_10050582 — the ref Think feeder on the ref CHudAmmo: gates on
+// dead flag / suit bit (m_iWeaponBits & 0x80000000) / hideHUD bits (flags&5),
+// then feeds the ticket-dock ammo counters (+0x1704 = reserve via the ammo
+// manager's per-type count @ammoObj+0x3f94 = gWR.CountAmmo(iAmmoType),
+// +0x1708 = clip @weapon+0xa0 = WEAPON::iClip) and the weapon icon
+// (+0x1714 = weapon->+0x150 sgtcweapon HSPRITE). Crosshair-bloom tail
+// (FUN_10051180×2/FUN_100512e0/FUN_10059678 + m_fFade decay) belongs to the
+// stock crosshair path and is intentionally not ported here.
 void CHudSgtc::Think( void )
 {
-	(void)0;
+	if( gHUD.m_fPlayerDead )					// ref DAT_100e9bc8
+		return;
+	if( !( gHUD.m_iWeaponBits & ( 1 << WEAPON_SUIT ) ) )	// ref DAT_100ed6d0 & 0x80000000
+		return;
+	if( gHUD.m_iHideHUDDisplay & 0x5 )			// ref DAT_100e9d0c & 5 (WEAPONS|ALL)
+		return;
+
+	if( !( m_iFlags & HUDELEM_ACTIVE ) )			// ref this->+0x10 & 1
+		return;
+	WEAPON *pw = SGTC_CurrentWeapon();			// ref this->+0x1c (m_pWeapon)
+	if( !pw )
+		return;
+
+	if( pw->iAmmoType > 0 )					// ref player->+0x80
+	{
+		m_iDockAmmoT = gWR.CountAmmo( pw->iAmmoType );	// ref +0x1704 via FUN_1004ea94
+		m_iDockAmmoG = pw->iClip;			// ref +0x1708 (player->+0xa0)
+	}
+	else
+	{
+		m_iDockAmmoT = 0;
+		m_iDockAmmoG = 0;
+	}
+
+	SGTC_SetWeaponIcon( this, pw );				// ref FUN_1007671c(player->+0x150)
 }
 
 static cvar_t *SGTC_Cvar( const char *name )
@@ -955,6 +1088,12 @@ static void SGTC_DrawRadarFull( CHudSgtc *hud, float flTime )
 	wrect_t rcRadar = gHUD.GetSpriteRect( radarIdx );
 	rcRadar.right = rcRadar.left + 0xc8;
 	rcRadar.bottom = rcRadar.top + 0xc8;
+	// ref @0x10073e60-0x10073ea0 — radar tint by active team (+0x170c8): team 2 → (0,0x78,0)
+	// green; any other team → (0x78,0,0) red.
+	if( hud->m_iPortraitActiveTeam == 2 )
+		SPR_Set( gHUD.GetSprite( radarIdx ), 0, 0x78, 0 );
+	else
+		SPR_Set( gHUD.GetSprite( radarIdx ), 0x78, 0, 0 );
 	SPR_DrawAdditive( 0, radarX, radarY, &rcRadar );
 
 	const int blIdx = gHUD.GetSpriteIndex( "blip" );
@@ -1047,6 +1186,23 @@ static void SGTC_ExpirePortraitSlots( CHudSgtc *hud )
 		hud->m_iPortraitSlotFlash[i] = 0;
 		hud->m_iPortraitSlotGray[i] = 0x7d;
 		hud->m_iPortraitSlotTeam[i] = 0;
+	}
+}
+
+// ref FUN_10072609 — Reset-msg mode!=0: evict the portrait slot whose SlotEnt(+0x264)
+// == arg while SlotId(+0x64) is set.  Clears SlotId/SlotEnt/SlotFlash(+0x1568) and
+// resets SlotGray(+0x15ec) to 0x7d — name/team retained (slot grays out).
+static void SGTC_EvictPortraitSlot( CHudSgtc *hud, int ent )
+{
+	for( int i = 0; i < SGTC_PORTRAIT_SLOTS; i++ )
+	{
+		if( hud->m_iPortraitSlotEnt[i] == ent && hud->m_iPortraitSlotId[i] != 0 )
+		{
+			hud->m_iPortraitSlotId[i] = 0;
+			hud->m_iPortraitSlotEnt[i] = 0;
+			hud->m_iPortraitSlotFlash[i] = 0;
+			hud->m_iPortraitSlotGray[i] = 0x7d;
+		}
 	}
 }
 
@@ -1303,9 +1459,29 @@ int CHudSgtc::Draw( float flTime )
 		return 0;
 	const int rx = ScreenWidth - 200;
 
+	// ref: Draw has no hud_left (+0x1c90) draw anywhere — the ref draws "ticketdock" (+0x1cc8,
+	// 120x64) at (0, H-h-0x68) gated byte+0x58 (port ticket-mode panel; not in this change list).
+	// Kept: port's bottom-left panel (visual anchor; 200x168 @ (0, H-168)).
 	SGTC_DrawSprite( "hud_left", lx, ly );
-	SGTC_DrawSprite( "hud_right", rx, ly );
+	// ref @0x10073ac7-0x10073b43 — bottom-right panel: hud_right (+0x1c98, 200x168) at
+	// (W-0xc6, H-0xa1) with rect.left = 2 / rect.top = 7 forced (@0x10073af1/0x10073b03),
+	// tint 0x7d, SPR_DrawHoles — identical pixels to the full rect at (W-200, H-168).
+	{
+		wrect_t rcPanel;
+		if( SGTC_Sprite( "hud_right", &rcPanel ) )
+		{
+			rcPanel.left = 2;	// ref @0x10073af1
+			rcPanel.top = 7;	// ref @0x10073b03
+			SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( "hud_right" ) ), 0x7d, 0x7d, 0x7d );
+			SPR_DrawHoles( 0, ScreenWidth - 0xc6, ScreenHeight - 0xa1, &rcPanel );
+		}
+	}
 
+	// ref @0x100737e0 Draw — life/armor/stamn vertical needles are NOT drawn by ref's Draw:
+	// ref Draw has no Draw calls for the life_bar/armor_bar/stamn_bar handles (+0x1ce8/+0x1ce0/+0x1cf0
+	// sprite-table entries @0x100bba2c/0x100bba20/0x100bba38); the live values feed the Win32/VGUI
+	// panels (@0x100ed8a4 vtbl+0x210 updates) instead.  These SGTC_DrawBarNeedle calls are an
+	// Xash substitute — accepted, do not "fix" to match ref.
 	float life = (float)gHUD.m_Health.m_iHealth;
 	SGTC_DrawBarNeedle( "life_bar", "needle", lx + 24, ly + 28, life / 100.0f );
 	SGTC_DrawBarNeedle( "armor_bar", "needle", lx + 48, ly + 28, m_flArmorBar / 100.0f );
@@ -1327,27 +1503,44 @@ int CHudSgtc::Draw( float flTime )
 	SGTC_TickProgressTeamUi( this );
 	SGTC_DrawProgressTeamUi( this );
 
-	if( m_flRoundTime > 0.0f )
+	// ref @0x10075d2d — round timer [MM][2points][SS]; gate +0x16f0 != 0 && byte+0x58 == 0
+	// (@0x10075dd2/0x10075de7).  rem = (+0x16e8 + +0x16ec) - gHUD.m_flTime (@0x10075dfe-0x10075e1c).
+	if( m_iRoundTimerOn && !m_iTicketModeFlag )
 	{
-		int remain = (int)( m_flRoundTime - ( flTime - m_flRoundStart ) );
-		if( remain < 0 )
-			remain = 0;
-		gHUD.DrawHudNumber( ScreenWidth / 2 - 24, 8, DHN_3DIGITS | DHN_DRAWZERO, remain, 255, 200, 64 );
+		const float rem = m_flRoundStart + m_flRoundTime - flTime;
+		const int w = SGTC_DigitWidth();
+		// ref @0x10075e9a — layout flag byte[ebp-0x14] (cleared @0x10075dc8, no writer between the
+		// clear and the test) always takes the bottom-left arm; the (W/2, H/10) arm is unreachable.
+		const int x0 = 0x23;
+		const int y0 = ScreenHeight - 0x8e;
+
+		gHUD.DrawHudNumber( ( x0 + 0x12 ) - ( w * 9 ) / 4, y0, DHN_DRAWZERO,
+				( rem < 0.0f ) ? 0 : (int)( rem / 60.0f ), 0xa8, 0xd3, 0xff ); // ref @0x10075ee5, 60.0f @0x100a1e88
+
+		// ref @0x10075f28-0x10075f97 — "2points" separator dots at (x0 - w/8), tint 0xa8,0xd3,0xff.
+		const int dotIdx = gHUD.GetSpriteIndex( "2points" );
+		if( dotIdx > 0 )
+		{
+			SPR_Set( gHUD.GetSprite( dotIdx ), 0xa8, 0xd3, 0xff );
+			SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
+		}
+
+		// ref @0x10075fa0-0x10075fec — seconds = (int)rem % 0x3c, ref flags 0xb (bit 0x8 has no
+		// port DHN equivalent; 0x1|0x2 is DRAWZERO|2DIGITS) — [INFERENCE] on the 0x8 bit.
+		const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
+		gHUD.DrawHudNumber( x0 + ( w * 3 ) / 8, y0, DHN_DRAWZERO | DHN_2DIGITS, secs, 0xa8, 0xd3, 0xff );
 	}
 
 	cvar_t *cvPort = SGTC_Cvar( "view_portraits" );
 	if( cvPort && cvPort->value > 0.0f )
 	{
-		const int portX = ScreenWidth - 0xc6;	// ref @0x10073acd
-		const int portY = ScreenHeight - 0xa1;	// ref @0x10073adc
-		SGTC_DrawSprite( "port_left", portX, portY );
-		SGTC_DrawSprite( "port_mid", portX + 16, portY );
-		SGTC_DrawSprite( "port_right", portX + 96, portY );
+		const int portY = ScreenHeight - 0xa1;	// ref @0x10073adc (portrait cell y)
 
 		SGTC_ExpirePortraitSlots( this );
 
 		cvar_t *cvSeeOwn = SGTC_Cvar( "view_seeownport" );
 		int col = 0;
+		int lastPx = 0;
 		for( int i = 0; i < SGTC_PORTRAIT_SLOTS; i++ )
 		{
 			if( !m_iPortraitSlotEnt[i] )
@@ -1365,19 +1558,37 @@ int CHudSgtc::Draw( float flTime )
 
 			col++;
 			const int px = ScreenWidth - ( col * 0x50 + 0x10 );	// ref @0x10073c70
-			// ref @0x10073c84 — gray cell backdrop before FUN_100772f2.
-			const char *graySpr = SGTC_PortraitAvatarSprite( m_iPortraitSlotId[i] );
-			if( SGTC_Sprite( graySpr, NULL ) )
+			if( px <= 0 )
+				break;					// ref @0x10073c5f: skip columns off the left edge
+			lastPx = px;
+
+			// ref @0x10073c84-0x10073cbd — per-column backdrop: port_mid (+0x1cd8) at (px, 0),
+			// constant tint 0x7d, SPR_DrawHoles.
+			wrect_t gr;
+			if( SGTC_Sprite( "port_mid", &gr ) )
 			{
-				wrect_t gr;
-				SGTC_Sprite( graySpr, &gr );
-				const int g = m_iPortraitSlotGray[i] & 0xff;
-				SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( graySpr ) ), g, g, g );
-				SPR_DrawAdditive( 0, px, portY, &gr );
+				SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( "port_mid" ) ), 0x7d, 0x7d, 0x7d );
+				SPR_DrawHoles( 0, px, 0, &gr );
 			}
 			SGTC_DrawPortraitCell( this, i, px, portY, flTime, 0 );
-			if( px <= 0 )
-				break;
+		}
+
+		// ref @0x10073d86-0x10073e21 — overflow caps, only when the strip ran off the left edge:
+		// port_left (+0x1cc0) at (lastPx-0x10, 0) then port_right (+0x1cd0) at (W-0x10, 0),
+		// tint 0x7d, SPR_DrawHoles.
+		if( lastPx != 0 )
+		{
+			wrect_t rcCap;
+			if( SGTC_Sprite( "port_left", &rcCap ) )
+			{
+				SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( "port_left" ) ), 0x7d, 0x7d, 0x7d );
+				SPR_DrawHoles( 0, lastPx - 0x10, 0, &rcCap );
+			}
+			if( SGTC_Sprite( "port_right", &rcCap ) )
+			{
+				SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( "port_right" ) ), 0x7d, 0x7d, 0x7d );
+				SPR_DrawHoles( 0, ScreenWidth - 0x10, 0, &rcCap );
+			}
 		}
 	}
 
@@ -1423,7 +1634,31 @@ int CHudSgtc::Draw( float flTime )
 	}
 
 	SGTC_DrawArmorBarStrip( this );
+	SGTC_DrawLifeStrip( this );	// ref @0x10074f66 — life_bar drain strip (degenerate-gated)
 	SGTC_DrawStaminaBarStrip( this );
+
+	// ref @0x10075ff1-0x100761d7 — two-counter score row while TicketMode is active:
+	// first number [+0x60] = Ttickets, second [+0x5c] = Gtickets (port MsgFunc_Ttickets/@FUN_10076d24
+	// and MsgFunc_Gtickets/@FUN_10076cf7).  Layout flag byte[ebp-0x14] (cleared @0x10075dc8) always
+	// takes the bottom-left arm (0x38, H-0x8e); the (W/2, H/9) arm is unreachable in ref.
+	if( m_iTicketModeFlag )
+	{
+		const int w = SGTC_DigitWidth();
+		int x0 = 0x38;				// ref @0x10076089
+		const int y0 = ScreenHeight - 0x8e;	// ref @0x10076098
+		const int step = 0xd;			// ref @0x100760b8
+		const int drawX0 = x0 - ( w * 9 ) / 4;
+
+		if( m_iTtickets > 99 )			// ref @0x100760c8
+			x0 -= step;
+		gHUD.DrawHudNumber( drawX0, y0, DHN_DRAWZERO | DHN_2DIGITS, m_iTtickets, 0xa8, 0xd3, 0xff ); // ref flags 3
+		if( m_iTtickets > 99 )			// ref @0x10076127
+			x0 += step;
+		if( m_iGtickets > 99 )			// ref @0x10076145
+			x0 -= step;
+		x0 += 0x2f;				// ref @0x10076163
+		gHUD.DrawHudNumber( x0 - ( w * 9 ) / 4, y0, DHN_DRAWZERO | DHN_2DIGITS, m_iGtickets, 0xa8, 0xd3, 0xff ); // ref flags 3
+	}
 
 	if( m_fZatTouchActive && m_flZatTouchTime + 2.0f > flTime && gHUD.GetSpriteIndex( "zat_touch" ) )
 	{
@@ -1448,7 +1683,6 @@ int CHudSgtc::Draw( float flTime )
 		}
 	}
 
-	SGTC_DrawTwoPointsRow( this, flTime );
 	SGTC_DrawVoteCastMenu( flTime );
 
 	return 1;
@@ -1500,6 +1734,7 @@ void CHudSgtc::Reset( void )
 	m_iAboutMePlayer = 0;
 	m_iKeyMode = 0;
 	m_flKeyTime = 0;
+	m_iRoundTimerOn = 0;	// ref +0x16f0 (setter FUN_100766dd)
 	m_flRoundTime = 0;
 	m_flRoundStart = 0;
 	m_iTicketModeFlag = 0;
@@ -1656,11 +1891,47 @@ int CHudSgtc::MsgFunc_HasKey( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// ref FUN_10076c3d @0x10076c3d — BEGIN_READ only; radio text uses Titles.txt elsewhere.
+// ref FUN_1007675a — the REAL 'Radio' usermessage handler (thunk 0x10072b39
+// registered @0x10072f42).  Reads msgId + playerEnt, GetPlayerInfo for the name,
+// player class from the extra-info table (stride 0x1a → g_PlayerExtraInfo):
+// class 2 = Goa'uld → '#RadioMessageGoauldNN' + 'radio/songoaNN.wav',
+// class 1 = Torri → '#RadioMessageNN' + 'radio/sonNN.wav'.  Formats
+// '%c(Radio)%s: %s' and pushes it to saytext.
 int CHudSgtc::MsgFunc_Radio( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
+	int msgId = READ_BYTE();
+	int ent   = READ_BYTE();
+	if( msgId < 0 ) msgId = 0;
+
+	hud_player_info_t info;
+	memset( &info, 0, sizeof( info ) );
+	GetPlayerInfo( ent, &info );
+
+	const int pclass = ( ent >= 0 && ent <= MAX_PLAYERS ) ? g_PlayerExtraInfo[ent].playerclass : 0;
+
+	char key[64];
+	char wav[64];
+	const char *name = info.name;
+	if( !name ) name = "";
+	if( pclass == 2 )
+	{
+		snprintf( key, sizeof( key ), "#RadioMessageGoauld%02d", msgId );
+		snprintf( wav, sizeof( wav ), "radio/songoa%02d.wav", msgId );
+	}
+	else
+	{
+		snprintf( key, sizeof( key ), "#RadioMessage%02d", msgId );
+		snprintf( wav, sizeof( wav ), "radio/son%02d.wav", msgId );
+	}
+
+	const char *msg = CHudTextMessage::BufferedLocaliseTextString( key );
+	char line[256];
+	snprintf( line, sizeof( line ), "%c(Radio)%s: %s\n", 2, name, msg ? msg : key );
+	gHUD.m_SayText.SayTextPrint( line, sizeof( line ) - 1, ent );
+	if( pclass == 1 || pclass == 2 )
+		gEngfuncs.pfnPlaySoundByName( wav, 1.0f );
 	return 1;
 }
 
@@ -1682,10 +1953,7 @@ int CHudSgtc::MsgFunc_Armor( const char *pszName, int iSize, void *pbuf )
 	if( sub == 1 )
 		m_iArmorOverlay = 1;
 	else if( sub == 2 )
-	{
-		m_iArmorOverlay = 0;
-		m_iArmorParam = 0;	// ref peel baseline +0x168c reset when overlay off
-	}
+		m_iArmorOverlay = 0;	// ref @0x10076aed — sub==2 writes +0x1684=0 only; +0x168c kept
 
 	if( sub == 3 && m_iArmorState == 0 )
 	{
@@ -1825,7 +2093,7 @@ int CHudSgtc::MsgFunc_AddPortrait( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// ref @0x10076eb9 — short + byte; byte==0 resets portrait arrays, else SetPortrait(iVar1)
+// ref @0x10076eb9 — short + byte; byte==0 full reset, else portrait-slot eviction.
 int CHudSgtc::MsgFunc_Reset( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
@@ -1835,9 +2103,33 @@ int CHudSgtc::MsgFunc_Reset( const char *pszName, int iSize, void *pbuf )
 	if( mode == 0 )
 		Reset();
 	else
-		m_iPortraitEnt = arg;
+		SGTC_EvictPortraitSlot( this, arg );	// ref FUN_10072609 — not m_iPortraitEnt=arg
+
+	// ref tail (always): ClientCmd("customcolor %d") — %d reads the low dword of the
+	// 'custcolor' cvar's double-rep (ref float->double->%d quirk; effectively 0 for
+	// exact-valued floats).  Reproduced literally.
+	{
+		cvar_t *cv = gEngfuncs.pfnGetCvarPointer( "custcolor" );
+		float fv = cv ? cv->value : 0.0f;
+		double dv = (double)fv;
+		int lo = (int)( *( (long long *)&dv ) );	// low dword of double bits (little-endian)
+		char cmd[256];
+		snprintf( cmd, sizeof( cmd ), "customcolor %d\n", lo );
+		ClientCmd( cmd );
+	}
+
+	// ref @0x10076f88 + 0x10077017-0x10077054 — reset +0x1688 flag, vote anim/sel,
+	// 5 announce lines, slide defaults +0x1554=0x1d / +0x155c=0xa0, +0x1560=0, +0x54=0.
+	m_iArmorFlag1688 = 0;
+	g_flSgtcVoteAnim = 0;
 	g_iSgtcVoteCount = -1;
 	g_iSgtcVoteSel = -1;
+	SGTC_InitAnnounceLines( this );
+	m_iAmmoLineSlide = 0x1d;
+	m_iAmmoLineStep = 0;
+	m_iKeyBannerSlide = 0xa0;
+	m_iKeyBannerStep = 0;
+	m_iHudInfoMode = 0;
 	return 1;
 }
 
@@ -1876,6 +2168,9 @@ int CHudSgtc::MsgFunc_SetRndTim( const char *pszName, int iSize, void *pbuf )
 	int state = READ_BYTE();
 	if( state )
 		m_iTicketMode = state; // ref calls this vtable+0x1c
+	// ref +0x16f0 setter @0x100766dd — the round-timer message arms the Draw gate @0x10075dd2.
+	// (Ref's setter has no direct .text caller; wired here as the round-time arm point.) [INFERENCE]
+	m_iRoundTimerOn = 1;
 	return 1;
 }
 

@@ -85,6 +85,14 @@ public:
 	int m_fZatTouchActive;		// ref +0x16f4
 	float m_flZatTouchTime;		// ref +0x16f8
 
+	// ref +0x1704/+0x1708 — Think-fed ammo counters shown in the ticket-dock counter row
+	// (ref Draw @0x10075609-0x10075718 reads these, not +0x5c/+0x60 tickets).
+	int m_iDockAmmoT;			// ref +0x1704 (DrawHudNumber @0x82)
+	int m_iDockAmmoG;			// ref +0x1708 (DrawHudNumber @0x46)
+	int m_iWeaponIconSpr;		// ref +0x1714 — "sgtcweapon" HSPRITE of current weapon (set by Think)
+	wrect_t m_rcWeaponIcon;		// ref +0x1718 — cached weapon-icon rect (ref sprite-cache record)
+	int m_iArmorFlag1688;		// ref +0x1688 — cleared by Reset msg (+0x1688=0 @0x10076f88)
+
 	int m_iHideHud;
 
 	// ref @0x100768d4 — AddPortrait record (short,long,short×6,string,byte)
@@ -101,6 +109,7 @@ public:
 	int m_iAboutMePlayer;		// ref +0x40
 	int m_iKeyMode;			// ref +0x34
 	float m_flKeyTime;		// ref +0x30
+	int m_iRoundTimerOn;		// ref +0x16f0 (round timer armed; Draw gate @0x10075dd2)
 	float m_flRoundTime;		// ref +0x16ec
 	float m_flRoundStart;		// ref +0x16e8
 	int m_iTicketModeFlag;		// ref +0x58 (TicketMode msg)
