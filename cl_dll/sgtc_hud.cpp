@@ -1440,8 +1440,11 @@ static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, floa
 	const int barW = 0x40;
 	const int barX = px + 0x42;
 	const int barY = py + 0x44;
+	// ref @0x10077b6b-0x10077bca — HP fill is a red→green gradient, not solid:
+	// FillRGBA(x, y+0x44, ftol(frac*0x40), 4, ftol(220-220*frac), ftol(220*frac), 0, 0xff)
+	// via ds:0x100ed73c (220.0f @ds:0x100a1e70, 64.0f @ds:0x1009f014).
 	FillRGBA( barX, barY, barW, 4, 0x1e, 0x1e, 0x1e, 255 );
-	FillRGBA( barX, barY, (int)( barW * frac ), 4, 0, 0x82, 0, 255 );
+	FillRGBA( barX, barY, (int)( barW * frac ), 4, (int)( 220.0f - 220.0f * frac ), (int)( 220.0f * frac ), 0, 255 );
 
 	if( flags.cc == 1 )
 		FillRGBA( barX, py + 0x40, barW, 2, 255, 0, 0, 255 );
