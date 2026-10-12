@@ -45,10 +45,11 @@ public:
 	void Precache( void );
 	void EXPORT Think( void );
 
-	CBaseEntity *m_pCorpse;
-	CBaseEntity *m_pEffect;
-	BOOL m_bArmed;
-	BOOL m_bBurn;
+	CBaseEntity *m_pCorpse;	// ref +0x19c — bound corpse (feed gate)
+	CBaseEntity *m_pEffect;	// ref +0x1b8 — active effect ent (blocks feed)
+	BOOL m_bArmed;			// ref +0x1a4
+	char m_bFed;			// ref +0x1a5 — set by CBasePlayer::Talent feed
+	BOOL m_bBurn;			// ref +0x1a7
 };
 
 // ---------------------------------------------------------------------------

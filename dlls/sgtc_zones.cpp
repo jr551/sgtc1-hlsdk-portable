@@ -352,3 +352,21 @@ void CTriggerBomb::BombThink( void )
 }
 
 LINK_ENTITY_TO_CLASS( zone_bomb_target, CTriggerBomb );
+
+// SGTC_Zones_ResetCaptureZones — ref NewRound @0x187b34 zone_capture walk
+// (double pass, net effect): +0x244/+0x240/+0x250 = 0,
+// pev->health = 0x428a0000 = 69.0f (matches the CaptureThink reset
+// threshold), +0x258 = now-1.0f. +0x248/+0x24c/+0x254 untouched.
+void SGTC_Zones_ResetCaptureZones( void )
+{
+	CBaseEntity *pScan = NULL;
+	while( ( pScan = UTIL_FindEntityByClassname( pScan, "zone_capture" ) ) != NULL )
+	{
+		CTriggerCapture *pZone = (CTriggerCapture *)pScan;
+		pZone->m_iFlagState = 0;
+		pZone->m_iPending = 0;
+		pZone->m_iLastPending = 0;
+		pZone->pev->health = 69.0f; // ref 0x428a0000
+		pZone->m_flSwitch = gpGlobals->time - 1.0f;
+	}
+}

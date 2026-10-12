@@ -497,52 +497,9 @@ void ClientCommand( edict_t *pEntity )
 			GetClassPtr( (CBasePlayer *)pev )->GiveNamedItem( STRING( iszItem ) );
 		}
 	}
-	else if( FStrEq( pcmd, "fire" ) )
-	{
-		if( g_enable_cheats->value != 0 )
-		{
-			CBaseEntity *pPlayer = CBaseEntity::Instance( pEntity );
-			if( CMD_ARGC() > 1 )
-			{
-				FireTargets( CMD_ARGV( 1 ), pPlayer, pPlayer, USE_TOGGLE, 0 );
-			}
-			else
-			{
-				TraceResult tr;
-				UTIL_MakeVectors( pev->v_angle );
-				UTIL_TraceLine(
-					pev->origin + pev->view_ofs,
-					pev->origin + pev->view_ofs + gpGlobals->v_forward * 1000,
-					dont_ignore_monsters, pEntity, &tr
-				);
-
-				if( tr.pHit )
-				{
-					CBaseEntity *pHitEnt = CBaseEntity::Instance( tr.pHit );
-					if( pHitEnt )
-					{
-						pHitEnt->Use( pPlayer, pPlayer, USE_TOGGLE, 0 );
-						ClientPrint( &pEntity->v, HUD_PRINTCONSOLE, UTIL_VarArgs( "Fired %s \"%s\"\n", STRING( pHitEnt->pev->classname ), STRING( pHitEnt->pev->targetname ) ) );
-					}
-				}
-			}
-		}
-	}
-	else if( FStrEq( pcmd, "drop" ) )
-	{
-		// player is dropping an item. 
-		GetClassPtr( (CBasePlayer *)pev )->DropPlayerItem( (char *)CMD_ARGV( 1 ) );
-	}
 	else if( FStrEq( pcmd, "fov" ) )
 	{
-		if( g_enable_cheats->value != 0 && CMD_ARGC() > 1 )
-		{
-			GetClassPtr( (CBasePlayer *)pev )->m_iFOV = atoi( CMD_ARGV( 1 ) );
-		}
-		else
-		{
-			CLIENT_PRINTF( pEntity, print_console, UTIL_VarArgs( "\"fov\" is \"%d\"\n", (int)GetClassPtr( (CBasePlayer *)pev )->m_iFOV ) );
-		}
+		// ref ClientCommand @0xc8ff2 — "fov" is a no-op in stc_i386.so.
 	}
 	else if( FStrEq( pcmd, "use" ) )
 	{
@@ -554,61 +511,16 @@ void ClientCommand( edict_t *pEntity )
 	}
 	else if( FStrEq( pcmd, "lastinv" ) )
 	{
-		GetClassPtr( (CBasePlayer *)pev )->SelectLastItem();
-	}
-	else if( FStrEq( pcmd, "spectate" ) ) // clients wants to become a spectator
-	{
+		// ref @0xcaa44 — alive and not observer.
 		CBasePlayer *pPlayer = GetClassPtr( (CBasePlayer *)pev );
-		if( !pPlayer->IsObserver() )
-		{
-			// always allow proxies to become a spectator
-			if( ( pev->flags & FL_PROXY ) || allow_spectators.value )
-			{
-				edict_t *pentSpawnSpot = g_pGameRules->GetPlayerSpawnSpot( pPlayer );
-				pPlayer->StartObserver( pev->origin, VARS( pentSpawnSpot )->angles );
-
-				// notify other clients of player switching to spectator mode
-				UTIL_ClientPrintAll( HUD_PRINTNOTIFY, UTIL_VarArgs( "%s switched to spectator mode\n",
-						( pev->netname && ( STRING( pev->netname ) )[0] != 0 ) ? STRING( pev->netname ) : "unconnected" ) );
-			}
-			else
-				ClientPrint( pev, HUD_PRINTCONSOLE, "Spectator mode is disabled.\n" );
-		}
-		else
-		{
-			pPlayer->StopObserver();
-
-			// notify other clients of player left spectators
-			UTIL_ClientPrintAll( HUD_PRINTNOTIFY, UTIL_VarArgs( "%s has left spectator mode\n",
-					( pev->netname && ( STRING( pev->netname ) )[0] != 0 ) ? STRING( pev->netname ) : "unconnected" ) );
-		}
-	}
-	else if( FStrEq( pcmd, "specmode" ) ) // new spectator mode
-	{
-		CBasePlayer *pPlayer = GetClassPtr( (CBasePlayer *)pev );
-
-		if( pPlayer->IsObserver() )
-			pPlayer->Observer_SetMode( atoi( CMD_ARGV( 1 ) ) );
-	}
-	else if( FStrEq( pcmd, "closemenus" ) )
-	{
-		// just ignore it
+		if( pPlayer->IsAlive() && !pPlayer->IsObserver() )
+			pPlayer->SelectLastItem();
 	}
 	else if( FStrEq( pcmd, "follownext" ) )	// follow next player
 	{
 		CBasePlayer *pPlayer = GetClassPtr( (CBasePlayer *)pev );
 
-		if( pPlayer->IsObserver() )
-			pPlayer->Observer_FindNextPlayer( atoi( CMD_ARGV( 1 ) ) ? true : false );
-	}
-	else if( g_pGameRules->ClientCommand( GetClassPtr( (CBasePlayer *)pev ), pcmd ) )
-	{
-		// MenuSelect returns true only if the command is properly handled,  so don't print a warning
-	}
-	else if( FStrEq( pcmd, "VModEnable" ) )
-	{
-		// clear 'Unknown command: VModEnable' in singleplayer
-		return;
+		pPlayer->Observer_FindNextPlayer( atoi( CMD_ARGV( 1 ) ) ? true : false );	// ref: no IsObserver gate
 	}
 	else
 	{

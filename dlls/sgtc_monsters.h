@@ -93,6 +93,7 @@ public:
 	float m_flDie;
 	float m_flNextHunt;
 	float m_flNextSound;
+	int m_iSgtcFlag;	// [INFERENCE] ref +0xd8 — deploy-time flag set by Talent
 	virtual int Save( CSave &save );
 	virtual int Restore( CRestore &restore );
 	static TYPEDESCRIPTION m_SaveData[];
@@ -161,6 +162,7 @@ public:
 	void EXPORT SkullTouch( CBaseEntity *pOther );
 
 	float m_flNextSound;
+	int m_iSgtcField;	// [INFERENCE] ref +0xc0 — cleared by "recallall" client cmd
 };
 
 // Proximity mine. Stock analogue: CTripmineGrenade (CGrenade base).
@@ -249,6 +251,8 @@ public:
 
 	void EXPORT WatchThink( void );
 	void Trigger( void );
+	Vector m_vecPlace;	// [INFERENCE] ref +0xec..0xf4 — spawn position store
+	int m_iPlaceSlot;	// [INFERENCE] ref +0xe8 — deploy slot index
 };
 
 // Shield emitter (2.0). Stock analogue: none (area-buff dynamite-style
@@ -262,6 +266,8 @@ public:
 	int Classify( void ) { return CLASS_MACHINE; }
 
 	void EXPORT EmitThink( void );
+	CBasePlayer *m_pSgtcOwner;	// ref entity +200 — deployer (Talent scan)
+	int m_iSgtcMode;			// [INFERENCE] ref +0x104 — proximity retag mode
 };
 
 // Lockdown patch (2.0). Wall/box blocker toggled by Use.

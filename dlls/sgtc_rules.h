@@ -59,6 +59,11 @@ extern int g_iSgtcMapType;	// ref MapType @0x236594 (skip camp warn when ==1)
 void SGTC_LinkUserMessages( void );
 void SGTC_InitTrigger( CBaseToggle *pTrigger );
 BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd );	// ref ClientCommand hurtinvert/recallall
+// Round-lifecycle hooks implemented by the zone/rules owners (ref CP NewRound
+// @0x187b34 zone_capture/info_cap_rules walks; bodies go in sgtc_zones.cpp /
+// sgtc_rules.cpp).
+void SGTC_Zones_ResetCaptureZones( void );	// +0x244/+0x240/+0x250=0, pev->health=69 (0x428a0000), +0x258=now-1
+void SGTC_Rules_ReadCapInfo( void );		// sgtc_teamed = m_team, sgtc_type = "type"
 
 // Mode-selecting installer. Stock InstallGameRules() (gamerules.cpp:310)
 // cannot know about SGTC classes; the one-line hook is documented in the
@@ -97,6 +102,7 @@ public:
 	void ClientUserInfoChanged( CBasePlayer *pPlayer, char *infobuffer ) override;
 	int DeadPlayerWeapons( CBasePlayer *pPlayer ) override;
 	int DeadPlayerAmmo( CBasePlayer *pPlayer ) override;
+	void PlayerThink( CBasePlayer *pPlayer ) override;
 	edict_t *GetPlayerSpawnSpot( CBasePlayer *pPlayer );
 	// teamplay
 	const char *GetTeamID( CBaseEntity *pEntity ) override;
@@ -116,16 +122,24 @@ public:
 	void StartPortrait( CBasePlayer *pPlayer );
 	void RedrawPortrait( CBasePlayer *pPlayer );
 	void UpdateClassCount( void );
+	void Penalty( CBasePlayer *pVictim, CBasePlayer *pKiller );	// ref Penalty @0x195b48 (PlayerKilled path)
 
 protected:
 	void SGTC_GiveTeamLoadout( CBasePlayer *pPlayer );
 	void SGTC_SendTeamNames( CBasePlayer *pPlayer );
 	edict_t *SGTC_FindTeamSpawn( const char *pszClassname );
+	void SGTC_NewRoundCommon( BOOL bCaptureMode );	// shared NewRound body (sgtc_round.cpp)
 
 	char m_szSGTCTeams[SGTC_MAX_SGTC_TEAMS][SGTC_TEAMNAME_LEN];
 	int m_iSGTCTeamScores[SGTC_MAX_SGTC_TEAMS];
 	int m_iSGTCTeamCount;
 	BOOL m_bRoundOver;
+	// Ref gamerules fields (this+0xNNN), mapped for the round core:
+	int m_iSgtcModeVote;		// ref +0x770: pending mode vote (-1 none)
+	float m_flSgtcRoundTime;	// ref +0x728: round duration (s)
+	float m_flSgtcRoundEnd;		// ref +0x724: round end tick
+	int m_iSgtcRoundTicks;		// ref +0x73c: Goal guard + NewRound zero (restart counter)
+	int m_iSgtcFirstTicks;		// ref +0x750: NewRound writes -5 (0xfffffffb)
 };
 
 class CStargateTeamCP : public CStargateTeamDM
@@ -135,6 +149,8 @@ public:
 	const char *GetGameDescription( void ) override { return "StargateTC-CTP"; }
 	void InverseSpawns( void );
 	void PlayerSpawn( CBasePlayer *pPlayer ) override;
+	void PlayerThink( CBasePlayer *pPlayer ) override;
+	void NewRound( void );
 	edict_t *GetPlayerSpawnSpot( CBasePlayer *pPlayer );
 	BOOL m_bSpawnsInversed;
 };
@@ -179,6 +195,7 @@ class CStargateInvis : public CStargateUnas
 public:
 	CStargateInvis( void );
 	const char *GetGameDescription( void ) override { return "StargateTC"; }
+	void InitHUD( CBasePlayer *pPlayer ) override;	// ref @0x17d1f0 — ShowVGUIMenu(11) variant
 	void PlayerSpawn( CBasePlayer *pPlayer ) override;
 };
 

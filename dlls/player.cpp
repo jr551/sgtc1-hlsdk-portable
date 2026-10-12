@@ -3541,14 +3541,18 @@ void CBasePlayer::ImpulseCommands()
 			gmsgLogo = 0;
 		break;
 	case 100:
-        // temporary flashlight for level designers
-		if( FlashlightIsOn() )
+        // ref ImpulseCommands @0x1496c6 — flashlight only for team "Torri"
+        // (strncmp of +0xe08 team name vs literal, 5 chars).
+		if( strncmp( m_szTeamName, "Torri", 5 ) == 0 )
 		{
-			FlashlightTurnOff();
-		}
-		else 
-		{
-			FlashlightTurnOn();
+			if( FlashlightIsOn() )
+			{
+				FlashlightTurnOff();
+			}
+			else 
+			{
+				FlashlightTurnOn();
+			}
 		}
 		break;
 	case 201:

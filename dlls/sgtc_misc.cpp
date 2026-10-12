@@ -10,6 +10,7 @@
 #include "items.h"
 #include "sgtc_rules.h"
 #include "sgtc_weapons.h"
+#include "sgtc_misc.h"
 
 extern int gmsgFlashlight;
 
@@ -207,3 +208,136 @@ void CZatProj::Think( void )
 }
 
 LINK_ENTITY_TO_CLASS( zat_proj, CZatProj );
+
+// ---------------------------------------------------------------------------
+// entity_spawn_round — ref CEntSpawn (Spawn @0x195bea, Event @0x195ba6).
+// Round-scoped spawn marker: CStargateTeamDM::NewRound() (ref @0x184f42) walks
+// every "entity_spawn_round" entity and calls Event() on it, which re-creates
+// the classname stored in the marker's "message" key at the marker's own
+// origin/angles. Spawn() caches STRING(pev->message) once so Event() can fire
+// repeatedly across rounds.
+// ---------------------------------------------------------------------------
+void CEntSpawn::Spawn( void )
+{
+	// ref @0x195bea — member +0x19c = gpGlobals->pStringBase + pev->message
+	// (STRING(pev->message) pre-resolved), and pev+0x104 nextthink =
+	// gpGlobals->time + 0.1. No networkable state, no model.
+	m_pSpawnClass = STRING( pev->message );
+	pev->nextthink = gpGlobals->time + 0.1f;
+}
+
+void CEntSpawn::Event( void )
+{
+	// ref @0x195ba6 — CBaseEntity::Create( cached +0x19c, pev->origin (+0x8),
+	// pev->angles (+0x50), NULL ). The marker itself stays in the world.
+	CBaseEntity::Create( m_pSpawnClass, pev->origin, pev->angles, NULL );
+}
+
+LINK_ENTITY_TO_CLASS( entity_spawn_round, CEntSpawn );
+
+// ---------------------------------------------------------------------------
+// temp_eject — ref CEject (Spawn @0x195c9e, Think @0x195c48, factory
+// @0x195ebe). Invisible short-lived carrier entity created by the firing path
+// (the FireBulletsPlayer creation site fills +0x19c..+0x1bc on the returned
+// pointer); Think() removes it once its lifetime expired and the firing path
+// has armed it.
+// ---------------------------------------------------------------------------
+class CEject : public CBaseEntity
+{
+public:
+	void Spawn( void );
+	void EXPORT Think( void );
+
+	// fields written by the creation site (ref FireBulletsPlayer):
+	int m_iEjectFlag;		// ref +0x19c — set to 1
+	float m_flSpreadX;		// ref +0x1a4 — spread.x
+	float m_flSpreadZ;		// ref +0x1a8 — spread.z
+	float m_flSpreadY;		// ref +0x1ac — spread.y
+	Vector m_vecEjectOrigin;	// ref +0x1b0 — Vector from the creation site
+	char m_bEjectArmed;		// ref +0x1bc — 1 once armed; gates Think removal
+};
+
+void CEject::Spawn( void )
+{
+	// ref @0x195c9e, in write order:
+	pev->movetype = MOVETYPE_FOLLOW;	// ref pev+0x108 = 10 (GoldSrc MOVETYPE_FOLLOW)
+	pev->solid = SOLID_BBOX;		// ref pev+0x10c = 2
+	SET_MODEL( ENT( pev ), "sprites/zatimpact.spr" );
+	UTIL_SetSize( pev, g_vecZero, g_vecZero );
+	pev->effects |= EF_NODRAW;		// ref pev+0x118 |= 0x80
+	pev->angles = g_vecZero;		// ref pev+0x50
+	pev->rendermode = kRenderTransAdd;	// ref pev+0x148 = 5
+	pev->renderamt = 0.0f;			// ref pev+0x14c = 0
+	UTIL_SetOrigin( pev, pev->origin );
+	pev->classname = MAKE_STRING( "temp_eject" );	// ref pev+0x0
+	SetThink( &CEject::Think );		// ref this+0x134/0x138 = Think (vslot +0xc4)
+	pev->nextthink = gpGlobals->time + 0.5f;	// ref pev+0x104
+}
+
+void CEject::Think( void )
+{
+	// ref @0x195c48 — remove once the scheduled time has passed AND the
+	// creation site has armed the eject (+0x1bc).
+	if( pev->nextthink < gpGlobals->time && m_bEjectArmed != 0 )
+		UTIL_Remove( this );
+}
+
+LINK_ENTITY_TO_CLASS( temp_eject, CEject );
+
+// ---------------------------------------------------------------------------
+// effect_bigshield — ref CBigShield (Spawn @0x162672, Think @0x162548,
+// Classify @0x16253e, factory @0x162836). Team-sized forcefield wall: own
+// model, its own renderamt regeneration loop driven by pev->health
+// (100 → renderamt 130, 80 → renderamt 225 + crash sound + reset to 100), and
+// a 0.25s stepping gate. CStargateTeamDM::NewRound() removes every
+// "effect_bigshield" entity each round (ref NewRound @0x184f42).
+// ---------------------------------------------------------------------------
+class CBigShield : public CBaseEntity
+{
+public:
+	void Spawn( void );
+	void EXPORT Think( void );
+	int Classify( void ) { return CLASS_NONE; }	// ref @0x16253e returns 0
+
+	float m_flExpire;		// ref +0x19c — lifetime gate (read only outside this class)
+	float m_flNextArmorStep;	// ref +0x1a0 — 0.25s gate for the renderamt stepping
+};
+
+void CBigShield::Spawn( void )
+{
+	// ref @0x162672, in write order:
+	SET_MODEL( ENT( pev ), "models/bigshield.mdl" );
+	UTIL_SetSize( pev, Vector( 0, 0, 0 ), Vector( 0, 0, 0 ) );
+	pev->solid = SOLID_NOT;			// ref pev+0x10c = 0
+	pev->movetype = MOVETYPE_NONE;		// ref pev+0x108 = 0
+	pev->health = 100.0f;			// ref pev+0x160 = 100.0
+	pev->view_ofs = g_vecZero;		// ref pev+0x174 = (0,0,0)
+	pev->renderamt = 130.0f;		// ref pev+0x14c = 130.0
+	pev->rendermode = kRenderTransAdd;	// ref pev+0x148 = 5
+	m_flExpire = gpGlobals->time + 1.0f;	// ref +0x19c, first store
+	SetThink( &CBigShield::Think );		// ref this+0x134/0x138 = Think (vslot +0xc4)
+	m_flExpire = gpGlobals->time + 1.0f;	// ref +0x19c, second store (as in ref)
+	Think();				// ref: immediate virtual call via vslot +0xc4
+}
+
+void CBigShield::Think( void )
+{
+	// ref @0x162548 — renderamt stepping is gated on +0x1a0 (which Spawn never
+	// initialises; the first pass that wins the gate arms it for 0.25s).
+	if( m_flNextArmorStep < gpGlobals->time )
+	{
+		if( pev->health == 100.0f )		// ref pev+0x160 == 100.0
+			pev->renderamt = 130.0f;	// ref pev+0x14c
+
+		if( pev->health == 80.0f )		// ref pev+0x160 == 80.0 (damaged wall)
+		{
+			pev->renderamt = 225.0f;	// ref pev+0x14c
+			pev->health = 100.0f;		// ref pev+0x160
+			EMIT_SOUND( ENT( pev ), CHAN_VOICE, "forcefield/forcefield_crash.wav", 1.0f, ATTN_NORM );
+		}
+		m_flNextArmorStep = gpGlobals->time + 0.25f;
+	}
+	pev->nextthink = gpGlobals->time + 0.2f;	// ref pev+0x104
+}
+
+LINK_ENTITY_TO_CLASS( effect_bigshield, CBigShield );

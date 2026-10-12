@@ -168,6 +168,8 @@ extern int gmsgTeamInfo;
 extern int gmsgTeamNames;
 extern int gmsgScoreInfo;
 extern int gmsgDeathMsg;
+extern int sgtc_teamed;	// sgtc_round.cpp (ref BSS teamed @0x23658c)
+extern int sgtc_type;	// sgtc_token.cpp (ref BSS type @0x236588)
 
 // Team spawn classname tables (rodata 0x1d7997 block ordering).
 static const char *const s_SGTCDMSpawns[SGTC_MAX_SGTC_TEAMS] =
@@ -486,13 +488,6 @@ BOOL CStargateTeamDM::FPlayerCanChangeInfo( CBasePlayer *pPlayer )
 	return TRUE;
 }
 
-void CStargateTeamDM::PlayerKilled( CBasePlayer *pVictim, entvars_t *pKiller, entvars_t *pInflictor )
-{
-	CHalfLifeMultiplay::PlayerKilled( pVictim, pKiller, pInflictor );
-	// monster_skull drop on death (PlayerKilled strings).
-	CBaseEntity::Create( "monster_skull", pVictim->pev->origin, pVictim->pev->angles, NULL );
-	RecountTeams( TRUE );
-}
 
 void CStargateTeamDM::DeathNotice( CBasePlayer *pVictim, entvars_t *pKiller, entvars_t *pInflictor )
 {
@@ -589,46 +584,9 @@ int CStargateTeamDM::DeadPlayerAmmo( CBasePlayer *pPlayer )
 	return GR_PLR_DROP_AMMO_ACTIVE; // .so DeadPlayerAmmo path
 }
 
-void CStargateTeamDM::Goal( int iTeam )
-{
-	// .so Goal(int): first-goal music + score++ (choice of team table).
-	if( iTeam < 0 || iTeam >= m_iSGTCTeamCount )
-		return;
-	m_iSGTCTeamScores[iTeam]++;
-	MESSAGE_BEGIN( MSG_ALL, gmsgScoreInfo );
-		WRITE_BYTE( 0 );
-		WRITE_SHORT( m_iSGTCTeamScores[0] );
-		WRITE_SHORT( m_iSGTCTeamScores[1] );
-		WRITE_SHORT( 0 );
-		WRITE_SHORT( iTeam + 1 );
-	MESSAGE_END();
-}
-
-void CStargateTeamDM::EndRound( void )
-{
-	// .so EndRound: broadcasts both team scores.
-	m_bRoundOver = TRUE;
-	for( int i = 0; i < m_iSGTCTeamCount; i++ )
-	{
-		MESSAGE_BEGIN( MSG_ALL, gmsgTeamNames );
-			WRITE_BYTE( i );
-			WRITE_STRING( m_szSGTCTeams[i] );
-		MESSAGE_END();
-	}
-}
-
-void CStargateTeamDM::NewRound( void )
-{
-	// .so NewRound: resets scores (round entities — corpse_control /
-	// effect_bigshield / monster_shieldemit / lockdown / trapbox / zatboom —
-	// respawn via map reset, not enumerated here).
-	m_bRoundOver = FALSE;
-	m_iSGTCTeamScores[0] = m_iSGTCTeamScores[1] = 0;
-	// ref REG "NewRnd", 0 — no payload (LinkUserMessages @0x132fe6).
-	MESSAGE_BEGIN( MSG_ALL, gmsgNewRnd );
-	MESSAGE_END();
-	RecountTeams( TRUE );
-}
+// Goal / EndRound / NewRound moved to sgtc_round.cpp (ref nm 0x17b650,
+// 0x17b77c, 0x184f42) — the stub bodies here were superseded by the full
+// round-lifecycle port.
 
 void CStargateTeamDM::GlobalText( int iTeam, int iText )
 {
@@ -911,14 +869,6 @@ void CStargateUnas::SGTC_SendTeamNames( CBasePlayer *pPlayer )
 	MESSAGE_END();
 }
 
-void CStargateUnas::InitHUD( CBasePlayer *pPlayer )
-{
-	SetDefaultPlayerTeam( pPlayer );
-	CHalfLifeMultiplay::InitHUD( pPlayer );
-	SGTC_SendTeamNames( pPlayer );
-	RecountTeams( TRUE );
-	UpdateGameMode( pPlayer );
-}
 
 void CStargateUnas::UpdateGameMode( CBasePlayer *pPlayer )
 {
@@ -1303,6 +1253,19 @@ void CCapInfo::KeyValue( KeyValueData *pkvd )
 		CPointEntity::KeyValue( pkvd );
 }
 LINK_ENTITY_TO_CLASS( info_cap_rules, CCapInfo );
+
+// SGTC_Rules_ReadCapInfo — ref CP NewRound @0x187b34 info_cap_rules walk:
+// teamed = CCapInfo +0x19c (m_team), type = CCapInfo +0x1a0 ("type").
+void SGTC_Rules_ReadCapInfo( void )
+{
+	CBaseEntity *pScan = NULL;
+	while( ( pScan = UTIL_FindEntityByClassname( pScan, "info_cap_rules" ) ) != NULL )
+	{
+		CCapInfo *pInfo = (CCapInfo *)pScan;
+		sgtc_teamed = pInfo->m_iTeam;
+		sgtc_type = pInfo->m_iWinType;
+	}
+}
 
 // ===========================================================================
 // Triggers (CBaseToggle-based; see header note)
