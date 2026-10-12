@@ -994,7 +994,8 @@ static void SGTC_DrawArmorTacOverlay( CHudSgtc *hud, float flTime, int lx, int l
 	SPR_DrawAdditive( 0, tx, ty, &tint );
 }
 
-// ref @0x100740df — ring frame from global tick (truncated client time).
+// ref @0x100740df — compass needle frame: trunc(view yaw deg) → 16 sectors of
+// ~22.5° (10°-349°, else 0), rotated +3 mod 16 then mirrored (0xf - n).
 static int SGTC_RadarRingFrame( int v )
 {
 	int frame = 0;
@@ -1134,17 +1135,19 @@ static void SGTC_DrawRadarFull( CHudSgtc *hud, float flTime )
 			hud->m_iRadarType[slot] = 0;
 	}
 
-	const int ringTick = (int)gEngfuncs.GetClientTime();
-	const int ringFrame = SGTC_RadarRingFrame( ringTick );
-	int needleIdx = gHUD.GetSpriteIndex( "needle" );
-	int bigIdx = gHUD.GetSpriteIndex( "bigneedle" );
-	if( needleIdx && bigIdx )
+	// ref @0x100740ce-0x10074347 — compass needle: view yaw (ds:0x100fcfa4, the
+	// engine-cached view angles vector .y) truncated to int → 16-sector frame via
+	// SGTC_RadarRingFrame, sprite +0x173c "needle" tinted (0xd2,0xd2,0) @0x100740af,
+	// drawn with needle's own rect +0x1740 at (ScreenWidth-0x7c, 0xc4-slide).
+	const int needleIdx = gHUD.GetSpriteIndex( "needle" );
+	if( needleIdx )
 	{
-		SPR_Set( gHUD.GetSprite( needleIdx ), 0, 0xd2, 0xd2 );
-		wrect_t rcBig = gHUD.GetSpriteRect( bigIdx );
-		const int ringX = ScreenWidth - 0x7c;
-		const int ringY = 0xc4 - slide;
-		SPR_DrawAdditive( ringFrame, ringX, ringY, &rcBig );
+		float vAngles[3];
+		gEngfuncs.GetViewAngles( vAngles );
+		const int needleFrame = SGTC_RadarRingFrame( (int)vAngles[1] ); // ref: ftol(yaw) @0x100740d4
+		SPR_Set( gHUD.GetSprite( needleIdx ), 0xd2, 0xd2, 0 );          // ref pushes b=0,g=0xd2,r=0xd2
+		wrect_t rcNeedle = gHUD.GetSpriteRect( needleIdx );             // ref +0x1740 = needle rect
+		SPR_DrawAdditive( needleFrame, ScreenWidth - 0x7c, 0xc4 - slide, &rcNeedle ); // ref @0x10074323
 	}
 
 	if( hud->m_iRadarFocusX || hud->m_iRadarFocusY )
