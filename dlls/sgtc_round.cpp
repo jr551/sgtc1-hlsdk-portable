@@ -111,7 +111,7 @@ cvar_t sgtc_cvar_skulls = { "mp_skulls", "0", FCVAR_SERVER };
 cvar_t sgtc_cvar_modevoting = { "mp_modevoting", "0", FCVAR_SERVER };
 cvar_t sgtc_cvar_tournament = { "mp_tournament", "0", FCVAR_SERVER };
 cvar_t sgtc_cvar_superweapons = { "mp_superweapons", "0", FCVAR_SERVER };
-cvar_t sgtc_cvar_particlelatency = { "sv_particlelatency", "10", FCVAR_SERVER };
+cvar_t sgtc_cvar_particlelatency = { "particlelat", "10", FCVAR_SERVER };
 cvar_t sgtc_cvar_respawntime = { "mp_respawntime", "10", FCVAR_SERVER };
 
 void SGTC_RegisterRulesCvars( void )
