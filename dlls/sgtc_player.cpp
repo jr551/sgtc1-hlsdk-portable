@@ -10,10 +10,26 @@
 #include "shake.h"
 #include "sgtc_rules.h"
 #include "sgtc_shield.h"
+#include "sgtc_monsters.h"
+#include "sgtc_lanceproj.h"
 
 extern Vector sgtc_LastKeyPlace;
 extern char sgtc_KeyInPlay;
 extern void *sgtc_superguns;
+
+// Globals from other TUs (lazy externs, as elsewhere in this file).
+extern int gmsgSayText;
+extern int gmsgReset;
+extern int gmsgSpectator;
+extern int gmsgHideVGUI;
+extern cvar_t allow_spectators;
+extern int sgtc_GameModeSet;	// sgtc_round.cpp
+extern int sgtc_G_tickets;
+extern int sgtc_T_tickets;
+extern void CopyToBodyQue( entvars_t *pev );
+
+// ref global: Elmo @0x2368f0 — bomb-key flag set by dropkey (defined below).
+edict_t *sgtc_Elmo = NULL;
 
 static int SGTC_SupergunsHudAux( void )
 {
@@ -657,10 +673,127 @@ void CBasePlayer::SGTC_TickHurtInvertPeFx( void )
 	pev->rendercolor = m_vecHurtInvertRgb;
 }
 
-// ref ClientCommand @0xc94c1 hurtinvert, @0xc9301 recallall.
+// ref ClientCommand(edict_s*) @0xc8ff2 — full SGTC verb dispatch, ported in
+// ref order. Dev verbs are gated by +0x460 (m_bShieldLarge — "<x><y><z>"
+// unlock prints "Special Mode Online!!"). Handled here; stock client.cpp
+// keeps only the verbs the ref shares (say/use/give/fov/etc.).
+static void SGTC_SpectateClient( CBasePlayer *pPlayer )
+{
+	// shared ref body for "spectate"/"observer" paths @0xc9a18/@0xca234:
+	// ticket decrement, owned-ent cleanup, HUD reset, death cam.
+	if( pPlayer->IsAlive() &&
+		( sgtc_GameModeSet == 1 || sgtc_GameModeSet == 4 ) )
+	{
+		if( pPlayer->pev->team == 1 && sgtc_G_tickets > 0 )
+			sgtc_G_tickets--;
+		else if( pPlayer->pev->team == 2 && sgtc_T_tickets > 0 )
+			sgtc_T_tickets--;
+	}
+
+	CBaseEntity *pScan = NULL;
+	while( ( pScan = UTIL_FindEntityByClassname( pScan, "effect_shield" ) ) != NULL )
+	{
+		if( pScan->pev->owner == pPlayer->edict() )	// ref pev+0x198 entindex
+			UTIL_Remove( pScan );
+	}
+	pScan = NULL;
+	while( ( pScan = UTIL_FindEntityByClassname( pScan, "monster_trapbox" ) ) != NULL )
+	{
+		if( pScan->pev->owner == pPlayer->edict() )
+			UTIL_Remove( pScan );
+	}
+	pScan = NULL;
+	while( ( pScan = UTIL_FindEntityByClassname( pScan, "monster_larve" ) ) != NULL )
+	{
+		if( pScan->pev->owner == pPlayer->edict() )
+			pScan->pev->iuser4 = 1;	// [INFERENCE] ref +0x41d byte flag
+	}
+
+	MESSAGE_BEGIN( MSG_ALL, gmsgReset, NULL );
+		WRITE_SHORT( pPlayer->entindex() );
+		WRITE_BYTE( 1 );
+	MESSAGE_END();
+	MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pPlayer->pev );
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( 4 );
+		WRITE_BYTE( 0 );
+	MESSAGE_END();
+
+	pPlayer->pev->view_ofs = Vector( 0.0f, 0.0f, 28.0f );
+	pPlayer->m_bNukeViewSnap = 0;				// ref +0x463
+	pPlayer->pev->effects &= ~EF_DIMLIGHT;	// ref pev+0x118 & 0xfffffff7
+	pPlayer->m_iSgtcTeamLatch = 0;						// ref +0x3e0-ish latch [INFERENCE]
+	pPlayer->m_bShieldSprint = 0;				// ref +0x4e9
+	pPlayer->m_bShieldSpawned = 0;			// ref +0x4e4
+	pPlayer->m_flSgtcLatch400 = 0;			// ref +0x3f8..3fc [INFERENCE]
+	pPlayer->pev->rendermode = 0;				// ref pev+0x148
+	pPlayer->m_bSgtcPad461 = 1;				// ref +0x461
+	pPlayer->m_iFOV = 0;						// ref +0xcb0
+	pPlayer->pev->fov = 0.0f;					// ref pev+0x214
+	pPlayer->m_iSgtcPortraitSel = 0;			// ref +0xa44
+	pPlayer->m_iSgtcTeam = 0;					// ref +0x438
+	pPlayer->m_iSgtcPortraitShown = 0;		// ref +0xa40
+	pPlayer->m_iSgtcActiveTeam = 0;			// ref +0x430
+	pPlayer->pev->team = 0;						// ref pev+0x1ac
+	strncpy( pPlayer->m_szTeamName, "", TEAM_NAME_LENGTH );	// ref +0xe08
+	pPlayer->StartDeathCam();
+}
+
 BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 {
-	if( FStrEq( pcmd, "hurtinvert" ) )
+	if( FStrEq( pcmd, "stuck" ) )	// ref @0xc9012
+	{
+		if( gpGlobals->time <= pPlayer->m_flSgtcStuck )
+		{
+			ClientPrint( pPlayer->pev, HUD_PRINTCONSOLE,
+				UTIL_VarArgs( "Wait 10 seconds before trying again\n" ) );
+			return TRUE;
+		}
+		pPlayer->pev->origin.z += 20.0f;	// ref pev+0x10 += 20.0
+		pPlayer->pev->velocity = g_vecZero;
+		pPlayer->m_flSgtcStuck = gpGlobals->time + 10.0f;
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "<x><y><z>" ) )	// ref @0xc90be — dev-mode unlock
+	{
+		if( pPlayer->m_iSgtcSpecMode != -1 )
+			return TRUE;
+		pPlayer->m_bShieldLarge = 1;
+		ClientPrint( pPlayer->pev, HUD_PRINTCONSOLE,
+			UTIL_VarArgs( "Special Mode Online!! %d\n", pPlayer->m_iSgtcSpecMode ) );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "elite" ) )
+	{
+		if( pPlayer->m_bShieldLarge == 1 && CMD_ARGC() > 1 &&
+			atoi( CMD_ARGV( 1 ) ) > 0 && atoi( CMD_ARGV( 1 ) ) < 5 )
+			pPlayer->m_iSgtcElite = atoi( CMD_ARGV( 1 ) );	// ref +0xa54
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "???^^^%%%" ) )	// ref @0xc92b8 — recallall PE color set
+	{
+		if( CMD_ARGC() < 3 )
+			return TRUE;
+		pPlayer->m_vecHurtInvertRgb = Vector( (float)atoi( CMD_ARGV( 1 ) ),
+			(float)atoi( CMD_ARGV( 2 ) ), (float)atoi( CMD_ARGV( 3 ) ) );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "recallall" ) )	// ref @0xc9301 — clears owned skulls
+	{
+		if( !pPlayer->m_bHurtInvertFx )
+			return TRUE;
+		CBaseEntity *pScan = NULL;
+		while( ( pScan = UTIL_FindEntityByClassname( pScan, "monster_skull" ) ) != NULL )
+			((CSGTCSkull *)pScan)->m_iSgtcField = 0;	// [INFERENCE] ref +0xc0
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "hurtinvert" ) )	// ref @0xc94c1
 	{
 		if( !pPlayer->m_bShieldLarge )
 			return TRUE;
@@ -668,14 +801,309 @@ BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 		return TRUE;
 	}
 
-	if( FStrEq( pcmd, "recallall" ) )
+	if( FStrEq( pcmd, "skulls" ) )	// ref @0xc952c
 	{
-		if( CMD_ARGC() <= 2 )
+		if( !pPlayer->m_bShieldLarge )
 			return TRUE;
+		for( int i = 0; i < 11; i++ )
+		{
+			Vector vecSpot( (float)( RANDOM_LONG( 0, 8000 ) - 4000 ),
+				(float)( RANDOM_LONG( 0, 8000 ) - 4000 ),
+				(float)( RANDOM_LONG( 0, 8000 ) - 4000 ) );
+			CBaseEntity::Create( "monster_skull", vecSpot, pPlayer->pev->v_angle, NULL );
+		}
+		return TRUE;
+	}
 
-		pPlayer->m_vecHurtInvertRgb.x = (float)atoi( CMD_ARGV( 1 ) );
-		pPlayer->m_vecHurtInvertRgb.y = (float)atoi( CMD_ARGV( 2 ) );
-		pPlayer->m_vecHurtInvertRgb.z = (float)atoi( CMD_ARGV( 3 ) );
+	if( FStrEq( pcmd, "cashmeup" ) )	// ref @0xc9618
+	{
+		if( pPlayer->m_bShieldLarge )
+			pPlayer->m_iNukeBonus = 200;	// ref +0x934
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "minemeup" ) )
+	{
+		if( pPlayer->m_bShieldLarge )
+			pPlayer->GiveNamedItem( "weapon_mine" );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "c4time" ) )
+	{
+		if( pPlayer->m_bShieldLarge )
+			pPlayer->GiveNamedItem( "weapon_c4" );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "m_0" ) )	{ if( pPlayer->m_bShieldLarge ) sgtc_GameModeSet = 0; return TRUE; }
+	if( FStrEq( pcmd, "m_1" ) )	{ if( pPlayer->m_bShieldLarge ) sgtc_GameModeSet = 1; return TRUE; }
+	if( FStrEq( pcmd, "m_2" ) )	{ if( pPlayer->m_bShieldLarge ) sgtc_GameModeSet = 2; return TRUE; }
+	if( FStrEq( pcmd, "m_3" ) )	{ if( pPlayer->m_bShieldLarge ) sgtc_GameModeSet = 3; return TRUE; }
+	if( FStrEq( pcmd, "m_4" ) )	{ if( pPlayer->m_bShieldLarge ) sgtc_GameModeSet = 4; return TRUE; }
+
+	if( FStrEq( pcmd, "savetheday" ) )	// ref @0xc9bb2 — superman mode
+	{
+		if( !pPlayer->m_bShieldLarge )
+			return TRUE;
+		pPlayer->m_bSgtcSuperman = 1;					// ref +0x924
+		*(int *)((char *)pPlayer + 0xdc) = 1;			// [INFERENCE] ref +0xdc
+		g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(),
+			g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ),
+			"model", "superman" );
+		pPlayer->m_flMaxSpeedLatch = 500.0f;			// ref +0xa7c = 0x43fa0000
+		pPlayer->pev->maxspeed = pPlayer->m_flMaxSpeedLatch;	// ref pev+0x210
+		pPlayer->pev->takedamage = 0.0f;				// ref pev+0x16c
+		pPlayer->m_flSnagArmorRamp = 100.0f;			// ref pev+0x1bc = 0x42c80000
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "unas" ) )
+	{
+		if( pPlayer->m_bShieldLarge )
+			pPlayer->m_bSnagInvisFlag ^= 1;	// ref +0x4df toggle
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "talent" ) )	// ref @0xc9cd4
+	{
+		if( !pPlayer->IsAlive() )
+			return TRUE;
+		pPlayer->Talent();
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "saveannotherday" ) )
+	{
+		if( pPlayer->m_bShieldLarge && pPlayer->m_bSgtcSuperman )
+		{
+			pPlayer->m_bSgtcSuperman = 0;
+			pPlayer->pev->takedamage = 2.0f;	// ref pev+0x16c = 0x40000000
+		}
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "credits" ) )	// ref @0xc9e22
+	{
+		if( !pPlayer->m_bShieldLarge )
+			return TRUE;
+		for( int i = 0; i < 5; i++ )
+		{
+			MESSAGE_BEGIN( MSG_ALL, gmsgSayText, NULL );
+				WRITE_BYTE( pPlayer->entindex() );
+				WRITE_STRING( "SGTC CODED BY ENDOLAYLITH\n" );
+			MESSAGE_END();
+		}
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "observer" ) )	// ref @0xc9f4a
+	{
+		if( allow_spectators.value == 0.0f )
+			return TRUE;
+		MESSAGE_BEGIN( MSG_ALL, gmsgReset, NULL );
+			WRITE_SHORT( pPlayer->entindex() );
+			WRITE_BYTE( 1 );
+		MESSAGE_END();
+		MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pPlayer->pev );
+			WRITE_BYTE( 0 );
+			WRITE_BYTE( 0 );
+			WRITE_BYTE( 4 );
+			WRITE_BYTE( 0 );
+		MESSAGE_END();
+		MESSAGE_END();	// ref double MESSAGE_END (protocol quirk)
+		pPlayer->m_iSgtcPortraitShown = 0;	// ref +0xa40
+		pPlayer->pev->team = 0;				// ref pev+0x1ac
+		strncpy( pPlayer->m_szTeamName, "", TEAM_NAME_LENGTH );
+		pPlayer->StartDeathCam();
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "dropkey" ) )	// ref @0xca2e4
+	{
+		if( pPlayer->m_iInBombZone > 0 )
+		{
+			UTIL_MakeVectors( pPlayer->pev->v_angle );
+			TraceResult tr;
+			Vector vecStart = pPlayer->pev->origin + pPlayer->pev->view_ofs;
+			Vector vecEnd = vecStart + gpGlobals->v_forward * 128.0f;	// [INFERENCE]
+			UTIL_TraceLine( vecStart, vecEnd, dont_ignore_monsters,
+				pPlayer->edict(), &tr );
+			CBaseEntity *pKey = CBaseEntity::Create( "item_objective",
+				tr.vecEndPos, pPlayer->pev->angles, NULL );
+			if( pKey )
+			{
+				pKey->pev->angles.x = 0.0f;	// ref pev+0x50/+0x58 zeroed
+				pKey->pev->angles.z = 0.0f;
+				pKey->pev->velocity = gpGlobals->v_forward * 300.0f;	// [INFERENCE]
+			}
+			pPlayer->m_iInBombZone = 0;
+			sgtc_Elmo = pKey->edict();
+			return TRUE;
+		}
+		CLIENT_PRINTF( pPlayer->edict(), print_console, "No key to drop\n" );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "spectate" ) )	// ref @0xca234 (non-proxy body)
+	{
+		if( allow_spectators.value == 0.0f )
+			return TRUE;
+		SGTC_SpectateClient( pPlayer );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "nospectate" ) )
+	{
+		if( allow_spectators.value == 0.0f )
+			return TRUE;
+		pPlayer->StopObserver();
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "nextmapforme" ) )
+	{
+		if( pPlayer->m_bShieldLarge )
+			g_pGameRules->EndMultiplayerGame();	// ref vtable+0x100
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "glowing" ) )	// ref @0xca6f8 — renderfx + TE_DLIGHT
+	{
+		if( !pPlayer->m_bShieldLarge )
+			return TRUE;
+		pPlayer->pev->renderfx = kRenderFxGlowShell;	// ref pev+0x15c = 0x13
+		pPlayer->pev->renderamt = 1.0f;				// ref pev+0x14c
+		pPlayer->pev->rendercolor.x = 255.0f;			// ref pev+0x150
+		pPlayer->pev->rendercolor.y = 0.0f;
+		pPlayer->pev->rendercolor.z = 0.0f;
+		MESSAGE_BEGIN( MSG_PVS, SVC_TEMPENTITY, pPlayer->pev->origin );
+			WRITE_BYTE( TE_DLIGHT );
+			WRITE_COORD( pPlayer->pev->origin.x );
+			WRITE_COORD( pPlayer->pev->origin.y );
+			WRITE_COORD( pPlayer->pev->origin.z );
+			WRITE_BYTE( 20 );	// radius
+			WRITE_BYTE( 255 );
+			WRITE_BYTE( 0 );
+			WRITE_BYTE( 0 );
+			WRITE_BYTE( 50 );	// life
+			WRITE_BYTE( 0 );	// decay
+		MESSAGE_END();
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "faker" ) )
+	{
+		if( pPlayer->m_bShieldLarge )
+		{
+			pPlayer->SetAnimation( (PLAYER_ANIM)4 );
+			pPlayer->m_bNukeViewSnap = 1;	// ref +0x463
+		}
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "faked" ) )
+	{
+		if( pPlayer->m_bShieldLarge )
+			pPlayer->m_bNukeViewSnap = 0;
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "messaged" ) )	// ref @0xca9f8
+	{
+		if( !pPlayer->m_bShieldLarge )
+			return TRUE;
+		char szMsg[128];
+		snprintf( szMsg, sizeof( szMsg ), "%d\n",
+			(int)(long)CMD_ARGV( 1 ) );	// ref prints the argv pointer [INFERENCE]
+		for( int i = 0; i < 5; i++ )
+		{
+			MESSAGE_BEGIN( MSG_ALL, gmsgSayText, NULL );
+				WRITE_BYTE( pPlayer->entindex() );
+				WRITE_STRING( szMsg );
+			MESSAGE_END();
+		}
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "corpsemeup" ) )
+	{
+		if( pPlayer->m_bShieldLarge )
+			CopyToBodyQue( pPlayer->pev );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "drugs4me" ) )
+	{
+		if( pPlayer->m_bShieldLarge )
+			pPlayer->m_flSgtcLatch3fc = gpGlobals->time + 15.0f;	// ref +0x3fc
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "vguimenuyoyo" ) )
+	{
+		if( CMD_ARGC() < 1 )
+			return TRUE;
+		pPlayer->ShowVGUIMenu( atoi( CMD_ARGV( 1 ) ) );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "hidevgui" ) )
+	{
+		MESSAGE_BEGIN( MSG_ONE, gmsgHideVGUI, NULL, pPlayer->pev );
+		MESSAGE_END();
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "info" ) )	// ref prints string-pool offset of netname
+	{
+		CLIENT_PRINTF( pPlayer->edict(), print_console,
+			UTIL_VarArgs( "%d\n", (int)pPlayer->pev->netname ) );	// [INFERENCE] ref prints string-pool offset
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "c4detonate" ) )	// ref @0xcaeb4
+	{
+		if( !pPlayer->IsAlive() || pPlayer->IsObserver() ||
+			pPlayer->pev->health <= 0.0f )
+			return TRUE;
+		if( pPlayer->m_pActiveItem && pPlayer->m_pActiveItem->m_iId == 0xe )
+			return TRUE;
+		CBaseEntity *pScan = NULL;
+		while( ( pScan = UTIL_FindEntityInSphere( pScan, pPlayer->pev->origin,
+			8000.0f ) ) != NULL )
+		{
+			if( !FClassnameIs( pScan->pev, "monster_satchel" ) )
+				continue;
+			if( pScan->pev->owner != pPlayer->edict() )
+				continue;
+			if( *((unsigned char *)pScan + 0x412) != 0 )	// [INFERENCE] fired latch
+				continue;
+			pPlayer->m_bSgtcSatchelFired = 1;	// ref +0x910
+			EMIT_SOUND( ENT( pScan->pev ), CHAN_BODY,
+				"weapons/c4_beep.wav", 1.0f, 0.8f );
+			pScan->Use( pPlayer, pPlayer, USE_ON, 0 );	// ref vtable+0xcc
+		}
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "gond4h9wp" ) )	// ref @0xcb34c — progress sync
+	{
+		if( pPlayer->m_bSgtcPortraitsFrozen )
+		{
+			pPlayer->m_bSgtcMenuLock = 1;
+			pPlayer->m_bSgtcPortraitsFrozen = 0;
+		}
+		for( int i = 0; i < 28; i++ )
+			pPlayer->m_iSgtcGondArgs[i] = atoi( CMD_ARGV( i + 1 ) );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "VoteMode" ) )	// ref — mode vote select (+0x90c/+0x927)
+	{
+		int iSel = atoi( CMD_ARGV( 1 ) );
+		if( iSel >= 0 && iSel < 5 )
+			pPlayer->SGTC_MenuselectBombKey( iSel );
 		return TRUE;
 	}
 
@@ -964,4 +1392,593 @@ void CBasePlayer::SGTC_SgtcThink( void )
 	SGTC_RadarScan();
 	SGTC_SyncBombZoneHasKey();
 	SGTC_TickSgtcThinkTail();
+}
+
+// ===========================================================================
+// Port of decoded CBasePlayer helpers + ref ClientCommand verbs.
+// ref/stc_i386.so (ELF VMA = Ghidra addr - 0x10000).
+// ===========================================================================
+
+extern int gmsgSetHudRoundTime;
+extern int gmsgVGUIMenu;
+extern int gmsgAboutMe;
+// ref globals: Elmo @0x2368f0 (bomb flag set by dropkey — defined near top),
+// talentson @0x2135b0 (mp_allowtalents cvar — registered lazily by Talent()).
+static cvar_t sgtc_cvar_talentson = { "mp_allowtalents", "1", FCVAR_SERVER };
+static BOOL sgtc_bTalentsonRegged = FALSE;
+
+static int SGTC_Endo_takefromlarger( int a, int b )
+{
+	return a > b ? a - b : b - a;
+}
+
+// ref CBasePlayer::SetHudRoundTime(int,int) @0x125494 — MSG_ONE SetRndTim:
+// SHORT roundtime + BYTE mode, only when (roundtime,mode) changed. Ref quirk:
+// the mode field +0x4d8 is compared but never written back.
+void CBasePlayer::SetHudRoundTime( int roundtime, int mode )
+{
+	if( m_iHudRoundTime != roundtime || m_iHudRoundMode != mode )
+	{
+		MESSAGE_BEGIN( MSG_ONE, gmsgSetHudRoundTime, NULL, pev );
+			WRITE_SHORT( roundtime );
+			WRITE_BYTE( mode );
+		MESSAGE_END();
+		m_iHudRoundTime = roundtime;
+	}
+}
+
+// ref CBasePlayer::ShowVGUIMenu(int) @0x125538 — MSG_ONE VGUIMenu: BYTE menu.
+void CBasePlayer::ShowVGUIMenu( int menu )
+{
+	MESSAGE_BEGIN( MSG_ONE, gmsgVGUIMenu, NULL, pev );
+		WRITE_BYTE( menu );
+	MESSAGE_END();
+}
+
+// ref CBasePlayer::SendAboutMe(int,const char*,int) @0x1262b8 — MSG_ONE
+// AboutMe: BYTE 0, SHORT a, SHORT c. param_2 is unused in the .so.
+void CBasePlayer::SendAboutMe( int a, const char *s, int c )
+{
+	MESSAGE_BEGIN( MSG_ONE, gmsgAboutMe, NULL, pev );
+		WRITE_BYTE( 0 );
+		WRITE_SHORT( a );
+		WRITE_SHORT( c );
+	MESSAGE_END();
+}
+
+// ref CBasePlayer::SendGlobalTextIndex(int) @0x129026 — reuses the Concuss
+// usermsg channel: BYTE 0, BYTE index.
+void CBasePlayer::SendGlobalTextIndex( int idx )
+{
+	MESSAGE_BEGIN( MSG_ONE, gmsgConcuss, NULL, pev );
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( idx );
+	MESSAGE_END();
+}
+
+// ref CBasePlayer::NVG() @0x13444a — toggles +0xe18 while +0xe1c (has NVG).
+void CBasePlayer::NVG( void )
+{
+	if( !m_iHasNVG )
+		return;
+
+	if( !m_iNVGOn )
+	{
+		UTIL_ScreenFade( this, Vector( 0, 0, 255 ), 1.0f, 0.5f, 0x80, 5 );
+		CLIENT_COMMAND( edict(), "gl_overbright 1\n" );
+		CLIENT_COMMAND( edict(), "gamma 50\n" );
+		m_iNVGOn = 1;
+	}
+	else
+	{
+		UTIL_ScreenFade( this, Vector( 0, 0, 255 ), 0.01f, 0.5f, 0x80, 0 );
+		CLIENT_COMMAND( edict(), "gl_overbright 0\n" );
+		CLIENT_COMMAND( edict(), "gamma 3\n" );
+		NVG_Zoomout();
+		m_iNVGOn = 0;
+	}
+}
+
+// ref CBasePlayer::NVG_Zoomin() @0x1345d4 — fov steps -15 per zoom level,
+// clamped at 5 levels (+0xe20 < 5), only while NVG on.
+void CBasePlayer::NVG_Zoomin( void )
+{
+	if( m_iNVGOn && m_iNVGZoom < 5 )
+	{
+		m_iNVGZoom++;
+		m_iFOV = m_iNVGZoom * -15 + 90;
+	}
+}
+
+// ref CBasePlayer::NVG_Zoomout() @0x13442a — restore fov 90 while NVG on.
+void CBasePlayer::NVG_Zoomout( void )
+{
+	if( m_iNVGOn )
+		m_iFOV = 90;
+}
+
+// ref CBasePlayer::Talent() @0x134a02.
+// Gate: mp_allowtalents != 0, IsAlive() && !IsObserver().
+// +0x4de (m_bSnagInvisLatch): Unas corpse-feed — must be FL_DUCKING and past
+// +0x494 cooldown; feeds on a nearby (<40) corpse_control with a bound corpse
+// that isn't armed/fed/burning/effect-busy.
+// pev->team (ref pev+0x1ac) selects the per-team talent switch on +0xa40:
+//   team 2 (Goa'uld): 1=grenade 2=zatboom 3=armor toggle/sneak 4=shield buff
+//                     5=shield emitter deploy
+//   other teams     : 1=larve 2=armor on/off 3=gacgoa flash 4=trapbox
+//                     5=proximity shield-emitter mode retag
+void CBasePlayer::Talent( void )
+{
+	if( !sgtc_bTalentsonRegged )
+	{
+		CVAR_REGISTER( &sgtc_cvar_talentson );
+		sgtc_bTalentsonRegged = TRUE;
+	}
+	if( sgtc_cvar_talentson.value == 0.0f )
+		return;
+
+	if( !IsAlive() || IsObserver() )
+		return;
+
+	// --- Unas feed (ref branch on +0x4de latch) ---
+	if( m_bSnagInvisLatch )
+	{
+		if( gpGlobals->time <= m_flTalentCooldown )
+			return;
+		if( !( pev->flags & FL_DUCKING ) )	// ref pev+0x1a4 bit 14
+			return;
+
+		CBaseEntity *pScan = NULL;
+		CCorpseController *pCtrl = NULL;
+		while( ( pScan = UTIL_FindEntityByClassname( pScan, "corpse_control" ) ) != NULL )
+		{
+			if( SGTC_Endo_distance3d( pev->origin, pScan->pev->origin ) < 40 )
+				pCtrl = (CCorpseController *)pScan;
+		}
+		if( !pCtrl )
+			return;
+		if( !pCtrl->m_pCorpse )			// ref +0x19c
+			return;
+		if( pCtrl->m_bBurn )				// ref +0x1a7
+			return;
+		if( pCtrl->m_bArmed )				// ref +0x1a4
+			return;
+		if( pCtrl->m_pEffect )				// ref +0x1b8
+			return;
+
+		m_iStamina = 100;
+		SGTC_UpdateStamina();
+		m_flSgtcLatch3fc = gpGlobals->time;
+		// ref vtable+0x3c call — 2-arg (70.0f, DMG_DROWNRECOVER); TakeHealth
+		// is the matching port virtual (overheal path).
+		TakeHealth( 70.0f, DMG_DROWNRECOVER );
+		m_flSnagArmorRamp += 80.0f;		// ref pev+0x1bc (armor)
+		if( m_flSnagArmorRamp > (float)m_iSnagArmorCap )
+			m_flSnagArmorRamp = (float)m_iSnagArmorCap;
+		UTIL_ScreenFade( this, g_vecZero, 10.0f, 10.0f, 0, 0 );
+		m_flTalentCooldown = gpGlobals->time + 1.0f;
+		pCtrl->m_bFed = 1;				// ref +0x1a5
+		EMIT_SOUND( edict(), CHAN_VOICE, "misc/unas_feed.wav", 1.0f, 0.8f );
+		return;
+	}
+
+	if( pev->team == 2 )
+	{
+		// --- Goa'uld talent set ---
+		switch( m_iSgtcPortraitShown )
+		{
+		default:
+			return;
+		case 1:
+			// quick "Hand Grenade" toss. Gate: active item id != 12,
+			// pev->weapons bit 12 set, ammo > 0, cooldown past.
+			{
+				BOOL bReady = TRUE;
+				if( ( m_pActiveItem && m_pActiveItem->m_iId == 12 ) ||
+					!( pev->weapons & ( 1 << 12 ) ) ||
+					m_rgAmmo[GetAmmoIndex( "Hand Grenade" )] < 1 ||
+					gpGlobals->time <= m_flTalentCooldown )
+					bReady = FALSE;
+				if( !bReady )
+					return;
+				SnagInvis();
+				m_rgAmmo[GetAmmoIndex( "Hand Grenade" )]--;
+				m_flTalentCooldown = gpGlobals->time + 1.5f;
+
+				Vector vecAngles = pev->v_angle + pev->punchangle;
+				if( vecAngles.x < 0.0f )
+					vecAngles.x = vecAngles.x * 1.1111112f;	// rodata 0x1d7d78 pair
+				else
+					vecAngles.x = vecAngles.x * 0.8888889f;
+				vecAngles.x -= 10.0f;
+				float flSpeed = ( 90.0f - vecAngles.x ) * 4.0f;
+				if( flSpeed > 500.0f )
+					flSpeed = 500.0f;
+
+				UTIL_MakeVectors( vecAngles );
+				Vector vecStart = pev->origin + pev->view_ofs +
+					gpGlobals->v_forward * 16.0f;
+				Vector vecAim = gpGlobals->v_forward * flSpeed +
+					pev->velocity;
+				CGrenade *pNade = CGrenade::ShootTimed( pev, vecStart,
+					vecAim, 3.0f );
+				if( pNade )
+				{
+					*(int *)((char *)pNade + 0xf8) = 1;	// [INFERENCE] ref +0xf8 arm flag
+					pNade->pev->team = pev->team;
+				}
+				if( m_rgAmmo[GetAmmoIndex( "Hand Grenade" )] == 0 )
+					pev->weapons &= ~( 1 << 12 );
+				return;
+			}
+		case 2:
+			goto sgtc_talent_zatboom;
+		case 3:
+			// armor msg + sneak toggle (view_ofs -10 / +28).
+			if( gpGlobals->time <= m_flTalentCooldown )
+				return;
+			if( !m_bNukeViewSnap && pev->waterlevel == 0 )	// ref pev+0x1c0
+			{
+				SetAnimation( (PLAYER_ANIM)4 );
+				m_bNukeViewSnap = 1;
+				pev->view_ofs = Vector( 0.0f, 0.0f, -10.0f );
+				MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pev );
+					WRITE_BYTE( 0 );
+					WRITE_BYTE( 0 );
+					WRITE_BYTE( 10 );
+					WRITE_BYTE( 0 );
+				MESSAGE_END();
+			}
+			else
+			{
+				m_bNukeViewSnap = 0;
+				pev->view_ofs = Vector( 0.0f, 0.0f, 28.0f );
+				MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pev );
+					WRITE_BYTE( 0 );
+					WRITE_BYTE( 0 );
+					WRITE_BYTE( 4 );
+					WRITE_BYTE( 0 );
+				MESSAGE_END();
+			}
+			m_flTalentCooldown = gpGlobals->time + 1.0f;
+			return;
+		case 4:
+			// shield buff arm: stamina refill + shield-trace timers.
+			if( m_iSgtcTalentDeploy != 0 )
+				return;
+			m_iStamina = 100;
+			SGTC_UpdateStamina();
+			m_bZatTouchFlag = 0;	// ref +0xa88
+			m_bShieldTraceHit = 1;	// ref +0xa78
+			m_flSgtcLatch3fc = gpGlobals->time;
+			m_flShieldTraceTime = gpGlobals->time - 3.0f;	// ref +0xa68
+			m_flSgtcLatchA8c = gpGlobals->time;
+			UTIL_ScreenFade( this, g_vecZero, 10.0f, 10.0f, 0, 0 );
+			m_iSgtcTalentDeploy = 1;
+			m_flTalentCooldown = gpGlobals->time + 10.0f;
+			return;
+		case 5:
+			// monster_shieldemit deploy. If an owned emit already exists
+			// (entity +200 owner member), only the proximity retag runs.
+			{
+				CSGTCShieldEmit *pOwned = NULL;
+				CBaseEntity *pScan = NULL;
+				while( ( pScan = UTIL_FindEntityByClassname( pScan,
+					"monster_shieldemit" ) ) != NULL )
+				{
+					CSGTCShieldEmit *pEmit = (CSGTCShieldEmit *)pScan;
+					if( pEmit->m_pSgtcOwner == this )
+						pOwned = pEmit;
+				}
+				if( gpGlobals->time <= m_flTalentCooldown )
+					return;
+				if( !pOwned )
+				{
+					Vector vecAngles = pev->v_angle + pev->punchangle;
+					UTIL_MakeVectors( vecAngles );
+					Vector vecStart = GetGunPosition();
+					Vector vecDir = gpGlobals->v_forward * 360.0f;	// [INFERENCE] scalar rodata
+					TraceResult tr;
+					UTIL_TraceLine( vecStart, vecStart + vecDir,
+						dont_ignore_monsters, edict(), &tr );
+					if( SGTC_Endo_distance3d( pev->origin,
+							tr.vecEndPos ) < 150 &&
+						!( pev->button & ( IN_JUMP | IN_DUCK ) ) )	// ref pev+0x180 bits 1,2
+					{
+						UTIL_TraceLine( vecStart, vecStart + vecDir,
+							dont_ignore_monsters, edict(), &tr );
+						UTIL_TraceLine( tr.vecEndPos,
+							tr.vecEndPos + Vector( 0.0f, 0.0f, -24.0f ),
+							dont_ignore_monsters, edict(), &tr );
+						CBaseEntity *pNew = CBaseEntity::Create( "monster_shieldemit",
+							tr.vecEndPos, g_vecZero, edict() );
+						if( pNew )
+						{
+							pNew->pev->team = pev->team;
+							((CSGTCShieldEmit *)pNew)->m_pSgtcOwner = this;
+							m_iSgtcTalentDeploy = 1;
+							m_flTalentCooldown = gpGlobals->time + 2.0f;
+						}
+					}
+				}
+				else
+				{
+					// proximity retag: <80 units, |dz| < 70 -> mode field = 2.
+					if( SGTC_Endo_distance3d( pev->origin,
+							pOwned->pev->origin ) < 80 &&
+						SGTC_Endo_takefromlarger(
+							(int)floorf( pev->origin.z ),
+							(int)floorf( pOwned->pev->origin.z ) ) < 70 )
+					{
+						pOwned->m_iSgtcMode = 2;	// [INFERENCE] ref +0x104
+						m_flTalentCooldown = gpGlobals->time + 2.0f;
+					}
+				}
+				return;
+			}
+		}
+	}
+	else
+	{
+		// --- Torri / other talent set ---
+		switch( m_iSgtcPortraitShown )
+		{
+		case 1:
+			// monster_larve deploy (invis break), once per arm.
+			if( m_iSgtcTalentDeploy == 0 &&
+				m_flTalentCooldown < gpGlobals->time )
+			{
+				SnagInvis();
+				UTIL_MakeVectors( pev->v_angle );
+				Vector vecStart = pev->origin +
+					gpGlobals->v_forward * 16.0f;	// [INFERENCE] scalar rodata
+				Vector vecVel = gpGlobals->v_forward * 300.0f;	// [INFERENCE]
+				CBaseEntity *pLarve = CBaseEntity::Create( "monster_larve", vecStart,
+					pev->v_angle, edict() );
+				if( pLarve )
+				{
+					pLarve->pev->velocity = vecVel;
+					((CSGTCLarve *)pLarve)->m_iSgtcFlag = 1;	// [INFERENCE] ref +0xd8
+				}
+				m_bSgtcCloakTick = 0;
+				m_iSgtcTalentDeploy = 1;
+			}
+			break;
+		case 2:
+			// armor on/off toggle (0.5s spam gate).
+			if( m_iSgtcTalentDeploy == 0 &&
+				m_flTalentCooldown < gpGlobals->time )
+			{
+				MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pev );
+					WRITE_BYTE( 0 );
+					WRITE_BYTE( 0 );
+					WRITE_BYTE( 3 );
+					WRITE_BYTE( 0 );
+				MESSAGE_END();
+				m_iSgtcTalentDeploy = 1;
+				m_flTalentCooldown = gpGlobals->time + 0.5f;
+			}
+			if( m_iSgtcTalentDeploy != 0 &&
+				m_flTalentCooldown < gpGlobals->time )
+			{
+				MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pev );
+					WRITE_BYTE( 0 );
+					WRITE_BYTE( 0 );
+					WRITE_BYTE( 4 );
+					WRITE_BYTE( 0 );
+				MESSAGE_END();
+				m_iSgtcTalentDeploy = 0;
+				m_flTalentCooldown = gpGlobals->time + 0.5f;
+			}
+			break;
+		case 3:
+			// gacgoa info_flash cast while active item id == 10.
+			if( m_flTalentCooldown < gpGlobals->time && m_pActiveItem &&
+				m_pActiveItem->m_iId == 10 )
+			{
+				SnagInvis();
+				m_flTalentCooldown = gpGlobals->time + 15.0f;
+				EMIT_SOUND( edict(), CHAN_VOICE, "weapons/gacgoa.wav", 1.0f, 0.8f );
+				Vector vecYawOnly( 0.0f, pev->v_angle.y, 0.0f );
+				UTIL_MakeVectors( vecYawOnly );
+				Vector vecSpot = pev->origin;
+				vecSpot.z += 50.0f;	// ref: +50 rise
+				CBaseEntity *pFlash = CBaseEntity::Create( "info_flash", vecSpot,
+					pev->angles, NULL );
+				if( pFlash )
+					pFlash->pev->owner = edict();	// ref local+200 owner store
+				SetAnimation( (PLAYER_ANIM)6 );
+				SnagInvis();
+			}
+			break;
+		case 4:
+			// monster_trapbox toss (max 2 while special mode off).
+			if( m_flTalentCooldown < gpGlobals->time &&
+				m_iSgtcTalentDeploy < 2 )
+			{
+				m_flTalentCooldown = gpGlobals->time + 0.1f;
+				Vector vecAngles = pev->v_angle + pev->punchangle;
+				UTIL_MakeVectors( vecAngles );
+				Vector vecStart = GetGunPosition();
+				Vector vecDir = gpGlobals->v_forward * 360.0f;	// [INFERENCE]
+				TraceResult tr;
+				UTIL_TraceLine( vecStart, vecStart + vecDir,
+					dont_ignore_monsters, edict(), &tr );
+				if( tr.flFraction < 1.0f )
+				{
+					CBaseEntity *pHit = CBaseEntity::Instance( tr.pHit );
+					if( pHit && !( pHit->pev->flags & FL_MONSTER ) )
+					{
+						Vector vecAngles2 = UTIL_VecToAngles( tr.vecPlaneNormal );
+						Vector vecPlace = tr.vecEndPos +
+							tr.vecPlaneNormal * 8.0f;	// [INFERENCE] offset rodata
+						CSGTCTrapBox *pBox = (CSGTCTrapBox *)Create(
+							"monster_trapbox", vecPlace, vecAngles2, edict() );
+						if( pBox )
+						{
+							pBox->m_vecPlace = Vector(
+								floorf( vecPlace.x ), floorf( vecPlace.y ),
+								floorf( vecPlace.z ) );
+							m_iSgtcTalentDeploy++;
+							pBox->m_iPlaceSlot = m_iSgtcTalentDeploy;
+							m_flTalentCooldown = gpGlobals->time + 0.5f;
+						}
+					}
+				}
+			}
+			if( m_iSgtcTalentDeploy > 1 && m_bShieldLarge )
+				m_iSgtcTalentDeploy = 0;
+			break;
+		case 5:
+			// proximity retag of owned shield emitters (see Goa'uld case 5).
+			{
+				CSGTCShieldEmit *pOwned = NULL;
+				CBaseEntity *pScan = NULL;
+				while( ( pScan = UTIL_FindEntityByClassname( pScan,
+					"monster_shieldemit" ) ) != NULL )
+				{
+					CSGTCShieldEmit *pEmit = (CSGTCShieldEmit *)pScan;
+					if( pEmit->m_pSgtcOwner == this )
+						pOwned = pEmit;
+				}
+				if( !pOwned )
+					return;
+				if( SGTC_Endo_distance3d( pev->origin,
+						pOwned->pev->origin ) < 80 &&
+					SGTC_Endo_takefromlarger( (int)floorf( pev->origin.z ),
+						(int)floorf( pOwned->pev->origin.z ) ) < 70 )
+				{
+					pOwned->m_iSgtcMode = 2;	// [INFERENCE] ref +0x104
+					m_flTalentCooldown = gpGlobals->time + 2.0f;
+				}
+				return;
+			}
+		}
+	}
+	return;
+
+sgtc_talent_zatboom:
+	// Goa'uld talent 2 — monster_zatboom toss while active item id == 0x11
+	// and pev->weapons bit 0x11 set.
+	if( !m_pActiveItem || m_pActiveItem->m_iId != 0x11 )
+		return;
+	if( !( pev->weapons & ( 1 << 0x11 ) ) )
+		return;
+	if( gpGlobals->time <= m_flTalentCooldown )
+		return;
+	SnagInvis();
+	UTIL_MakeVectors( pev->v_angle );
+	{
+		Vector vecStart = pev->origin + gpGlobals->v_forward * 16.0f;	// [INFERENCE]
+		Vector vecVel = gpGlobals->v_forward * 300.0f;	// [INFERENCE]
+		CBaseEntity *pZat = CBaseEntity::Create( "monster_zatboom", vecStart, pev->v_angle, NULL );
+		if( pZat )
+		{
+			pZat->pev->velocity = vecVel;
+			pZat->pev->team = pev->team;
+			pZat->pev->owner = edict();	// ref pev+0x198
+		}
+	}
+	m_flTalentCooldown = gpGlobals->time + 2.0f;
+	m_iSgtcTalentDeploy = 1;
+	return;
+}
+
+// ref CBasePlayer::ResetPortrait(int) @0x13633e — portrait usermsg (lazy-reg
+// like gmsgLogo): BYTE 0 + SHORT 0 + SHORT 0; dest mode==1 -> MSG_ONE else
+// MSG_ALL. Always clears +0x926 latch.
+void CBasePlayer::ResetPortrait( int mode )
+{
+	static int gmsgPortrait = 0;	// [INFERENCE] name/size; ref GOT gmsg @ebx-0xffc
+	if( !gmsgPortrait )
+		gmsgPortrait = REG_USER_MSG( "Portrait", 3 );
+
+	if( mode == 1 )
+		MESSAGE_BEGIN( MSG_ONE, gmsgPortrait, NULL, pev );
+	else
+		MESSAGE_BEGIN( MSG_ALL, gmsgPortrait, NULL, (edict_t *)NULL );
+		WRITE_BYTE( 0 );
+		WRITE_SHORT( 0 );
+		WRITE_SHORT( 0 );
+	MESSAGE_END();
+	m_bSgtcPortraitLatch = 0;
+}
+
+// ===========================================================================
+// SGTC_GiveFromMenu — ref GiveFromMenu(CBasePlayer*) @nm 0x17ae8a.
+// Full ref body decoded from disasm: alive+!observer gate; RemoveAllItems(0);
+// reset weapon-set state (+0x4f4); loop the 28 gond4h9wp menu args (+0x9ac[i]),
+// granting WPLIST[i] on any nonzero arg; args 0x11/0x12 drive a state machine on
+// +0x4f4 instead of a direct give; after the loop a fire-flag bit (pev->flags
+// bit9==0) grants WPLIST[0x11] when +0x4f4 armed; solid players get the team
+// base weapon (Torri weapon_couteau / Goa'uld weapon_coujaf); finally +0x4e5=0,
+// +0x4e7=1.
+// WPLIST = 28-entry weapon table @0x220a50 (first 4 entries NULL in ref).
+// ===========================================================================
+static const char * const sgtc_WPLIST[28] =
+{
+	NULL, NULL, NULL, NULL,				// ref entries 0..3 are NULL
+	"weapon_glstaff",	"weapon_usas",		"weapon_batsup",
+	"weapon_m92s",		"weapon_mp5",		"weapon_psg1",
+	"weapon_p90",		"weapon_spas",		"weapon_m16",
+	"weapon_main",		"weapon_zat",		"weapon_lance",
+	"weapon_reetou",	"weapon_zatarc",	"weapon_tacgun",
+	"weapon_handgrenade","weapon_mine",		"weapon_invis",
+	"weapon_invis",		"weapon_gacgoa",	"weapon_c4",
+	"weapon_larve",		"weapon_medic",		"weapon_smokegrenade"
+};
+
+void SGTC_GiveFromMenu( CBasePlayer *pPlayer )
+{
+	if( !pPlayer )
+		return;
+	// ref: if (!(IsAlive && !IsObserver)) return;
+	if( !pPlayer->IsAlive() || pPlayer->IsObserver() )
+		return;
+
+	pPlayer->RemoveAllItems( 0 );
+	pPlayer->m_iSgtcGondState = 0;		// ref +0x4f4
+
+	for( int i = 0; i < 28; i++ )
+	{
+		if( pPlayer->m_iSgtcGondArgs[i] != 1 )
+			continue;
+
+		pPlayer->m_bSgtcMenuLockLatch = 1;	// ref +0x4e7
+		if( i == 0x11 || i == 0x12 )
+		{
+			// ref: state machine on +0x4f4 (no item give for these two slots).
+			if( pPlayer->m_iSgtcGondState == 0 && i == 0x11 )
+				pPlayer->m_iSgtcGondState = 1;
+			if( pPlayer->m_iSgtcGondState == 1 && i == 0x12 )
+				pPlayer->m_iSgtcGondState = 3;
+			if( pPlayer->m_iSgtcGondState == 0 && i == 0x12 )
+				pPlayer->m_iSgtcGondState = 2;
+			if( pPlayer->m_iSgtcGondState == 2 && i == 0x11 )
+				pPlayer->m_iSgtcGondState = 3;
+		}
+		else if( sgtc_WPLIST[i] )
+		{
+			pPlayer->GiveNamedItem( sgtc_WPLIST[i] );
+		}
+	}
+
+	// ref: if (+0x4f4 != 0 && !(pev->flags bit9)) GiveNamedItem(WPLIST[0x11]).
+	if( pPlayer->m_iSgtcGondState != 0 && !( ( pPlayer->pev->flags >> 9 ) & 1 ) )
+	{
+		if( sgtc_WPLIST[0x11] )
+			pPlayer->GiveNamedItem( sgtc_WPLIST[0x11] );
+	}
+
+	// ref: solid && !observer players get a team base weapon.
+	if( !pPlayer->IsObserver() && pPlayer->pev->solid != 0 )
+	{
+		if( (int)pPlayer->pev->team == 1 )	// ref +0x1ac == 1
+			pPlayer->GiveNamedItem( "weapon_couteau" );	// ref @0x1dbabc
+		else
+			pPlayer->GiveNamedItem( "weapon_coujaf" );	// ref @0x1dbacb
+	}
+
+	pPlayer->m_bSgtcMenuLock = 0;			// ref +0x4e5
+	pPlayer->m_bSgtcMenuLockLatch = 1;		// ref +0x4e7
 }

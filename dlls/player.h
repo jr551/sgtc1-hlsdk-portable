@@ -262,6 +262,55 @@ public:
 	float	m_flSnagArmorRamp;	// ref pev+0x1bc — armor HUD ramp (coujaf seeds)
 	int	m_iArmorHudSent;	// ref +0x91c — last Armor bar byte sent
 	int	m_iSupergunsSent;	// ref +0x920 — last superguns aux sent
+	int	m_iHudRoundTime;	// ref +0x4d0 — last SetRndTim roundtime sent
+	int	m_iHudRoundMode;	// ref +0x4d8 — last SetRndTim mode sent
+	int	m_iSgtcTeam;		// ref +0x438 — SGTC team id
+	int	m_iSgtcActiveTeam;	// ref +0x430
+	int	m_iSgtcPrevTeam;	// ref +0x4fc
+	int	m_iSgtcPortraitSel;	// ref +0xa44 — portrait menu selection
+	int	m_iSgtcPortraitShown;	// ref +0xa40 — shown portrait; also Talent() switch index (1..5)
+	int	m_iSgtcTeamLatch;	// [INFERENCE] ref +0x3e0-ish — cleared by "spectate"
+	char	m_bSgtcPad464;		// ref +0x464
+	char	m_bSgtcMenuLock;	// ref +0x4e5 — gond4h9wp menu lock
+	char	m_bSgtcPortraitsFrozen;	// ref +0x4e6 — portraits frozen latch
+	char	m_bSgtcMenuLockLatch;	// ref +0x4e7 — menu lock edge latch
+	int	m_iSgtcGondState;		// ref +0x4f4 — gond weapon-set state machine (0/1/2/3) driven
+								//  by menu args 0x11/0x12 inside GiveFromMenu
+	float	m_flSgtcMenuWindow;	// ref +0x4ac — menu window deadline (GiveFromMenu/PlayerThink)
+	char	m_bSgtcPadA3D;		// ref +0xa3d
+	char	m_bSgtcRoundAlive;	// ref +0x3e4 — seen-alive latch
+	int	m_iSgtcTicks;		// ref +0xc88 (int handle)
+	EHANDLE	m_hSgtcEnvIterator;	// port-side env walk handle (ref +0xc88 slot reuse)
+	int	m_iSgtcEnvStage;	// ref +0xc90
+	float	m_flSgtcEnvNext;	// ref +0xc94
+	float	m_flSgtcMenuDelay;	// ref +0x4b0
+	float	m_flSgtcTeamsTick;	// ref +0x41c
+	float	m_flSgtcDeathTime;	// ref +0xc7c
+	int	m_iNVGOn;		// ref +0xe18 — NVG active
+	int	m_iNVGZoom;		// ref +0xe20 — NVG zoom level 0..5
+	int	m_iSgtcSpecMode;	// ref +0x914 — special/dev mode unlock (-1 locked)
+	int	m_iSgtcElite;		// ref +0xa54 — "elite" arg
+	char	m_bSgtcSatchelFired;	// ref +0x910 — c4detonate latch
+	char	m_bSgtcPortraitLatch;	// ref +0x926 — ResetPortrait clears
+	char	m_bSgtcSuperman;	// ref +0x924 — savetheday armed
+	float	m_flSgtcStuck;		// ref +0x420 — "stuck" reuse deadline
+	float	m_flTalentCooldown;	// ref +0x494 — per-talent reuse deadline
+	int	m_iSgtcTalentDeploy;	// ref +0x918 — deployed/armed count (shieldemit, trapbox, zatboom, larve)
+	float	m_flSgtcLatchA8c;	// ref +0xa8c — talent-case timer
+	int	m_iSgtcGondArgs[29];	// ref +0x9ac — gond4h9wp progress copy; NewRound
+								//  type-4 reset writes idx 0..0x1c (29 entries) so the ref
+								//  itself overruns a 28-slot tail — field widened to match
+
+	void SetHudRoundTime( int roundtime, int mode );	// ref @0x125494 — MSG_ONE gmsgSetHudRoundTime
+	void ShowVGUIMenu( int menu );	// ref @0x125538 — MSG_ONE gmsgVGUIMenu
+	void SendAboutMe( int a, const char *s, int c );	// ref @0x1262b8 — s unused in ref
+	void SendGlobalTextIndex( int idx );	// ref @0x129026 — MSG_ONE gmsgConcuss
+	void NVG( void );			// ref @0x13444a
+	void NVG_Zoomin( void );	// ref @0x1345d4
+	void NVG_Zoomout( void );	// ref @0x13442a
+	void Talent( void );		// ref @0x134a02
+	void ResetPortrait( int mode );	// ref @0x13633e — portrait msg + clears +0x926
+
 
 	void SGTC_RadarScan( void );	// ref @0x135592 — Blip usermsg to client HUD
 	void SGTC_UpdateStamina( void );	// ref @0x1336e8
