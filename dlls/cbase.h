@@ -151,7 +151,14 @@ public:
 
 	// path corners
 	CBaseEntity *m_pGoalEnt;// path corner we are heading towards
-	CBaseEntity *m_pLink;// used for temporary link-list operations. 
+	CBaseEntity *m_pLink;// used for temporary link-list operations.
+
+	// SGTC emitter stamps (ref CSEmit::Think @0x160872: ent+0xa2c ally-shield
+	// timestamp, ent+0x128 suppress timer, ent+0x12c suppressor back-pointer).
+	// Zero-initialized by ALLOC_PRIVATE; no SAVE/RESTORE (frame-liveness only).
+	float m_flSgtcShieldTime;
+	float m_flSgtcSuppressTime;
+	CBaseEntity *m_pSgtcSuppressor;
 
 	// initialization functions
 	virtual void Spawn( void ) { return; }

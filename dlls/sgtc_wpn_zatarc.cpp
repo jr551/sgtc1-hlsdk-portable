@@ -87,6 +87,35 @@ void CZatarc::PrimaryAttack( void )
 		UTIL_SharedRandomFloat( m_pPlayer->random_seed, 10, 15 );
 }
 
-SGTC_NO_SECONDARY( CZatarc )
+void CZatarc::SecondaryAttack( void )	// ref CZatarc::SecondaryAttack @0x1c75d4 (zoom toggle)
+{
+	// ref gate: m_pPlayer->m_flNextAttack <= time.
+	if( m_pPlayer->m_flNextAttack > gpGlobals->time )
+		return;
+
+	// ref cycles pev->fov 35 -> 0, 50 -> 35, else (0) -> 50, stamping the
+	// zoom-mode slot (m_iFOV stage: 0 / 0x23=35 / 0x32=50) and the toggle flag.
+	if( m_pPlayer->pev->fov == 35.0f )
+	{
+		m_pPlayer->m_iFOV = 0;
+		m_pPlayer->pev->fov = 0.0f;
+		m_iSgtcZoomStage = 0;
+	}
+	else if( m_pPlayer->pev->fov == 50.0f )
+	{
+		m_pPlayer->m_iFOV = 0x23;
+		m_pPlayer->pev->fov = 35.0f;
+		m_iSgtcZoomStage = 1;
+	}
+	else
+	{
+		m_pPlayer->m_iFOV = 0x32;
+		m_pPlayer->pev->fov = 50.0f;
+		m_iSgtcZoomStage = 1;
+	}
+	pev->nextthink = UTIL_WeaponTimeBase() + 0.1f;
+	m_flNextPrimaryAttack = UTIL_WeaponTimeBase() + 0.5f;
+}
+
 SGTC_NO_RELOAD( CZatarc )
 SGTC_WEAPON_IDLE( CZatarc )

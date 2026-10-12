@@ -192,7 +192,7 @@ void CTriggerCapture::CaptureThink( void )
 			pSprite->SetScale( 0.5 );
 			pSprite->SetTransparency( kRenderTransAlpha, 255, 255, 255,
 				255, 0xe );
-			pSprite->pev->spawnflags |= ( m_iZoneId & 0xffff ); // ref sprite+0x19c = zone id
+			// zone id is carried by m_hSprite; do not disturb sprite spawnflags
 			m_hSprite = pSprite;
 		}
 	}
@@ -320,7 +320,7 @@ void CTriggerBomb::BombZoneTouch( CBaseEntity *pOther )
 			pSatchel->pev->health = 99.0f;	// ref +0x160 = 0x42c60000
 			m_flOutTime = gpGlobals->time + 10.0f;
 		}
-		if( pSatchel->pev->health <= 99.0f || pSatchel->pev->health <= 22.0f )
+		if( pSatchel->pev->health == 99.0f || pSatchel->pev->health <= 22.0f )
 			m_flInWindow = gpGlobals->time + 0.2f;
 	}
 }

@@ -99,36 +99,164 @@ void CLanceJaffa::PrimaryAttack( void )
 		UTIL_SharedRandomFloat( m_pPlayer->random_seed, 10, 15 );
 }
 
-void CLanceJaffa::SecondaryAttack( void )
+void CLanceJaffa::SecondaryAttack( void )	// ref @0x10ffd2
 {
+	// ref gate: m_pPlayer->m_flNextAttack <= time.
+	if( m_pPlayer->m_flNextAttack > gpGlobals->time )
+		return;
+
+	// ref: if( Swing(1) || WTB <= m_flNextPrimaryAttack ) return;
+	// else SwingAgain(); pev->nextthink = time + 0.1; SnagInvis().
+	if( Swing( 1 ) || UTIL_WeaponTimeBase() <= m_flNextPrimaryAttack )
+		return;
+
+	SwingAgain();
+	pev->nextthink = gpGlobals->time + 0.1f;
+	m_pPlayer->SnagInvis();
+}
+
+void CLanceJaffa::SwingAgain( void )	// ref @0x10ffaa
+{
+	Swing( 0 );
+}
+
+int CLanceJaffa::Swing( int fFirst )	// ref @0x10f5d0 (crowbar-derived melee)
+{
+	// ref FindHullIntersection(vecSrc, tr, mins, maxs, edict) — local copy
+	// (crowbar.cpp's is TU-local); projects the hull hit onto the BSP face.
+	static const auto sgtcHullIntersect = []( const Vector &vecSrc, TraceResult &tr,
+		const float *mins, const float *maxs, edict_t *pEntity )
+	{
+		TraceResult tmpTrace;
+		Vector vecHullEnd = tr.vecEndPos;
+		Vector vecEnd = vecSrc + ( vecHullEnd - vecSrc ) * 2.0f;
+		UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, pEntity, &tmpTrace );
+		if( tmpTrace.flFraction < 1.0f )
+			tr = tmpTrace;
+	};
+
+	int fDidHit = FALSE;
 	TraceResult tr;
+	float flVol = 1.0f;
+	int fHitWorld = TRUE;
 
 	UTIL_MakeVectors( m_pPlayer->pev->v_angle );
 	Vector vecSrc = m_pPlayer->GetGunPosition();
 	Vector vecEnd = vecSrc + gpGlobals->v_forward * 32;
 
 	UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, ENT( m_pPlayer->pev ), &tr );
+	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
+	SendWeaponAnim( SGTC_FIRE2, 1, 0 );
 
-	PLAYBACK_EVENT_FULL( SGTC_EVENT_FLAGS, m_pPlayer->edict(), m_usFire2,
-		0.0, (float *)&g_vecZero, (float *)&g_vecZero, 0, 0, 0, 0, 0, 0 );
+	if( tr.flFraction >= 1.0f )
+	{
+		UTIL_TraceHull( vecSrc, vecEnd, dont_ignore_monsters, head_hull,
+			ENT( m_pPlayer->pev ), &tr );
+		if( tr.flFraction < 1.0f )
+		{
+			CBaseEntity *pHit = CBaseEntity::Instance( tr.pHit );
+			if( !pHit || pHit->IsBSPModel() )
+				sgtcHullIntersect( vecSrc, tr, (float *)VEC_DUCK_HULL_MIN,
+					(float *)VEC_DUCK_HULL_MAX, m_pPlayer->edict() );
+			vecEnd = tr.vecEndPos;
+		}
+	}
+	if( fFirst )
+	{
+		PLAYBACK_EVENT_FULL( SGTC_EVENT_FLAGS, m_pPlayer->edict(), m_usFire2,
+			0.0, (float *)&g_vecZero, (float *)&g_vecZero, 0, 0, 0, 0, 0, 0 );
+	}
+
+	if( tr.flFraction >= 1.0f )
+	{
+		if( fFirst )
+		{
+			// miss
+			m_flNextPrimaryAttack = GetNextAttackDelay( 0.5 );
+			m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
+			m_trLastHit = tr;
+		}
+	}
+	else
+	{
+		m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
 
 #ifndef CLIENT_DLL
-	if( tr.flFraction < 1.0 )
-	{
+		// hit
+		fDidHit = TRUE;
 		CBaseEntity *pEntity = CBaseEntity::Instance( tr.pHit );
+
+
 		if( pEntity )
 		{
 			ClearMultiDamage();
-			pEntity->TraceAttack( m_pPlayer->pev, gSkillData.plrDmgCrowbar * 2,
-				gpGlobals->v_forward, &tr, DMG_CLUB );
+			// ref: talent-boosted damage 70 (0x46) when Goa'uld talent-4
+			// active, else the skill-table crowbar damage.
+			float flDamage = gSkillData.plrDmgCrowbar * 2;
+			if( gpGlobals->time < m_pPlayer->m_flTalentCooldown &&
+				m_pPlayer->pev->team == 2 &&
+				m_pPlayer->m_iSgtcPortraitShown == 4 )
+				flDamage = 70.0f;
+			// ref: direct entity hit only when primary reuse expired or MP.
+			if( ( m_flNextPrimaryAttack + 1.0f < UTIL_WeaponTimeBase() ) ||
+				g_pGameRules->IsMultiplayer() )
+			{
+				pEntity->TraceAttack( m_pPlayer->pev, flDamage,
+					gpGlobals->v_forward, &tr, DMG_CLUB );
+			}
 			ApplyMultiDamage( m_pPlayer->pev, m_pPlayer->pev );
-		}
-	}
-#endif
 
-	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
-	m_flNextPrimaryAttack = GetNextAttackDelay( 0.75 );
-	m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 0.75;
+			// ref: body-hit sounds + return 1 on live targets.
+			if( pEntity->Classify() != CLASS_NONE &&
+				pEntity->Classify() != CLASS_MACHINE )
+			{
+				switch( RANDOM_LONG( 0, 2 ) )
+				{
+				case 0: EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_WEAPON,
+					"weapons/hitbody1.wav", 1, ATTN_NORM ); break;
+				case 1: EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_WEAPON,
+					"weapons/hitbody2.wav", 1, ATTN_NORM ); break;
+				case 2: EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_WEAPON,
+					"weapons/hitbody3.wav", 1, ATTN_NORM ); break;
+				}
+				m_pPlayer->m_iWeaponVolume = 128;
+				if( !pEntity->IsAlive() )
+					return TRUE;
+				flVol = 0.1f;
+				fHitWorld = FALSE;
+			}
+		}
+#endif
+		// ref: wall-hit texture sound + stored TraceResult.
+		TEXTURETYPE_PlaySound( &tr, vecSrc, vecEnd, BULLET_PLAYER_CROWBAR );
+		if( g_pGameRules && g_pGameRules->IsMultiplayer() )
+			flVol = 1.0f;
+		switch( RANDOM_LONG( 0, 1 ) )
+		{
+		case 0:
+			EMIT_SOUND_DYN( ENT( m_pPlayer->pev ), CHAN_WEAPON,
+				"weapons/cbar_hit1.wav", flVol, ATTN_NORM, 0,
+				98 + RANDOM_LONG( 0, 3 ) );
+			break;
+		default:
+			EMIT_SOUND_DYN( ENT( m_pPlayer->pev ), CHAN_WEAPON,
+				"weapons/cbar_hit2.wav", flVol, ATTN_NORM, 0,
+				98 + RANDOM_LONG( 0, 3 ) );
+			break;
+		}
+		m_trLastHit = tr;
+	}
+	m_pPlayer->m_iWeaponVolume = (int)( flVol * 512.0f );
+	m_flNextPrimaryAttack = GetNextAttackDelay( 0.25 );
+	if( gpGlobals->time < m_pPlayer->m_flTalentCooldown &&
+		m_pPlayer->pev->team == 2 &&
+		m_pPlayer->m_iSgtcPortraitShown == 4 )
+		m_flNextPrimaryAttack = GetNextAttackDelay( 0.15 );
+	// ref Smack(): swing whiff sound would use m_trLastHit; the port plays
+	// the event whiff above — keep event only.
+	pev->nextthink = UTIL_WeaponTimeBase() + 0.2f;
+
+	return fDidHit;
 }
 
 SGTC_NO_RELOAD( CLanceJaffa )

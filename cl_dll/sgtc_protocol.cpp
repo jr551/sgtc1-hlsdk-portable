@@ -31,6 +31,8 @@
 #include "eventscripts.h"
 #include "sgtc_protocol.h"
 #include "sgtc_hud.h"
+#include "sgtc_env.h"
+#include "in_defs.h"	// YAW for EV_EjectBrass
 
 #include <string.h>
 
@@ -129,6 +131,7 @@ SGTC_MSG_LIST
 void SGTC_ClientHUD_Init( void )
 {
 	g_SgtcHud.Init();
+	g_ClientEnv.Init();
 	SGTC_ClientProtocol_InitMessages();
 	SGTC_ClientProtocol_HookEvents();
 }
@@ -216,12 +219,12 @@ static void SGTC_EventFallback( struct event_args_s *args, int playSound )
 
 	if( playSound && ( args->iparam1 & 1 ) )
 	{
-		float origin[3], angles[3], shellOrigin[3], shellVelocity[3];
+		float origin[3], angles[3], velocity[3], shellVelocity[3], shellOrigin[3];
 		float forward[3], right[3], up[3];
 		EV_GetGunPosition( args, origin, angles );
-		EV_GetDefaultShellInfo( args, origin, angles, shellOrigin, shellVelocity,
+		EV_GetDefaultShellInfo( args, origin, velocity, shellVelocity, shellOrigin,
 			forward, right, up, 20.0f, -12.0f, 4.0f );
-		EV_EjectBrass( shellOrigin, shellVelocity, angles[2], 10, 1 );
+		EV_EjectBrass( shellOrigin, shellVelocity, angles[YAW], 10, TE_BOUNCE_SHELL );
 	}
 	(void)idx;
 }

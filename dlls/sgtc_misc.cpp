@@ -259,6 +259,12 @@ public:
 
 void CEject::Spawn( void )
 {
+	m_bEjectArmed = 0;
+	m_iEjectFlag = 0;
+	m_flSpreadX = 0.0f;
+	m_flSpreadY = 0.0f;
+	m_flSpreadZ = 0.0f;
+	m_vecEjectOrigin = g_vecZero;
 	// ref @0x195c9e, in write order:
 	pev->movetype = MOVETYPE_FOLLOW;	// ref pev+0x108 = 10 (GoldSrc MOVETYPE_FOLLOW)
 	pev->solid = SOLID_BBOX;		// ref pev+0x10c = 2

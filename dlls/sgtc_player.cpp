@@ -20,6 +20,7 @@ extern void *sgtc_superguns;
 // Globals from other TUs (lazy externs, as elsewhere in this file).
 extern int gmsgSayText;
 extern int gmsgReset;
+extern int gmsgArmor;
 extern int gmsgSpectator;
 extern int gmsgHideVGUI;
 extern cvar_t allow_spectators;
@@ -31,13 +32,10 @@ extern void CopyToBodyQue( entvars_t *pev );
 // ref global: Elmo @0x2368f0 — bomb-key flag set by dropkey (defined below).
 edict_t *sgtc_Elmo = NULL;
 
-static int SGTC_SupergunsHudAux( void )
+static int SGTC_SupergunsHudAux( void )	// REA: ref reads superguns cvar +0xc; read the port struct directly
 {
-	if( !sgtc_superguns )
-		return 0;
-	float fl;
-	memcpy( &fl, (const char *)sgtc_superguns + 0xc, sizeof( fl ) );
-	return (int)fl;
+	extern cvar_t sgtc_cvar_superweapons;
+	return (int)sgtc_cvar_superweapons.value;
 }
 
 static const struct
@@ -160,7 +158,7 @@ void CBasePlayer::SGTC_RadarScan( void )
 	m_flRadarNext = gpGlobals->time + 0.25f;
 }
 
-// ref @0x133aca — toggle +0x925, MSG_ONE gmsgSubModel: 0,0,mode,iMaxAmmo1().
+// ref @0x133aca — toggle +0x925, MSG_ONE gmsgArmor: 0,0,mode,iMaxAmmo1().
 void CBasePlayer::SGTC_WeapDispSet( int mode )
 {
 	if( mode == 1 )
@@ -168,14 +166,14 @@ void CBasePlayer::SGTC_WeapDispSet( int mode )
 	else if( mode == 2 )
 		m_bWeapSubModel = 0;
 
-	if( !gmsgSubModel )
+	if( !gmsgArmor )
 		return;
 
 	int iMaxAmmo = 0;
 	if( m_pActiveItem )
 		iMaxAmmo = ((CBasePlayerWeapon *)m_pActiveItem)->iMaxAmmo1();
 
-	MESSAGE_BEGIN( MSG_ONE, gmsgSubModel, NULL, pev );
+	MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pev );
 	WRITE_BYTE( 0 );
 	WRITE_BYTE( 0 );
 	WRITE_BYTE( mode );
@@ -681,6 +679,13 @@ static void SGTC_SpectateClient( CBasePlayer *pPlayer )
 {
 	// shared ref body for "spectate"/"observer" paths @0xc9a18/@0xca234:
 	// ticket decrement, owned-ent cleanup, HUD reset, death cam.
+	if( gmsgSpectator )	// ref StartObserver @0x129076 sends Spectator
+	{
+		MESSAGE_BEGIN( MSG_ONE, gmsgSpectator, NULL, pPlayer->pev );
+			WRITE_BYTE( pPlayer->entindex() );
+			WRITE_BYTE( 1 );
+		MESSAGE_END();
+	}
 	if( pPlayer->IsAlive() &&
 		( sgtc_GameModeSet == 1 || sgtc_GameModeSet == 4 ) )
 	{
@@ -846,8 +851,7 @@ BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 	{
 		if( !pPlayer->m_bShieldLarge )
 			return TRUE;
-		pPlayer->m_bSgtcSuperman = 1;					// ref +0x924
-		*(int *)((char *)pPlayer + 0xdc) = 1;			// [INFERENCE] ref +0xdc
+		pPlayer->m_bSgtcSuperman = 1;					// ref +0x924 (+0xdc slot is m_bShieldLarge-adjacent in ref; no port analog)
 		g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(),
 			g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ),
 			"model", "superman" );
@@ -897,25 +901,11 @@ BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 		return TRUE;
 	}
 
-	if( FStrEq( pcmd, "observer" ) )	// ref @0xc9f4a
+	if( FStrEq( pcmd, "observer" ) )	// ref @0xc9f4a — shares the spectate body
 	{
 		if( allow_spectators.value == 0.0f )
 			return TRUE;
-		MESSAGE_BEGIN( MSG_ALL, gmsgReset, NULL );
-			WRITE_SHORT( pPlayer->entindex() );
-			WRITE_BYTE( 1 );
-		MESSAGE_END();
-		MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pPlayer->pev );
-			WRITE_BYTE( 0 );
-			WRITE_BYTE( 0 );
-			WRITE_BYTE( 4 );
-			WRITE_BYTE( 0 );
-		MESSAGE_END();
-		MESSAGE_END();	// ref double MESSAGE_END (protocol quirk)
-		pPlayer->m_iSgtcPortraitShown = 0;	// ref +0xa40
-		pPlayer->pev->team = 0;				// ref pev+0x1ac
-		strncpy( pPlayer->m_szTeamName, "", TEAM_NAME_LENGTH );
-		pPlayer->StartDeathCam();
+		SGTC_SpectateClient( pPlayer );
 		return TRUE;
 	}
 
@@ -936,10 +926,9 @@ BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 				pKey->pev->angles.x = 0.0f;	// ref pev+0x50/+0x58 zeroed
 				pKey->pev->angles.z = 0.0f;
 				pKey->pev->velocity = gpGlobals->v_forward * 300.0f;	// [INFERENCE]
+				sgtc_Elmo = pKey->edict();
 			}
 			pPlayer->m_iInBombZone = 0;
-			sgtc_Elmo = pKey->edict();
-			return TRUE;
 		}
 		CLIENT_PRINTF( pPlayer->edict(), print_console, "No key to drop\n" );
 		return TRUE;
@@ -1077,7 +1066,10 @@ BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 				continue;
 			if( pScan->pev->owner != pPlayer->edict() )
 				continue;
-			if( *((unsigned char *)pScan + 0x412) != 0 )	// [INFERENCE] fired latch
+			// ref +0x412 is the satchel's armed/detonate latch in the ref's own
+			// (larger) object layout — not valid on stock CSatchelCharge, so
+			// gate on the live armed state instead of a raw offset read.
+			if( !pScan->IsAlive() )
 				continue;
 			pPlayer->m_bSgtcSatchelFired = 1;	// ref +0x910
 			EMIT_SOUND( ENT( pScan->pev ), CHAN_BODY,
@@ -1201,7 +1193,7 @@ void CBasePlayer::SGTC_TickSgtcThinkTail( void )
 	static const float kZatArmorCap = 255.0f;	// rodata @0x1d7540
 
 	const float flNow = gpGlobals->time;
-	const BOOL bTailTick = SGTC_FloatEq( m_flSgtcTailTick, flNow );
+	const BOOL bTailTick = ( flNow >= m_flSgtcTailTick );	// deadline, like the sibling latch gates
 
 	if( bTailTick )
 	{
@@ -1817,6 +1809,7 @@ void CBasePlayer::Talent( void )
 							"monster_trapbox", vecPlace, vecAngles2, edict() );
 						if( pBox )
 						{
+							pBox->pev->team = pev->team;	// like zatboom deploy: skip allies in sweep
 							pBox->m_vecPlace = Vector(
 								floorf( vecPlace.x ), floorf( vecPlace.y ),
 								floorf( vecPlace.z ) );
@@ -1885,22 +1878,19 @@ sgtc_talent_zatboom:
 	return;
 }
 
-// ref CBasePlayer::ResetPortrait(int) @0x13633e — portrait usermsg (lazy-reg
-// like gmsgLogo): BYTE 0 + SHORT 0 + SHORT 0; dest mode==1 -> MSG_ONE else
-// MSG_ALL. Always clears +0x926 latch.
+// ref CBasePlayer::ResetPortrait(int) @0x13633e — gmsgReset SHORT 0 + BYTE 0;
+// dest mode==1 -> MSG_ONE else MSG_ALL. Always clears +0x926 latch.
 void CBasePlayer::ResetPortrait( int mode )
 {
-	static int gmsgPortrait = 0;	// [INFERENCE] name/size; ref GOT gmsg @ebx-0xffc
-	if( !gmsgPortrait )
-		gmsgPortrait = REG_USER_MSG( "Portrait", 3 );
+	if( !gmsgReset )
+		return;
 
 	if( mode == 1 )
-		MESSAGE_BEGIN( MSG_ONE, gmsgPortrait, NULL, pev );
+		MESSAGE_BEGIN( MSG_ONE, gmsgReset, NULL, pev );
 	else
-		MESSAGE_BEGIN( MSG_ALL, gmsgPortrait, NULL, (edict_t *)NULL );
+		MESSAGE_BEGIN( MSG_ALL, gmsgReset, NULL, (edict_t *)NULL );
+		WRITE_SHORT( 0 );
 		WRITE_BYTE( 0 );
-		WRITE_SHORT( 0 );
-		WRITE_SHORT( 0 );
 	MESSAGE_END();
 	m_bSgtcPortraitLatch = 0;
 }
@@ -1942,7 +1932,7 @@ void SGTC_GiveFromMenu( CBasePlayer *pPlayer )
 
 	for( int i = 0; i < 28; i++ )
 	{
-		if( pPlayer->m_iSgtcGondArgs[i] != 1 )
+		if( pPlayer->m_iSgtcGondArgs[i] == 0 )	// ref gates on nonzero, not ==1
 			continue;
 
 		pPlayer->m_bSgtcMenuLockLatch = 1;	// ref +0x4e7

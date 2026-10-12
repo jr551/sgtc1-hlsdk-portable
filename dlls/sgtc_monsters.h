@@ -267,7 +267,9 @@ public:
 
 	void EXPORT EmitThink( void );
 	CBasePlayer *m_pSgtcOwner;	// ref entity +200 — deployer (Talent scan)
-	int m_iSgtcMode;			// [INFERENCE] ref +0x104 — proximity retag mode
+	int m_iSgtcMode;			// ref +0x104 — state machine (1 child-frame, 2 teardown)
+	CBaseEntity *m_pSgtcEffect;	// ref +0x3f8 — effect_bigshield child
+	float m_flSgtcNextFx;		// ref +0x3f4 — FX heartbeat
 };
 
 // Lockdown patch (2.0). Wall/box blocker toggled by Use.

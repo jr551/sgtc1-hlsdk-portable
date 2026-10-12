@@ -85,27 +85,28 @@ void CReetou::PrimaryAttack( void )
 		UTIL_SharedRandomFloat( m_pPlayer->random_seed, 10, 15 );
 }
 
-void CReetou::SecondaryAttack( void )
+void CReetou::SecondaryAttack( void )	// ref CReetou::SecondaryAttack @0x162680
 {
-	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 )
-	{
-		PlayEmptySound();
+	// ref gate: m_pPlayer->m_flNextAttack <= gpGlobals->time (ItemPostFrame
+	// CanAttack(m_flNextSecondaryAttack) already gates; this matches the ref).
+	if( m_pPlayer->m_flNextAttack > gpGlobals->time )
 		return;
-	}
 
-	m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType]--;
-	m_pPlayer->m_iWeaponVolume = NORMAL_GUN_VOLUME;
-	m_pPlayer->m_iWeaponFlash = BRIGHT_GUN_FLASH;
-	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
+	m_bSgtcCloakOn = !m_bSgtcCloakOn;	// ref this+0x204 toggle
 
 	PLAYBACK_EVENT_FULL( SGTC_EVENT_FLAGS, m_pPlayer->edict(), m_usFire2,
 		0.0, (float *)&g_vecZero, (float *)&g_vecZero, 0, 0, 0, 0, 0, 0 );
+	EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_ITEM, "weapons/invisdec.wav",
+		1.0f, 0.8f );
 
-	// Cloak the shooter briefly (Reetou stealth), matching the .sc semantics.
-	m_pPlayer->pev->effects |= EF_NODRAW;
-
-	m_flNextPrimaryAttack = GetNextAttackDelay( 1.5 );
-	m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 1.5;
+	m_flSgtcCloakTimer = gpGlobals->time + 1.0f;	// ref this+0x1fc
+	m_flNextSecondaryAttack = UTIL_WeaponTimeBase() + 1.0f;	// ref this+0x1d4
+	m_flNextPrimaryAttack = UTIL_WeaponTimeBase() + 3.0f;	// ref this+0x1d8
+	if( !m_bSgtcCloakOn )
+		m_pPlayer->m_flSgtcSnagTimer = 0.0f;	// ref clears SearchInvisible arming slot
+	else
+		m_pPlayer->m_flSgtcSnagTimer = gpGlobals->time + 0.3f;	// ref schedules SearchInvisible path
+	pev->nextthink = gpGlobals->time + 0.3f;
 }
 
 SGTC_NO_RELOAD( CReetou )

@@ -615,7 +615,7 @@ static void SGTC_VoteCastMenu_f( void )
 
 static void SGTC_DrawVoteCastMenu( float flTime )
 {
-	if( g_iSgtcVoteCount < 0 || g_iSgtcVoteCount >= 5 )
+	if( g_iSgtcVoteCount < 0 )	// window open at count>=0 (server sets 5)
 		return;
 	// ref @0x10076374 — flTime >= g_flSgtcVoteAnim → confirm @0x10076623 (sel>=0).
 	if( flTime >= g_flSgtcVoteAnim )

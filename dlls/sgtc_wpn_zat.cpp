@@ -89,32 +89,10 @@ void CZat::PrimaryAttack( void )
 		UTIL_SharedRandomFloat( m_pPlayer->random_seed, 10, 15 );
 }
 
-void CZat::SecondaryAttack( void )
-{
-	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 )
-	{
-		PlayEmptySound();
-		return;
-	}
-
-	m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType]--;
-	m_pPlayer->m_iWeaponVolume = NORMAL_GUN_VOLUME;
-	m_pPlayer->m_iWeaponFlash = BRIGHT_GUN_FLASH;
-	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
-
-	Vector vecSrc = m_pPlayer->GetGunPosition();
-	Vector vecAiming = m_pPlayer->GetAutoaimVector( AUTOAIM_5DEGREES );
-	Vector vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming,
-		VECTOR_CONE_3DEGREES, 8192, SGTC_BULLET_ZAT, 0, 12,
-		m_pPlayer->pev, m_pPlayer->random_seed );
-
-	PLAYBACK_EVENT_FULL( SGTC_EVENT_FLAGS, m_pPlayer->edict(), m_usFireB,
-		0.0, (float *)&g_vecZero, (float *)&g_vecZero, vecDir.x, vecDir.y,
-		0, 0, 0, 0 );
-
-	m_flNextPrimaryAttack = GetNextAttackDelay( 0.5 );
-	m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 1.0;
-}
+// ref: CZat has NO SecondaryAttack (inherits CBasePlayerWeapon no-op @0xc863a).
+// The port's invented ZAT-bullet secondary is removed; zoom behaviour lives
+// on CZatarc::SecondaryAttack @0x1c75d4.
+SGTC_NO_SECONDARY( CZat )
 
 SGTC_NO_RELOAD( CZat )
 SGTC_WEAPON_IDLE( CZat )

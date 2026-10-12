@@ -1043,10 +1043,22 @@ void CSGTCTrapBox::Spawn( void )
 
 int CSGTCTrapBox::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType )
 {
-	int iRet = CBaseMonster::TakeDamage( pevInflictor, pevAttacker, flDamage, bitsDamageType );
-	if ( pev->health <= 0 )
-		Trigger();
-	return iRet;
+	// ref CTrapBox::TakeDamage @0x15ee94: DMG_CRUSH absorb; 0x1000000 remove;
+	// team(attacker)==team(owner) filter; else base. Killed() runs Trigger().
+	if( bitsDamageType == DMG_CRUSH )
+		return 0;
+	if( bitsDamageType == 0x1000000 )
+	{
+		UTIL_Remove( this );
+		return 0;
+	}
+	if( pevAttacker && pev->owner )
+	{
+		CBaseEntity *pOwner = CBaseEntity::Instance( pev->owner );
+		if( pOwner && pevAttacker->team == pOwner->pev->team )
+			return 0;
+	}
+	return CBaseMonster::TakeDamage( pevInflictor, pevAttacker, flDamage, bitsDamageType );
 }
 
 void CSGTCTrapBox::Killed( entvars_t *pevAttacker, int iGib )
@@ -1118,39 +1130,75 @@ void CSGTCShieldEmit::Spawn( void )
 	pev->nextthink = gpGlobals->time + 1.0;
 }
 
-void CSGTCShieldEmit::EmitThink( void )
+void CSGTCShieldEmit::EmitThink( void )	// ref CSEmit::Think @0x160872
 {
-	pev->nextthink = gpGlobals->time + 1.0;
-
-	// Maintain the emitter's own shield glow.
-	pev->renderfx = kRenderFxGlowShell;
-	pev->rendercolor.x = 0;
-	pev->rendercolor.y = 150;
-	pev->rendercolor.z = 255;
-	pev->renderamt = 16;
-
-	// Project the shield: glow-shell + trickle heal on nearby allies.
-	CBaseEntity *pEnt = NULL;
-	while ( ( pEnt = UTIL_FindEntityInSphere( pEnt, pev->origin, 256.0f ) ) != NULL )
+	// Lazily create the effect_bigshield child once (ref this+0x3f8).
+	if( !m_pSgtcEffect )
 	{
-		if ( pEnt == this || !pEnt->IsAlive() )
-			continue;
-		if ( pEnt->pev->takedamage == DAMAGE_NO )
-			continue;
-		if ( IRelationship( pEnt ) != R_AL )
-			continue;
-		pEnt->pev->renderfx = kRenderFxGlowShell;
-		pEnt->pev->rendercolor.x = 0;
-		pEnt->pev->rendercolor.y = 150;
-		pEnt->pev->rendercolor.z = 255;
-		pEnt->pev->renderamt = 16;
-		if ( pEnt->pev->max_health > 0 && pEnt->pev->health < pEnt->pev->max_health )
+		m_pSgtcEffect = CBaseEntity::Create( "effect_bigshield",
+			pev->origin, Vector( 0, 0, 0 ), edict() );
+		EMIT_SOUND( ENT( pev ), CHAN_BODY,
+			"forcefield/forcefield_loading.wav", 1.0f, 0.8f );
+	}
+	if( m_pSgtcEffect )
+	{
+		// Pass 1 (players): same-team, 3D dist <= 220, z-window
+		// (-200..+100) -> stamp shield timestamp (ref ent+0xa2c).
+		CBaseEntity *pScan = NULL;
+		while( ( pScan = UTIL_FindEntityByClassname( pScan, "player" ) ) != NULL )
 		{
-			pEnt->pev->health = pEnt->pev->health + 5.0f;
-			if ( pEnt->pev->health > pEnt->pev->max_health )
-				pEnt->pev->health = pEnt->pev->max_health;
+			float dz = pScan->pev->origin.z - pev->origin.z;
+			BOOL bOut = ( dz > 200.0f || -dz > 100.0f ) ? TRUE : FALSE;
+			Vector vThem( pScan->pev->origin );
+			Vector vUs( pev->origin );
+			int dist = (int)( vUs - vThem ).Length();
+			if( dist < 0xdc && pScan->pev->team == pev->team && !bOut )
+				pScan->m_flSgtcShieldTime = gpGlobals->time + 0.1f;
+		}
+		// Pass 2 (all ents in 250 sphere): z-window only -> stamp
+		// suppress timer (ref ent+0x128) + back-pointer (ref ent+0x12c).
+		pScan = NULL;
+		while( ( pScan = UTIL_FindEntityInSphere( pScan, pev->origin, 250.0f ) ) != NULL )
+		{
+			float dz = pScan->pev->origin.z - pev->origin.z;
+			if( dz > 200.0f || -dz > 100.0f )
+				continue;
+			pScan->m_flSgtcSuppressTime = gpGlobals->time + 0.1f;
+			pScan->m_pSgtcSuppressor = this;
+		}
+		// State machine (ref this+0x104): 1 -> child frame 80; 2 -> unload + remove both.
+		if( m_iSgtcMode == 1 )
+		{
+			m_pSgtcEffect->pev->frame = 80.0f;
+			m_iSgtcMode = 0;
+		}
+		if( m_iSgtcMode == 2 )
+		{
+			EMIT_SOUND( ENT( pev ), CHAN_BODY,
+				"forcefield/forcefield_unloading.wav", 1.0f, 0.8f );
+			UTIL_Remove( m_pSgtcEffect );
+			UTIL_Remove( this );
+			m_iSgtcMode = 0;
+		}
+		// FX heartbeat (ref this+0x3f4): TE_DLIGHT-ish pulse every 0.2 s.
+		if( m_flSgtcNextFx < gpGlobals->time )
+		{
+			MESSAGE_BEGIN( MSG_PVS, SVC_TEMPENTITY, pev->origin );
+				WRITE_BYTE( TE_DLIGHT );
+				WRITE_COORD( pev->origin.x );
+				WRITE_COORD( pev->origin.y );
+				WRITE_COORD( pev->origin.z );
+				WRITE_BYTE( 40 );
+				WRITE_BYTE( 255 );
+				WRITE_BYTE( 232 );
+				WRITE_BYTE( 70 );
+				WRITE_BYTE( 5 );
+				WRITE_BYTE( 5 );
+			MESSAGE_END();
+			m_flSgtcNextFx = gpGlobals->time + 0.2f;
 		}
 	}
+	pev->nextthink = gpGlobals->time + 0.005f;	// ref bottom: time + 0.005
 }
 
 // =============================================================

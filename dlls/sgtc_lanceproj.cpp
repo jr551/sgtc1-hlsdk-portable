@@ -58,6 +58,7 @@ void CCorpseController::Spawn( void )
 	pev->movetype = MOVETYPE_NOCLIP;		// ref @0x14ef7a writes 5
 	m_bArmed = FALSE;
 	m_bBurn = FALSE;
+	m_bFed = 0;	// ref +0x1a5 — set by CBasePlayer::Talent feed
 	m_pCorpse = NULL;
 	m_pEffect = NULL;
 	pev->nextthink = gpGlobals->time + 0.1;
@@ -166,16 +167,14 @@ void CSGTCProjBase::Exploder( TraceResult *pTrace, int bitsDamageType )
 	else
 		UTIL_DecalTrace( pTrace, 12 );	// ref pushes 0xc
 
-	// ref: (m_flDie != gpGlobals->time || m_fAttendExplosion) &&
+	// ref @0x10e508: (m_flDie <= gpGlobals->time || m_fAttendExplosion) &&
 	// !m_fExplosionProtection -> RadiusDamage(pev, pevOwner, pev->dmg,
-	// CLASS_NONE, bitsDamageType). The dmg<60 / dmg<50 split in the ref body
-	// yields the identical call on both paths.
-	if( ( m_flDie != gpGlobals->time || m_fAttendExplosion ) &&
+	// CLASS_NONE, bitsDamageType).
+	if( ( m_flDie <= gpGlobals->time || m_fAttendExplosion ) &&
 		!m_fExplosionProtection )
 	{
 		RadiusDamage( pev, pevOwner, pev->dmg, CLASS_NONE, bitsDamageType );
 	}
-	m_flDie = gpGlobals->time;
 
 	// Ignite corpse_control entities within 29u (ref rolls RANDOM_LONG>6).
 	if( BurnsCorpses() )
@@ -262,8 +261,8 @@ void CSGTCProjBase::EffectThink( void )
 		if( !FClassnameIs( pEnt->pev, "monster_shieldemit" ) )
 			continue;
 
-		float dz = pev->origin.z - pEnt->pev->origin.z;
-		if( dz <= 200.0f && dz >= 100.0f && !m_fAttendExplosion )
+		float dz = pev->origin.z - pEnt->pev->origin.z;	// bolt.z - emitter.z
+		if( ( dz > 100.0f || -dz > 200.0f ) && !m_fAttendExplosion )
 		{
 			m_fAttendExplosion = TRUE;
 			pEnt->pev->nextthink = 1.0f;
@@ -271,9 +270,9 @@ void CSGTCProjBase::EffectThink( void )
 		}
 	}
 
-	// End-of-life (ref @0xfef18): m_flDie != time && !m_fAttendExplosion ->
-	// link owner's think + Exploder.
-	if( m_flDie != gpGlobals->time && !m_fAttendExplosion )
+	// End-of-life (ref @0xfef18): gpGlobals->time < m_flDie && !m_fAttendExplosion
+	// -> link owner's think + Exploder.
+	if( gpGlobals->time < m_flDie && !m_fAttendExplosion )
 	{
 		if( pev->owner )
 			VARS( pev->owner )->nextthink = 1.0f;

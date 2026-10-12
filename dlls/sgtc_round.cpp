@@ -502,7 +502,10 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 
 	const float flNow = gpGlobals->time;
 
-	// env entity iterator (ref param_1 + 0xc88/+0xc90/+0xc94).
+	// env entity iterator (ref param_1 + 0xc88/+0xc90/+0xc94). Index 0 is a
+	// NULL slot — ALLOC_PRIVATE zeroes the stage, so start at 1.
+	if( pPlayer->m_iSgtcEnvStage == 0 )
+		pPlayer->m_iSgtcEnvStage = 1;
 	if( pPlayer->m_iSgtcEnvStage < 5 && pPlayer->m_flSgtcEnvNext < flNow )
 	{
 		static const char *const envClasses[] =
@@ -650,6 +653,8 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 	const float flNow = gpGlobals->time;
 
 	// env entity iterator (identical to DM).
+	if( pPlayer->m_iSgtcEnvStage == 0 )
+		pPlayer->m_iSgtcEnvStage = 1;
 	if( pPlayer->m_iSgtcEnvStage < 5 && pPlayer->m_flSgtcEnvNext < flNow )
 	{
 		static const char *const envClasses[] =
@@ -792,6 +797,16 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 // ---------------------------------------------------------------------------
 void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 {
+	// Ref reads the registered cvar_t .value live (GameDLLInit-registered);
+	// refresh the mirrors so RCON/config changes track (Pass4/REA verified).
+	sgtc_tourny        = sgtc_cvar_tournament.value;
+	sgtc_allowmodevote = sgtc_cvar_modevoting.value;
+	sgtc_crazymode     = sgtc_cvar_skulls.value;
+	sgtc_gamemodex     = sgtc_cvar_gamemode.value;
+	sgtc_roundtime     = CVAR_GET_FLOAT( "mp_roundtime" );
+	sgtc_type          = 0;
+	sgtc_teamed        = 0;
+
 	// (b) strip every ground "weapon_*" cache entity with no owner.
 	SGTC_NewRoundStripGroundWeapons();
 
@@ -904,16 +919,18 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 	}
 	sgtc_KeyInPlay = 0;
 
-	m_flSgtcRoundTime = CVAR_GET_FLOAT( "mp_roundtime" );
+	m_flSgtcRoundTime = CVAR_GET_FLOAT( "mp_roundtime" );	// ref NewRound @0x194f42: this+0x728 = mp_roundtime
+	sgtc_roundtime = m_flSgtcRoundTime;	// refresh the mirror from the live cvar
 	if( 0 < sgtc_GameModeSet )
-		m_flSgtcRoundTime = 720.0f;
+		m_flSgtcRoundTime = 599.0f;	// ref GameModeSet>0 default (clamped below)
 	sgtc_G_tickets = SGTC_Round_intconstrain( 0, 99,
 		SGTC_Round_roundf( sgtc_cvar_tickets.value ) );
 	sgtc_T_tickets = sgtc_G_tickets;
 	m_flSgtcRoundTime = (float)SGTC_Round_intconstrain( 30, 599,
 		SGTC_Round_roundf( m_flSgtcRoundTime ) );
-	sgtc_roundstart = gpGlobals->time;
-	m_flSgtcRoundEnd = m_flSgtcRoundTime + gpGlobals->time;
+	sgtc_roundstart = gpGlobals->time;	// ref this+0x72c round-start tick
+	sgtc_roundtime_official = sgtc_roundstart;	// port anchor read at PlayerThink :538/:684
+	m_flSgtcRoundEnd = m_flSgtcRoundTime + gpGlobals->time;	// ref this+0x724 = mp_roundtime + roundstart
 
 	if( sgtc_GameModeSet == 4 )
 	{
@@ -1144,8 +1161,8 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 		sgtc_under = 1;
 		if( sgtc_type == 3 || sgtc_type == 4 )
 		{
-			m_flSgtcRoundEnd = gpGlobals->time + 599.0f;
-			m_flSgtcRoundTime = 720.0f;
+			m_flSgtcRoundTime = 599.0f;
+			m_flSgtcRoundEnd = gpGlobals->time + m_flSgtcRoundTime;
 		}
 		else if( sgtc_type == 2 )
 		{
@@ -1203,9 +1220,12 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 	gGlobalState.ClearStates();
 
 	// (q) ref tail: virtual +0x120 — re-enter NewRound once when the mode
-	// defaulted.
+	// defaulted. The nrcooler armed above would self-block the re-entry.
 	if( bModeError )
+	{
+		sgtc_nrcooler = 0.0f;
 		NewRound();
+	}
 }
 
 // ---------------------------------------------------------------------------

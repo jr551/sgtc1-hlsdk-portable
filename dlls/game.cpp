@@ -895,6 +895,9 @@ void GameDLLInit( void )
 
 	CVAR_REGISTER( &sv_pushable_fixed_tick_fudge );
 
+	extern void SGTC_RegisterRulesCvars( void );	// sgtc_round.cpp (REA: ref GameDLLInit @0xff68c registers tourny etc.)
+	SGTC_RegisterRulesCvars();
+
 	SERVER_COMMAND( "exec skill.cfg\n" );
 }
 

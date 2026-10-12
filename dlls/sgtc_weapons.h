@@ -199,6 +199,7 @@ public:
 	int iItemSlot( void ) { return 1; }
 private:
 	unsigned short m_usFire;
+	int m_iSgtcZoomStage;	// ref CZatarc+0x204 zoom toggle
 };
 
 // ---- Staff / projectile weapons (local bolts; map entities owned by entities peer) ----
@@ -208,9 +209,13 @@ class CLanceJaffa : public CBasePlayerWeapon
 public:
 	SGTC_DECLARE_WEAPON();
 	int iItemSlot( void ) { return 2; }
+	void EXPORT SwingAgain( void );	// ref @0x10ffaa: Swing(0)
+	int Swing( int fFirst );		// ref @0x10f5d0: melee + TraceResult store
 private:
 	unsigned short m_usFire;
 	unsigned short m_usFire2;
+	int m_iSwing;
+	TraceResult m_trLastHit;		// ref this+0x208..0x23b last-hit TraceResult
 };
 
 class CBigLanceJaffa : public CBasePlayerWeapon
@@ -230,6 +235,8 @@ public:
 private:
 	unsigned short m_usFire;
 	unsigned short m_usFire2;
+	BOOL m_bSgtcCloakOn;		// ref CReetou+0x204 cloak toggle
+	float m_flSgtcCloakTimer;	// ref CReetou+0x1fc cloak timer
 };
 
 // Local bolt spawned by staff weapons (CGrenade child so no ODR clash
@@ -361,6 +368,8 @@ public:
 private:
 	unsigned short m_usFire;
 	unsigned short m_usFire2;
+	float m_flSgtcBlastTimer;	// ref CMainDieu+0x1fc blast cooldown
+	BOOL m_bSgtcBlastFlag;		// ref CMainDieu+0x200 flag
 };
 
 class CMedicx : public CBasePlayerWeapon

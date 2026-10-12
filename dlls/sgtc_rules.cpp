@@ -170,6 +170,7 @@ extern int gmsgScoreInfo;
 extern int gmsgDeathMsg;
 extern int sgtc_teamed;	// sgtc_round.cpp (ref BSS teamed @0x23658c)
 extern int sgtc_type;	// sgtc_token.cpp (ref BSS type @0x236588)
+extern float sgtc_endtround;	// sgtc_round.cpp (ref BSS endtround @0x2468b8, goal+6s deadline)
 
 // Team spawn classname tables (rodata 0x1d7997 block ordering).
 static const char *const s_SGTCDMSpawns[SGTC_MAX_SGTC_TEAMS] =
@@ -198,6 +199,8 @@ CStargateTeamDM::CStargateTeamDM( void )
 	m_iSGTCTeamCount = SGTC_MAX_SGTC_TEAMS;
 	m_iSGTCTeamScores[0] = m_iSGTCTeamScores[1] = 0;
 	m_bRoundOver = FALSE;
+	m_iSgtcModeVote = -1;	// ref +0x770 pending mode vote (-1 none)
+	g_iSgtcMapType = 0;		// ref DM ctor sets MapType=0 (@0x188600)
 
 	const char *list = CVAR_GET_STRING( "mp_teamlist" );
 	if( list && *list )
@@ -328,10 +331,10 @@ const char *CStargateTeamDM::SetDefaultPlayerTeam( CBasePlayer *pPlayer )
 {
 	char *mdls = g_engfuncs.pfnInfoKeyValue(
 		g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model" );
-	strncpy( pPlayer->m_szTeamName, mdls, TEAM_NAME_LENGTH );
+	snprintf( pPlayer->m_szTeamName, TEAM_NAME_LENGTH, "%s", mdls );
 
 	if( pPlayer->m_szTeamName[0] == '\0' || !IsValidTeam( pPlayer->m_szTeamName ) )
-		strncpy( pPlayer->m_szTeamName, TeamWithFewestPlayers(), TEAM_NAME_LENGTH );
+		snprintf( pPlayer->m_szTeamName, TEAM_NAME_LENGTH, "%s", TeamWithFewestPlayers() );
 
 	return pPlayer->m_szTeamName;
 }
@@ -346,7 +349,7 @@ void CStargateTeamDM::ChangePlayerTeam( CBasePlayer *pPlayer, const char *pTeamN
 		pPlayer->TakeDamage( pevWorld, pevWorld, 900, damageFlags );
 	}
 	if( pPlayer->m_szTeamName != pTeamName )
-		strncpy( pPlayer->m_szTeamName, pTeamName, TEAM_NAME_LENGTH );
+		snprintf( pPlayer->m_szTeamName, TEAM_NAME_LENGTH, "%s", pTeamName );
 
 	int clientIndex = pPlayer->entindex();
 	g_engfuncs.pfnSetClientKeyValue( clientIndex,
@@ -362,9 +365,10 @@ void CStargateTeamDM::ChangePlayerTeam( CBasePlayer *pPlayer, const char *pTeamN
 	MESSAGE_BEGIN( MSG_ALL, gmsgScoreInfo );
 		WRITE_BYTE( clientIndex );
 		WRITE_SHORT( (int)pPlayer->pev->frags );
-		WRITE_SHORT( pPlayer->m_iDeaths );
-		WRITE_SHORT( 0 );
+		WRITE_SHORT( pPlayer->m_iDeaths );		// ref CStargateTeamDM param+0xdf0
+		WRITE_SHORT( 0 );							// ref param+0xa40 (portrait-shown unless invis latch)
 		WRITE_SHORT( GetTeamIndex( pPlayer->m_szTeamName ) + 1 );
+		WRITE_SHORT( (int)pPlayer->pev->team );	// ref *(pev)+0x170
 	MESSAGE_END();
 }
 
@@ -510,6 +514,13 @@ void CStargateTeamDM::DeathNotice( CBasePlayer *pVictim, entvars_t *pKiller, ent
 void CStargateTeamDM::ClientDisconnected( edict_t *pClient )
 {
 	CHalfLifeMultiplay::ClientDisconnected( pClient );
+	if( gmsgSpectator )	// ref @0x1179f2 sends Spectator on disconnect
+	{
+		MESSAGE_BEGIN( MSG_ALL, gmsgSpectator );
+			WRITE_BYTE( ENTINDEX( pClient ) );
+			WRITE_BYTE( 0 );
+		MESSAGE_END();
+	}
 	RecountTeams( TRUE );
 }
 
@@ -561,12 +572,12 @@ void CStargateTeamDM::ClientUserInfoChanged( CBasePlayer *pPlayer, char *infobuf
 		g_engfuncs.pfnSetClientKeyValue( clientIndex,
 			g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model", pPlayer->m_szTeamName );
 		char text[128];
-		sprintf( text, "* Can't change team to '%s'\n", mdls );
+		snprintf( text, sizeof( text ), "* Can't change team to '%s'\n", mdls );
 		UTIL_SayText( text, pPlayer );
 		return;
 	}
 	char text[128];
-	sprintf( text, "* %s changed to team '%s'\n", STRING( pPlayer->pev->netname ), mdls );
+	snprintf( text, sizeof( text ), "* %s changed to team '%s'\n", STRING( pPlayer->pev->netname ), mdls );
 	UTIL_SayTextAll( text, pPlayer );
 	ChangePlayerTeam( pPlayer, mdls, TRUE, TRUE );
 	RecountTeams( TRUE );
@@ -671,6 +682,22 @@ void CStargateTeamDM::Think( void )
 	if( keys > 1 )
 		ALERT( at_console, "GameRule: More than one player has a key!! Total %d\n", keys );
 
+	// ref Think @0x1929ce: goal deadline (endtround + hasplayed) and the
+	// per-round member deadline (this+0x724) end the round; mp_timelimit
+	// only gates entry when no mode override holds.
+	if( sgtc_endtround != 0.0f && gpGlobals->time >= sgtc_endtround )
+	{
+		sgtc_endtround = 0.0f;
+		NewRound();
+		return;
+	}
+	if( m_flSgtcRoundEnd != 0.0f && gpGlobals->time >= m_flSgtcRoundEnd )
+	{
+		m_flSgtcRoundEnd = 0.0f;
+		EndRound();
+		return;
+	}
+
 	float flTimeLimit = CVAR_GET_FLOAT( "mp_timelimit" ) * 60;
 	if( flTimeLimit != 0 && gpGlobals->time >= flTimeLimit )
 		EndRound();
@@ -681,6 +708,7 @@ void CStargateTeamDM::Think( void )
 // ===========================================================================
 CStargateTeamCP::CStargateTeamCP( void ) : m_bSpawnsInversed( FALSE )
 {
+	g_iSgtcMapType = 1;	// ref CP ctor sets MapType=1 (@0x179eb7)
 }
 
 void CStargateTeamCP::InverseSpawns( void )
@@ -833,9 +861,9 @@ const char *CStargateUnas::SetDefaultPlayerTeam( CBasePlayer *pPlayer )
 {
 	char *mdls = g_engfuncs.pfnInfoKeyValue(
 		g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model" );
-	strncpy( pPlayer->m_szTeamName, mdls, TEAM_NAME_LENGTH );
+	snprintf( pPlayer->m_szTeamName, TEAM_NAME_LENGTH, "%s", mdls );
 	if( pPlayer->m_szTeamName[0] == '\0' || !IsValidTeam( pPlayer->m_szTeamName ) )
-		strncpy( pPlayer->m_szTeamName, TeamWithFewestPlayers(), TEAM_NAME_LENGTH );
+		snprintf( pPlayer->m_szTeamName, TEAM_NAME_LENGTH, "%s", TeamWithFewestPlayers() );
 	return pPlayer->m_szTeamName;
 }
 
@@ -848,7 +876,7 @@ void CStargateUnas::ChangePlayerTeam( CBasePlayer *pPlayer, const char *pTeamNam
 		pPlayer->TakeDamage( pevWorld, pevWorld, 900, damageFlags );
 	}
 	if( pPlayer->m_szTeamName != pTeamName )
-		strncpy( pPlayer->m_szTeamName, pTeamName, TEAM_NAME_LENGTH );
+		snprintf( pPlayer->m_szTeamName, TEAM_NAME_LENGTH, "%s", pTeamName );
 	int clientIndex = pPlayer->entindex();
 	g_engfuncs.pfnSetClientKeyValue( clientIndex,
 		g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model", pPlayer->m_szTeamName );
@@ -1092,7 +1120,7 @@ void CStargateReplicateur::ChangePlayerTeam( CBasePlayer *pPlayer,
 		m_bDisableDeathMessages = FALSE;
 		m_bDisableDeathPenalty = FALSE;
 	}
-	strncpy( pPlayer->m_szTeamName, pTeamName, TEAM_NAME_LENGTH );
+	snprintf( pPlayer->m_szTeamName, TEAM_NAME_LENGTH, "%s", pTeamName );
 	g_engfuncs.pfnSetClientKeyValue( clientIndex,
 		g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model", pPlayer->m_szTeamName );
 	g_engfuncs.pfnSetClientKeyValue( clientIndex,
@@ -1132,12 +1160,22 @@ BOOL CStargateReplicateur::ClientCommand( CBasePlayer *pPlayer, const char *pcmd
 		if( CMD_ARGC() > 0 )
 		{
 			int team = atoi( CMD_ARGV( 1 ) );
-			strncpy( pPlayer->m_szTeamName, team == 1 ? "Replic" : "Torri", 16 );
+			snprintf( pPlayer->m_szTeamName, TEAM_NAME_LENGTH, "%s", team == 1 ? "Replic" : "Torri" );
 			char text[64];
-			sprintf( text, "you joined the %s team\n", pPlayer->m_szTeamName );
+			snprintf( text, sizeof( text ), "you joined the %s team\n", pPlayer->m_szTeamName );
 			ClientPrint( pPlayer->pev, HUD_PRINTNOTIFY, text );
 			ChangePlayerTeam( pPlayer, pPlayer->m_szTeamName, TRUE, FALSE );
 			RecountTeams( FALSE );
+		}
+		return TRUE;
+	}
+	if( FStrEq( pcmd, "radio" ) )	// ref TeamDM @0x18149b / TeamCP @0x173fe4: MSG_ONE Radio + CMD_ARGV(1)
+	{
+		if( CMD_ARGC() > 1 )
+		{
+			MESSAGE_BEGIN( MSG_ONE, gmsgRadio, NULL, pPlayer->edict() );
+				WRITE_STRING( CMD_ARGV( 1 ) );
+			MESSAGE_END();
 		}
 		return TRUE;
 	}
@@ -1393,7 +1431,7 @@ void CTriggerGoal::GoalTouch( CBaseEntity *pOther )
 	if( idx < 0 || idx + 1 == m_iTeam )
 		return; // already on the goal's team: nothing to award
 	CStargateTeamDM *sg = (CStargateTeamDM *)g_pGameRules;
-	sg->Goal( mapped - 1 );
+	sg->Goal( mapped );	// ref GoalTouch @0x16e4aa pushes mapped 1/2, not mapped-1
 }
 LINK_ENTITY_TO_CLASS( trigger_goal, CTriggerGoal );
 
@@ -1579,6 +1617,11 @@ static int SGTC_ColorByte( float f )
 	if( c > 255 )
 		c = 255;
 	return c;
+}
+
+static int SGTC_Rules_roundf( float v )	// ref (int)ROUND(float) byte conversion
+{
+	return (int)( v >= 0.0f ? v + 0.5f : v - 0.5f );
 }
 
 static void SGTC_ParseColor4( const char *str, float out[4] )
@@ -2034,10 +2077,10 @@ static void SGTC_WriteEnvFountainPayload( CEnvFountain *p )
 	WRITE_COORD( p->m_vecDir.z );
 	for( int i = 0; i < 4; i++ )
 		WRITE_BYTE( SGTC_ColorByte( p->m_flColor[i] ) );
-	WRITE_COORD( p->m_vecSize.x );
-	WRITE_COORD( p->m_vecSize.y );
-	WRITE_COORD( p->m_flLife );
-	WRITE_COORD( p->m_flBounce );
+	WRITE_BYTE( (int)SGTC_Rules_roundf( p->m_vecSize.x ) );
+	WRITE_BYTE( (int)SGTC_Rules_roundf( p->m_vecSize.y ) );
+	WRITE_BYTE( (int)SGTC_Rules_roundf( p->m_flLife ) );
+	WRITE_BYTE( (int)SGTC_Rules_roundf( p->m_flBounce ) );
 	WRITE_BYTE( p->m_iSprite );
 	WRITE_BYTE( p->m_iType );
 	WRITE_SHORT( p->m_iCount );

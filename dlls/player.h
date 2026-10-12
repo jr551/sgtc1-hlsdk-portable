@@ -240,6 +240,8 @@ public:
 	char	m_bZatLatch;		// ref +0x928 — set Zat @0x1337a2, cleared TakeDamage @0x13876d
 	char	m_bSnagInvisLatch;	// ref +0x4de — invis snag latch (Spawn copies +0x4df)
 	char	m_bSnagInvisFlag;	// ref +0x4df — armed by invis weapon, copied to latch on Spawn
+	float	m_flSgtcSnagTimer;	// reetou SearchInvisible arming (CReetou secondary +0.3s path)
+	int	m_fSgtcPushLatch;	// main secondary AoE stamp (ref vfunc +0x18c arg 0x25)
 	int	m_iStamina;		// ref +0x43c — HUD Stamina usermsg byte
 	int	m_iStaminaSent;		// ref +0xa24 — last value sent to client
 	char	m_bLanceStunFlag;	// ref +0xa3e — set by CLanceProj::ProjTouch @0xfeb57
