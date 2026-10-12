@@ -38,6 +38,7 @@
 #include "weaponinfo.h"
 #include "usercmd.h"
 #include "netadr.h"
+#include "sgtc_rules.h"	// SGTC_HandleClientCommand
 #include "pm_shared.h"
 
 extern DLL_GLOBAL ULONG		g_ulModelIndexPlayer;
@@ -499,7 +500,13 @@ void ClientCommand( edict_t *pEntity )
 	}
 	else if( FStrEq( pcmd, "fov" ) )
 	{
-		// ref ClientCommand @0xc8ff2 — "fov" is a no-op in stc_i386.so.
+		// ref ClientCommand @0xcae0a — prints (pev->netname - gpGlobals->pStringBase)
+		// as "%d\n" via pfnClientPrintf.  Literal ref behavior (string-table delta,
+		// not the field-of-view).
+		CBasePlayer *pPlayer = GetClassPtr( (CBasePlayer *)pev );
+		const int delta = (int)( (const char *)STRING( pPlayer->pev->netname )
+			- gpGlobals->pStringBase );
+		ClientPrint( &pEntity->v, HUD_PRINTCONSOLE, UTIL_VarArgs( "%d\n", delta ) );
 	}
 	else if( FStrEq( pcmd, "use" ) )
 	{
@@ -521,6 +528,11 @@ void ClientCommand( edict_t *pEntity )
 		CBasePlayer *pPlayer = GetClassPtr( (CBasePlayer *)pev );
 
 		pPlayer->Observer_FindNextPlayer( atoi( CMD_ARGV( 1 ) ) ? true : false );	// ref: no IsObserver gate
+	}
+	else if( SGTC_HandleClientCommand( GetClassPtr( (CBasePlayer *)pev ), pcmd ) )
+	{
+		// ref ClientCommand @0xc8ff2 is a flat dispatcher — all SGTC verbs
+		// (talent/nvg/vote/gond4h9wp/…) are handled inline, no gamerules hop.
 	}
 	else
 	{

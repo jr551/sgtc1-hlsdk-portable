@@ -1420,8 +1420,8 @@ void CBasePlayer::SetHudRoundTime( int roundtime, int mode )
 	if( m_iHudRoundTime != roundtime || m_iHudRoundMode != mode )
 	{
 		MESSAGE_BEGIN( MSG_ONE, gmsgSetHudRoundTime, NULL, pev );
-			WRITE_SHORT( roundtime );
-			WRITE_BYTE( mode );
+			WRITE_BYTE( mode );	// ref @0x1354ee: pfnWriteByte(mode) FIRST
+			WRITE_SHORT( roundtime );	// ref @0x135505: pfnWriteShort second
 		MESSAGE_END();
 		m_iHudRoundTime = roundtime;
 	}
@@ -1444,6 +1444,7 @@ void CBasePlayer::SendAboutMe( int a, const char *s, int c )
 		WRITE_SHORT( a );
 		WRITE_SHORT( c );
 	MESSAGE_END();
+	(void)s;	// ref param_2 unused
 }
 
 // ref CBasePlayer::SendGlobalTextIndex(int) @0x129026 — reuses the Concuss

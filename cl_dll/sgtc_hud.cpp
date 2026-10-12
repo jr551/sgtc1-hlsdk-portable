@@ -2163,9 +2163,9 @@ int CHudSgtc::MsgFunc_SetRndTim( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	m_flRoundTime = (float)READ_SHORT();
+	int state = READ_BYTE();	// ref write order @0x1354ee: BYTE mode first
+	m_flRoundTime = (float)READ_SHORT();	// then SHORT roundtime
 	m_flRoundStart = gHUD.m_flTime;
-	int state = READ_BYTE();
 	if( state )
 		m_iTicketMode = state; // ref calls this vtable+0x1c
 	// ref +0x16f0 setter @0x100766dd — the round-timer message arms the Draw gate @0x10075dd2.
