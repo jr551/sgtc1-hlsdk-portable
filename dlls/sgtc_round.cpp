@@ -248,10 +248,11 @@ static void SGTC_EndRoundScoreInfo( CBasePlayer *pPlayer )
 {
 	MESSAGE_BEGIN( MSG_ALL, gmsgScoreInfo );
 		WRITE_BYTE( pPlayer->entindex() );
-		WRITE_SHORT( (int)pPlayer->pev->frags );
+		WRITE_SHORT( (int)pPlayer->pev->frags );	// ref pev+0x164
 		WRITE_SHORT( pPlayer->m_iDeaths ); // ref +0xdf0
-		WRITE_SHORT( pPlayer->m_bSnagInvisLatch == 1 ? 6
-				: pPlayer->m_iSgtcPortraitShown ); // ref +0x4de / +0xa40
+		// ref @0x17b91a: if ((player+0x4de ^ 1) != 0) write +0xa40 else write 6.
+		WRITE_SHORT( pPlayer->m_bSnagInvisLatch != 1 ? pPlayer->m_iSgtcPortraitShown
+				: 6 ); // ref +0x4de / +0xa40
 		WRITE_SHORT( g_pGameRules->GetTeamIndex( pPlayer->TeamID() ) + 1 );
 		WRITE_SHORT( (int)pPlayer->pev->team ); // ref pev+0x170
 	MESSAGE_END();
@@ -289,6 +290,8 @@ void CStargateTeamDM::EndRound( void )
 // ---------------------------------------------------------------------------
 void CStargateTeamDM::Goal( int iTeam )
 {
+	// ref @0x17b650: guards on rules+0x73c (m_bRoundOver), hasplayed
+	// (BSS 0x2368f1), GameModeSet==0 || ==2.
 	if( m_bRoundOver != 0 || sgtc_hasplayed != 0 )
 		return;
 	if( sgtc_GameModeSet != 0 && sgtc_GameModeSet != 2 )
@@ -296,22 +299,27 @@ void CStargateTeamDM::Goal( int iTeam )
 
 	if( iTeam == 1 )
 	{
+		// ref @0x17b6a7: KeyInPlay(BSS 0x2368c6) = 0 first, then PlayMusic(1).
 		sgtc_KeyInPlay = 0;
 		SGTC_PlayMusic( 1 );
+		// ref @0x17b6c5: endtround = gpGlobals->time + 6.0f (rodata 0x1dbba0).
 		sgtc_endtround = gpGlobals->time + 6.0f;
-		m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;
+		m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;	// ref name 0x1dbb88
 	}
 	else if( iTeam == 2 )
 	{
+		// ref @0x17b70e: KeyInPlay = 0 here too.
+		sgtc_KeyInPlay = 0;
 		SGTC_PlayMusic( 0 );
-		m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;
+		sgtc_endtround = gpGlobals->time + 6.0f;
+		m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;	// ref name 0x1dbb98
 	}
 	else
 	{
 		return;
 	}
 
-	sgtc_hasplayed = 1;
+	sgtc_hasplayed = 1;	// ref @0x17b76d
 }
 
 // ---------------------------------------------------------------------------
@@ -1291,20 +1299,42 @@ void CStargateTeamCP::NewRound( void )
 // ---------------------------------------------------------------------------
 void CStargateTeamDM::Penalty( CBasePlayer *pVictim, CBasePlayer *pKiller )
 {
+	// ref Penalty(CBasePlayer*, entvars_t*) @nm 0x17ace2:
+	// guards: killer ev non-null, victim non-null, killer alive
+	// (vtable+0xa8 IsAlive), killer entity != victim entity,
+	// victim +0x465 (m_bSgtcPad461) set.
 	if( !pVictim || !pKiller || pVictim == pKiller )
 		return;
-
-	int iTeam = GetTeamIndex( pKiller->TeamID() );
-	if( iTeam < 0 )
+	if( !pKiller->IsAlive() )
+		return;
+	// ref Penalty: gate on victim +0x465 (m_bSgtcPePreset — set by SetCap
+	// team 1/3 pick @0x17b265, cleared otherwise).
+	if( !pVictim->m_bSgtcPePreset )
 		return;
 
-	// ref Penalty: teamkill costs a ticket from the killer's team pool.
-	if( PlayerRelationship( pVictim, pKiller ) == GR_TEAMMATE )
+	// Walk every "player" entity (ref 0x1dbab0 classname walk):
+	// for each pScan != pKiller:
+	//   same pev->team (+0x1ac) && pScan alive (vtable+0x94 IsAlive)
+	//     -> pScan->Use(pScan->pev, pKiller->pev, 0x800000)  (vtable+0x38)
+	//   if same pev->team -> SendGlobalTextIndex(10)
+	//   if different pev->team -> SendGlobalTextIndex(9)
+	CBaseEntity *pScan = NULL;
+	while( ( pScan = UTIL_FindEntityByClassname( pScan, "player" ) ) != NULL )
 	{
-		if( iTeam == 0 && sgtc_G_tickets > 0 )
-			sgtc_G_tickets--;
-		else if( iTeam == 1 && sgtc_T_tickets > 0 )
-			sgtc_T_tickets--;
+		if( pScan == pKiller )
+			continue;
+		CBasePlayer *pMate = (CBasePlayer *)pScan;
+
+		const int scanTeam = (int)pScan->pev->team;	// ref +0x1ac
+		const int killerTeam = (int)pKiller->pev->team;
+
+		if( scanTeam == killerTeam && pMate->IsAlive() )
+			pMate->Use( pMate, pKiller, (USE_TYPE)0x800000, 0.0f );
+
+		if( scanTeam == killerTeam )
+			pMate->SendGlobalTextIndex( 10 );
+		else
+			pMate->SendGlobalTextIndex( 9 );
 	}
 }
 
