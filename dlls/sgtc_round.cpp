@@ -1365,9 +1365,11 @@ void CStargateTeamDM::PlayerKilled( CBasePlayer *pVictim,
 // ---------------------------------------------------------------------------
 void CStargateUnas::InitHUD( CBasePlayer *pPlayer )
 {
+	// ref @0x18a126: CHalfLifeMultiplay::InitHUD, MSG_ONE TeamNames, then
+	// RecountTeams(0), ShowVGUIMenu(2), then per-player TeamInfo fan-out.
 	CHalfLifeMultiplay::InitHUD( pPlayer );
 	SGTC_SendTeamNames( pPlayer );
-	RecountTeams( TRUE );
+	RecountTeams( FALSE );
 	pPlayer->ShowVGUIMenu( 2 );
 
 	for( int i = 1; i <= gpGlobals->maxClients; i++ )
@@ -1385,9 +1387,13 @@ void CStargateUnas::InitHUD( CBasePlayer *pPlayer )
 
 void CStargateInvis::InitHUD( CBasePlayer *pPlayer )
 {
+	// ref @0x16d1f0: CHalfLifeMultiplay::InitHUD, then MSG_ONE TeamNames
+	// (gmsg slot -0x794 → gmsgTeamNames) with all m_teamlist entries, then
+	// RecountTeams(0), then ShowVGUIMenu(0xb), then per-player MSG_ONE
+	// TeamInfo {BYTE entindex, STRING TeamID} while IsValidTeam(TeamID).
 	CHalfLifeMultiplay::InitHUD( pPlayer );
 	SGTC_SendTeamNames( pPlayer );
-	RecountTeams( TRUE );
+	RecountTeams( FALSE );
 	pPlayer->ShowVGUIMenu( 11 );
 
 	for( int i = 1; i <= gpGlobals->maxClients; i++ )
