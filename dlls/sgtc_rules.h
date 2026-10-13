@@ -199,6 +199,7 @@ public:
 	const char *GetGameDescription( void ) override { return "StargateTC"; }
 	void InitHUD( CBasePlayer *pPlayer ) override;	// ref @0x17d1f0 — ShowVGUIMenu(11) variant
 	void PlayerSpawn( CBasePlayer *pPlayer ) override;
+	BOOL ClientCommand( CBasePlayer *pPlayer, const char *pcmd ) override;	// ref @0x17d4c4
 };
 
 // ref CStargateReplicateur::CStargateReplicateur @0x16e364 — base CHalfLifeMultiplay.

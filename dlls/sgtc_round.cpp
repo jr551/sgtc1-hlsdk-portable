@@ -115,6 +115,7 @@ cvar_t sgtc_cvar_particlelatency = { "particlelat", "10", FCVAR_SERVER };
 cvar_t sgtc_cvar_respawntime = { "mp_respawntime", "10", FCVAR_SERVER };
 cvar_t sgtc_cvar_diepoints = { "mp_diepoints", "2", FCVAR_SERVER };	// ref vicpoints @0x223524
 cvar_t sgtc_cvar_killpoints = { "mp_killpoints", "1", FCVAR_SERVER };	// ref killpoints @0x223538
+cvar_t sgtc_cvar_truezat = { "mp_truezat", "0", FCVAR_SERVER };	// ref truezat @0x2368d4
 void SGTC_RegisterRulesCvars( void )
 {
 	CVAR_REGISTER( &sgtc_cvar_friendlyfire );
@@ -129,6 +130,7 @@ void SGTC_RegisterRulesCvars( void )
 	CVAR_REGISTER( &sgtc_cvar_respawntime );
 	CVAR_REGISTER( &sgtc_cvar_diepoints );
 	CVAR_REGISTER( &sgtc_cvar_killpoints );
+	CVAR_REGISTER( &sgtc_cvar_truezat );
 }
 
 float sgtc_roundstart = 0.0f; // mirror of rules this+0x72c
@@ -544,27 +546,28 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 	if( ( sgtc_roundtime_official + 1.0f ) == flNow )
 		pPlayer->m_bSgtcPadA3D = 1;
 
-	// superweapons (+0x4e5 menu lock; the once-per-round latch rides
-	// the +0x4e7 GiveFromMenu latch — ref arms both together).
-	if( pPlayer->m_bSgtcMenuLock && pPlayer->m_bSgtcMenuLockLatch != 1 )
+	// superweapons (+0x465 preset gate; the once-per-round latch rides
+	// +0xa9c — ref pev+0x168 bits 18 (IN_ALT1)/15 (IN_SCORE)).
+	if( pPlayer->m_bSgtcPePreset && pPlayer->m_bSgtcLatchA9c != 1 )
 	{
-		if( !FBitSet( pPlayer->pev->button, IN_DUCK ) &&
+		if( !FBitSet( pPlayer->pev->button, IN_ALT1 ) &&
 			pPlayer->pev->team == 1 )
 		{
 			pPlayer->GiveNamedItem( "weapon_glstaff" );
-			pPlayer->m_bSgtcMenuLockLatch = 1;
+			pPlayer->m_bSgtcLatchA9c = 1;
 		}
-		else if( !FBitSet( pPlayer->pev->button, IN_ATTACK2 ) &&
+		else if( !FBitSet( pPlayer->pev->button, IN_SCORE ) &&
 			pPlayer->pev->team == 2 )
 		{
 			pPlayer->GiveNamedItem( "weapon_usas" );
-			pPlayer->m_bSgtcMenuLockLatch = 1;
+			pPlayer->m_bSgtcLatchA9c = 1;
 		}
 	}
 
-	// GiveFromMenu (0x4e5/0x4e7 + 0x4ac time gate).
-	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->button, IN_ATTACK2 ) &&
-		!FBitSet( pPlayer->pev->button, IN_USE ) &&
+	// GiveFromMenu (0x4e5/0x4e7 + 0x4ac time gate) — ref bits 13 (IN_RELOAD)
+	// and 8 (IN_RIGHT) on pev->button.
+	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->button, IN_RELOAD ) &&
+		!FBitSet( pPlayer->pev->button, IN_RIGHT ) &&
 		( flNow > pPlayer->m_flSgtcMenuDelay + 15.0f ||
 		  pPlayer->m_bSgtcMenuLockLatch != 1 ) )
 	{
@@ -693,8 +696,9 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 		pPlayer->m_bSgtcPadA3D = 1;
 
 	// GiveFromMenu (0x4e5 + 0x4ac gate) — no supergun branch in CP.
-	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->button, IN_ATTACK2 ) &&
-		!FBitSet( pPlayer->pev->button, IN_USE ) &&
+	// ref pev+0x168 bits 13/8 = IN_RELOAD / IN_RIGHT.
+	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->button, IN_RELOAD ) &&
+		!FBitSet( pPlayer->pev->button, IN_RIGHT ) &&
 		( flNow > pPlayer->m_flSgtcMenuDelay + 15.0f ||
 		  pPlayer->m_bSgtcMenuLockLatch != 1 ) )
 	{
@@ -1078,6 +1082,7 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 			continue;
 
 		pPlayer->m_bSgtcPad464 = 0;
+		pPlayer->m_bSgtcLatchA9c = 0;	// ref +0xa9c — superweapon re-arm each round
 		if( !bCaptureMode && sgtc_GameModeSet != 4 )
 			pPlayer->m_bSgtcPePreset = 0;
 		pPlayer->ResetPortrait( 1 );

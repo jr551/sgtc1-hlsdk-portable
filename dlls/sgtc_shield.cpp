@@ -31,54 +31,44 @@ void CShield::Spawn( void )
 	pev->angles = pev->v_angle;
 	pev->origin = pev->origin - Vector( 0, 0, 40.0f );	// ref fsub 40 @0x1d9dfc
 
-	pev->armorvalue = 130.0f;	// ref pev+0x14c @0x1d9e00
-	pev->team = 5;			// ref pev+0x148
+	pev->renderamt = 130.0f;	// ref pev+0x14c @0x1d9e00
+	pev->rendermode = 5;		// ref pev+0x148 @0x1d9dfc (kRenderTransAdd in engine enum order)
+	pev->view_ofs = g_vecZero;	// ref pev+0x174
 
 	m_flExpire = gpGlobals->time + 1.0f;	// ref +0x19c @0x1d9e04
 
 	SetThink( &CShield::Think );
 	pev->nextthink = gpGlobals->time + 0.1f;	// ref double 0.1 @0x1d9dd8
+	Think();	// ref: immediate virtual call via vslot +0xc4
 }
 
 void CShield::Think( void )
 {
-	// ref @0x162234 — stepped armor from renderamt thresholds 100 / 130.
-	if( pev->renderamt == 100.0f )
-		pev->armorvalue = 130.0f;
-	else if( pev->renderamt == 130.0f )
-		pev->armorvalue = 80.0f;
+	// ref @0x16221a — health-driven renderamt thresholds:
+	// pev->health <= 100 -> renderamt 130; pev->health <= 80 -> renderamt 200.
+	if( pev->health <= 100.0f )
+		pev->renderamt = 130.0f;
+	if( pev->health <= 80.0f )
+		pev->renderamt = 200.0f;
 
 	if( !pev->owner )
-	{
 		UTIL_Remove( this );
-		return;
-	}
 
-	if( gpGlobals->time < m_flExpire )
+	if( m_flExpire < gpGlobals->time )
 	{
-		pev->nextthink = gpGlobals->time + 0.1f;
-		return;
-	}
-
-	BOOL bOwnerAlive = FALSE;
-	for( int i = 1; i <= gpGlobals->maxClients; i++ )
-	{
-		edict_t *pent = INDEXENT( i );
-		if( !pent || pent->free )
-			continue;
-		if( pent == pev->owner )
+		// ref: walk the player list; remove when no player owns this shield.
+		BOOL bOwnerAlive = FALSE;
+		for( int i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			bOwnerAlive = TRUE;
-			break;
+			CBaseEntity *plr = UTIL_PlayerByIndex( i );
+			if( !plr )
+				continue;
+			if( plr->edict() == pev->owner )
+				bOwnerAlive = TRUE;
 		}
+		if( !bOwnerAlive )
+			UTIL_Remove( this );
+		m_flExpire = gpGlobals->time + 1.0f;
 	}
-
-	if( !bOwnerAlive )
-	{
-		UTIL_Remove( this );
-		return;
-	}
-
-	m_flExpire = gpGlobals->time + 1.4499999f;	// ref @0x1d9ddc
 	pev->nextthink = gpGlobals->time + 0.1f;
 }

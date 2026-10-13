@@ -879,22 +879,32 @@ const char *CStargateUnas::SetDefaultPlayerTeam( CBasePlayer *pPlayer )
 
 void CStargateUnas::ChangePlayerTeam( CBasePlayer *pPlayer, const char *pTeamName, BOOL bKill, BOOL bGib )
 {
+	// ref @0x198e7a: bKill → world TakeDamage( 900, bGib ? ALWAYSGIB : NEVERGIB );
+	// bGib also forces pev->frags = -100. Then m_szTeamName copy, gmsgTeamInfo
+	// broadcast, and gmsgScoreInfo {entindex, frags, m_iDeaths, +0xa40, GetTeamIndex+1, 0}.
 	int damageFlags = DMG_GENERIC | ( bGib ? DMG_ALWAYSGIB : DMG_NEVERGIB );
 	if( bKill )
 	{
 		entvars_t *pevWorld = VARS( INDEXENT( 0 ) );
+		if( bGib )
+			pPlayer->pev->frags = -100.0f;
 		pPlayer->TakeDamage( pevWorld, pevWorld, 900, damageFlags );
 	}
 	if( pPlayer->m_szTeamName != pTeamName )
 		snprintf( pPlayer->m_szTeamName, TEAM_NAME_LENGTH, "%s", pTeamName );
-	int clientIndex = pPlayer->entindex();
-	g_engfuncs.pfnSetClientKeyValue( clientIndex,
-		g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model", pPlayer->m_szTeamName );
-	g_engfuncs.pfnSetClientKeyValue( clientIndex,
-		g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "team", pPlayer->m_szTeamName );
+
 	MESSAGE_BEGIN( MSG_ALL, gmsgTeamInfo );
-		WRITE_BYTE( clientIndex );
+		WRITE_BYTE( pPlayer->entindex() );
 		WRITE_STRING( pPlayer->m_szTeamName );
+	MESSAGE_END();
+
+	MESSAGE_BEGIN( MSG_ALL, gmsgScoreInfo );
+		WRITE_BYTE( pPlayer->entindex() );
+		WRITE_SHORT( (int)pPlayer->pev->frags );
+		WRITE_SHORT( pPlayer->m_iDeaths );		// ref param+0xdf0
+		WRITE_SHORT( pPlayer->m_iSgtcPortraitShown );	// ref param+0xa40
+		WRITE_SHORT( GetTeamIndex( pPlayer->m_szTeamName ) + 1 );
+		WRITE_SHORT( 0 );						// ref param+0x170
 	MESSAGE_END();
 }
 
@@ -927,29 +937,38 @@ edict_t *CStargateUnas::SGTC_FindTeamSpawn( const char *pszClassname )
 
 void CStargateUnas::PlayerSpawn( CBasePlayer *pPlayer )
 {
-	// Verified Unas PlayerSpawn strings: Unas gets lance+invis + FR line;
-	// Marine gets 9mmhandgun/9mmAR/main/zat/flashbang + ammo + FR line.
-	pPlayer->StopObserver();
+	// ref @0x19924c: base spawn; "Unas" team branch gives lance + invis, says
+	// "Vous etes le Unas, bonne boucherie :-)", pev->health/max_health/maxspeed
+	// = 250, m_iBloodColor = 247 (BLOOD_COLOR_RED), GiveAmmo( 9mm, 100, 48 ).
+	// "Torri" branch: 9mmhandgun/9mmAR/main/lance/zat/flashbang, 9mm 100/48,
+	// ARgrenades 100/4, health/max_health/maxspeed = 100, m_iBloodColor = 195
+	// (BLOOD_COLOR_YELLOW), "Vous etes un Marine, bonne chance...\n".
 	CHalfLifeMultiplay::PlayerSpawn( pPlayer );
-	int team = GetTeamIndex( pPlayer->m_szTeamName );
-	if( team == 0 )
+	if( !stricmp( pPlayer->m_szTeamName, "Unas" ) )
 	{
 		pPlayer->GiveNamedItem( "weapon_lance" );
 		pPlayer->GiveNamedItem( "weapon_invis" );
-		SET_MODEL( ENT( pPlayer->pev ), "models/player/unas/unas.mdl" );
 		UTIL_SayText( "Vous etes le Unas, bonne boucherie :-)\n", pPlayer );
+		pPlayer->pev->health = 250.0f;		// ref pev+0x160 = 0x437a0000
+		pPlayer->pev->max_health = 250.0f;	// ref pev+0x1b0
+		pPlayer->pev->maxspeed = 250.0f;	// ref pev+0x210
+		pPlayer->m_iBloodColor = BLOOD_COLOR_RED;	// ref +0x3b0 = 247
 	}
 	else
 	{
 		pPlayer->GiveNamedItem( "weapon_9mmhandgun" );
 		pPlayer->GiveNamedItem( "weapon_9mmAR" );
 		pPlayer->GiveNamedItem( "weapon_main" );
+		pPlayer->GiveNamedItem( "weapon_lance" );
 		pPlayer->GiveNamedItem( "weapon_zat" );
 		pPlayer->GiveNamedItem( "weapon_flashbang" );
-		pPlayer->GiveAmmo( 60, "9mm", 200 );
-		pPlayer->GiveAmmo( 2, "ARgrenades", 10 );
-		SET_MODEL( ENT( pPlayer->pev ), "models/player.mdl" );
+		pPlayer->GiveAmmo( 100, "9mm", 48 );
+		pPlayer->GiveAmmo( 100, "ARgrenades", 4 );
 		UTIL_SayText( "Vous etes un Marine, bonne chance...\n", pPlayer );
+		pPlayer->pev->health = 100.0f;		// ref pev+0x160 = 0x42c80000
+		pPlayer->pev->max_health = 100.0f;	// ref pev+0x1b0
+		pPlayer->pev->maxspeed = 100.0f;	// ref pev+0x210
+		pPlayer->m_iBloodColor = BLOOD_COLOR_YELLOW;	// ref +0x3b0 = 195
 	}
 }
 
@@ -971,25 +990,67 @@ void CStargateUnas::DeathNotice( CBasePlayer *pVictim, entvars_t *pKiller, entva
 
 BOOL CStargateUnas::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 {
-	if( SGTC_HandleClientCommand( pPlayer, pcmd ) )
+	// ref @0x19a33e: voice hop, menuselect (arg1 consumed, no-op),
+	// jointeam {1->Unas, else->Marine}, showmenu -> ShowVGUIMenu(16).
+	if( g_VoiceGameMgr.ClientCommand( pPlayer, pcmd ) )
 		return TRUE;
 
-	if( FStrEq( pcmd, "jointeam" ) )
+	if( FStrEq( pcmd, "menuselect" ) )
 	{
-		if( CMD_ARGC() < 2 )
-			return TRUE;
-		int team = atoi( CMD_ARGV( 1 ) );
-		if( team == 5 )
-			ChangePlayerTeam( pPlayer, TeamWithFewestPlayers(), TRUE, TRUE );
-		else if( team == 1 )
-			ChangePlayerTeam( pPlayer, m_szSGTCTeams[0], TRUE, TRUE );
-		else if( team == 2 )
-			ChangePlayerTeam( pPlayer, m_szSGTCTeams[1], TRUE, TRUE );
+		if( CMD_ARGC() > 1 )
+			(void)atoi( CMD_ARGV( 1 ) );	// ref consumes arg 1 (no effect)
 		return TRUE;
 	}
-	if( FStrEq( pcmd, "autopick" ) )
+	if( FStrEq( pcmd, "jointeam" ) )
 	{
-		ChangePlayerTeam( pPlayer, TeamWithFewestPlayers(), TRUE, TRUE );
+		if( CMD_ARGC() > 0 )
+		{
+			if( atoi( CMD_ARGV( 1 ) ) == 1 )
+				strncpy( pPlayer->m_szTeamName, "Unas", 16 );
+			else
+				strncpy( pPlayer->m_szTeamName, "Marine", 16 );
+			ChangePlayerTeam( pPlayer, pPlayer->m_szTeamName, 1, 0 );
+			RecountTeams( FALSE );
+		}
+		return TRUE;
+	}
+	if( FStrEq( pcmd, "showmenu" ) )
+	{
+		pPlayer->ShowVGUIMenu( 16 );
+		return TRUE;
+	}
+	return CHalfLifeTeamplay::ClientCommand( pPlayer, pcmd );
+}
+
+BOOL CStargateInvis::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
+{
+	// ref @0x17d4c4: voice hop, menuselect, jointeam {1->Torri, 2->Invisible,
+	// else no-op}, showmenu -> ShowVGUIMenu(16).
+	if( g_VoiceGameMgr.ClientCommand( pPlayer, pcmd ) )
+		return TRUE;
+
+	if( FStrEq( pcmd, "menuselect" ) )
+	{
+		if( CMD_ARGC() > 1 )
+			(void)atoi( CMD_ARGV( 1 ) );
+		return TRUE;
+	}
+	if( FStrEq( pcmd, "jointeam" ) )
+	{
+		if( CMD_ARGC() > 0 )
+		{
+			if( atoi( CMD_ARGV( 1 ) ) == 1 )
+				strncpy( pPlayer->m_szTeamName, "Torri", 16 );
+			else if( atoi( CMD_ARGV( 1 ) ) == 2 )
+				strncpy( pPlayer->m_szTeamName, "Invisible", 16 );
+			ChangePlayerTeam( pPlayer, pPlayer->m_szTeamName, 1, 0 );
+			RecountTeams( FALSE );
+		}
+		return TRUE;
+	}
+	if( FStrEq( pcmd, "showmenu" ) )
+	{
+		pPlayer->ShowVGUIMenu( 16 );
 		return TRUE;
 	}
 	return CHalfLifeTeamplay::ClientCommand( pPlayer, pcmd );
@@ -1020,13 +1081,34 @@ CStargateInvis::CStargateInvis( void )
 
 void CStargateInvis::PlayerSpawn( CBasePlayer *pPlayer )
 {
-	// Invis mode: Torri-side DM loadout plus the invis device.
-	pPlayer->StopObserver();
+	// ref @0x17c44e: team "Torri" -> DM-like loadout (m92s/zat/flashbang,
+	// 9mm 68/48) + maxspeed 250; team "Invisible" -> give invis lance + ToggleVis
+	// when the invis latch is armed; both then zero +0x4de and ToggleVis the
+	// latch again.
 	CHalfLifeMultiplay::PlayerSpawn( pPlayer );
-	pPlayer->GiveNamedItem( "weapon_couteau" );
-	pPlayer->GiveNamedItem( "weapon_coujaf" );
-	pPlayer->GiveNamedItem( "weapon_invis" );
-	pPlayer->GiveNamedItem( "weapon_zat" );
+	if( !stricmp( pPlayer->m_szTeamName, "Torri" ) )
+	{
+		pPlayer->GiveNamedItem( "weapon_9mmhandgun" );
+		pPlayer->GiveNamedItem( "weapon_m92s" );
+		pPlayer->GiveNamedItem( "weapon_zat" );
+		pPlayer->GiveNamedItem( "weapon_flashbang" );
+		pPlayer->GiveAmmo( 68, "9mm", 48 );
+		UTIL_SayText( "Vous etes un Torri, invisible, bonne chance...\n", pPlayer );
+		pPlayer->pev->maxspeed = 250.0f;	// ref pev+0x210 = 0x437a0000
+		if( pPlayer->m_bShieldSprint == 1 )	// ref +0x4e9
+			pPlayer->SGTC_ToggleVis();		// ref CBasePlayer::ToggleVis @0x136454
+	}
+	else
+	{
+		pPlayer->GiveNamedItem( "weapon_lance" );
+		pPlayer->GiveNamedItem( "weapon_invis" );
+		UTIL_SayText( "Vous etes un Invisible, bonne chance...\n", pPlayer );
+		pPlayer->pev->maxspeed = 250.0f;	// ref pev+0x210 = 0x437a0000
+		if( pPlayer->m_bShieldSprint == 1 )
+			pPlayer->SGTC_ToggleVis();
+	}
+	pPlayer->m_bSnagInvisLatch = 0;		// ref +0x4de = 0
+	pPlayer->SGTC_ToggleVis();			// ref CBasePlayer::ToggleVis @0x136454
 }
 
 CStargateReplicateur::CStargateReplicateur( void )

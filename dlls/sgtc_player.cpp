@@ -474,67 +474,94 @@ void CBasePlayer::SGTC_TryShieldTraceHit( entvars_t *pevAttacker, TraceResult *p
 	m_flShieldTraceTime = gpGlobals->time;	// ref @0x13726a
 }
 
-// ref @0x13e995 — expire +0xa78 after ~2s from +0xa68.
+// ref @0x13e948..0x13eb07 — CheckTimeBasedDamage prologue latches, run before the
+// DMG_TIMEBASED loop. Latch1 (+0xa78 shield-trace hit, timer +0xa68): after 3s
+// clear flag, renderfx=0, renderamt=255.0, rendercolor=(0,0,0). Latch2
+// (+0xa88 zat-touch, timer +0xa8c): same + TakeHealth(10, DMG_DROWNRECOVER).
+// Latch3 (+0xa94, timer +0xa98): after 0.5s renderamt=20.0, clear flag.
 void CBasePlayer::SGTC_TickShieldTraceLatch( void )
 {
-	static const float kShieldTraceHold = 2.0f;	// rodata @0x1d2e20
+	static const float kShieldTraceHold = 3.0f;	// rodata @0x1d2e20
+	static const float kLatchA94Hold = 0.5f;	// rodata @0x1d2e30
 
-	if( !m_bShieldTraceHit )
-		return;
-	if( gpGlobals->time - m_flShieldTraceTime < kShieldTraceHold )
-		return;
+	if( m_bShieldTraceHit && gpGlobals->time - m_flShieldTraceTime > kShieldTraceHold )
+	{
+		m_bShieldTraceHit = 0;	// ref +0xa78
+		pev->renderfx = 0;	// ref pev+0x15c
+		pev->renderamt = 255.0f;	// ref pev+0x14c = 0x437f0000
+		pev->rendercolor = Vector( 0, 0, 0 );	// rodata @0x1d2e24/@0x1d2e28
+	}
 
-	m_bShieldTraceHit = 0;
-	pev->renderfx = 0;	// ref pev+0x15c
-	pev->renderamt = 0.0f;	// ref pev+0x14c, rodata @0x1d2e24
-	pev->rendercolor = Vector( 255, 255, 255 );	// rodata @0x1d2e28
+	if( m_bZatTouchFlag && gpGlobals->time - m_flSgtcLatchA8c > kShieldTraceHold )
+	{
+		m_bZatTouchFlag = 0;	// ref +0xa88
+		pev->renderfx = 0;
+		pev->renderamt = 255.0f;
+		pev->rendercolor = Vector( 0, 0, 0 );
+		TakeHealth( 10.0f, DMG_DROWNRECOVER );	// ref +0x3c(this,0x41200000,0x80000)
+	}
+
+	if( m_bSgtcLatchA94 && gpGlobals->time - m_flSgtcLatchA98 > kLatchA94Hold )
+	{
+		m_bSgtcLatchA94 = 0;	// ref +0xa94
+		pev->renderamt = 20.0f;	// ref pev+0x14c = 0x41a00000
+	}
 }
 
-// ref @0x13378a — zat stun from zat_proj / zatboom on players.
+// ref CBasePlayer::Zat @0x14378a (ELF 0x13378a) — zat stun from zat_proj /
+// zatboom on players. truezat @0x2368d4 = mp_truezat cvar: while +0xa88 already
+// latched, 0 → 80 dmg, non-zero → 2000 dmg; first hit is always 10.
+// Ref TakeDamage(pev /*inflictor=self*/, param_1 /*attacker*/, dmg, 0x1000)
+// and unconditionally zeroes pev+0x20 (velocity) on exit.
+extern cvar_t sgtc_cvar_truezat;
 void CBasePlayer::Zat( entvars_t *pevInflictor )
 {
-	m_bZatLatch = 1;
+	m_bZatLatch = 1;	// ref +0x928
 
-	if( m_bSnagInvisLatch || m_bShieldWall )
-		return;
-	if( pevInflictor && pevInflictor->team == pev->team )
-		return;
+	if( m_bSnagInvisLatch == 1 || m_bShieldWall == 1 )	// ref +0x4de/+0x3e0 == 1 → skip
+		goto L_zat_exit;
+	if( !pevInflictor || pevInflictor->team == pev->team )	// ref param_1+0x1ac != pev+0x1ac
+		goto L_zat_exit;
 
-	float flDmg;
-	if( m_bZatTouchFlag )
 	{
-		if( pevInflictor && pevInflictor->frags > pev->frags )
-			flDmg = 2000.0f;	// rodata @0x1d6fa8
-		else
+		float flDmg;
+		if( !m_bZatTouchFlag )					// ref +0xa88 == 0 → 10.0
+			flDmg = 10.0f;	// rodata @0x1d6fac
+		else if( sgtc_cvar_truezat.value == 0.0f )	// ref truezat == 0 → 80.0
 			flDmg = 80.0f;	// rodata @0x1d6fa4
+		else
+			flDmg = 2000.0f;	// rodata @0x1d6fa8
+
+		TakeDamage( pev, pevInflictor, flDmg, DMG_NEVERGIB );	// ref vfunc+0x38 bits 0x1000
+
+		if( m_bZatTouchFlag != 1 && gmsgZatTouch )	// ref +0xa88 != 1
+		{
+			MESSAGE_BEGIN( MSG_ONE, gmsgZatTouch, NULL, pev );
+			MESSAGE_END();
+		}
+
+		m_bZatTouchFlag = 1;				// ref +0xa88
+		m_flSgtcLatchA8c = gpGlobals->time;	// ref +0xa8c
+
+		pev->renderfx = kRenderFxGlowShell;	// ref pev+0x15c = 0x13
+		pev->renderamt = 2.0f;	// ref pev+0x14c = 0x40000000
+		pev->rendercolor.x = 25.0f;	// 0x41c80000
+		pev->rendercolor.y = 10.0f;	// 0x41200000
+		pev->rendercolor.z = 255.0f;	// 0x437f0000
+		m_bShieldSprint = 0;	// ref +0x4e9
+		SnagInvis();
+		pev->maxspeed = 50.0f;	// 0x42480000
+
+		m_iStamina -= 60;
+		if( m_iStamina < 0 )
+			m_iStamina = 0;
+		SGTC_UpdateStamina();
+
+		UTIL_ScreenFade( this, Vector( 0, 138, 179 ), 0.5f, 1.0f, 100, 0 );	// ref local_28
 	}
-	else
-		flDmg = 10.0f;	// rodata @0x1d6fac
 
-	TakeDamage( pevInflictor, pevInflictor, flDmg, DMG_SHOCK );
-
-	if( !m_bZatTouchFlag && gmsgZatTouch )
-	{
-		MESSAGE_BEGIN( MSG_ONE, gmsgZatTouch, NULL, pev );
-		MESSAGE_END();
-	}
-
-	m_bZatTouchFlag = 1;
-
-	pev->renderamt = 2.0f;	// ref pev+0x14c, rodata @0x1d6fb0
-	pev->rendercolor.x = 25.0f;	// @0x1d6fb4
-	pev->rendercolor.y = 10.0f;	// @0x1d6fac (reuse)
-	pev->rendercolor.z = 255.0f;	// @0x1d6fb8
-	m_bShieldSprint = 0;
-	SnagInvis();
-	pev->maxspeed = 50.0f;	// rodata @0x1d6fbc
-
-	m_iStamina -= 60;
-	if( m_iStamina < 0 )
-		m_iStamina = 0;
-	SGTC_UpdateStamina();
-
-	UTIL_ScreenFade( this, g_vecZero, 0.0f, 100.0f, 0, FFADE_IN );	// ref @0x1339f9
+L_zat_exit:
+	pev->velocity = g_vecZero;	// ref unconditional tail: pev+0x20 = (0,0,0)
 }
 
 // ref helper @0x1abc1c — Manhattan 3d distance as int.

@@ -183,7 +183,9 @@ public:
 	virtual int TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType );
 	virtual int TakeHealth( float flHealth, int bitsDamageType );
 	virtual void Killed( entvars_t *pevAttacker, int iGib );
-	virtual int BloodColor( void ) { return DONT_BLEED; }
+	virtual int BloodColor( void ) { return m_iBloodColor; }	// ref CBasePlayer +0x3b0
+	int m_iBloodColor;	// ref CBasePlayer +0x3b0 — decal/gib blood color (247 red, 195 yellow)
+	CBaseEntity() : m_iBloodColor( BLOOD_COLOR_RED ) {}	// default: human red; players/Unas re-set it
 	virtual void TraceBleed( float flDamage, Vector vecDir, TraceResult *ptr, int bitsDamageType );
 	virtual BOOL IsTriggered( CBaseEntity *pActivator ) {return TRUE; }
 #if SPEAKABLE_TARGETS

@@ -281,6 +281,7 @@ public:
 	float	m_flSgtcMenuWindow;	// ref +0x4ac — menu window deadline (GiveFromMenu/PlayerThink)
 	char	m_bSgtcPadA3D;		// ref +0xa3d
 	char	m_bSgtcRoundAlive;	// ref +0x3e4 — seen-alive latch
+	char	m_bSgtcLatchA9c;	// ref +0xa9c — DM superweapon once-per-spawn latch
 	int	m_iSgtcTicks;		// ref +0xc88 (int handle)
 	EHANDLE	m_hSgtcEnvIterator;	// port-side env walk handle (ref +0xc88 slot reuse)
 	int	m_iSgtcEnvStage;	// ref +0xc90
@@ -299,6 +300,8 @@ public:
 	float	m_flTalentCooldown;	// ref +0x494 — per-talent reuse deadline
 	int	m_iSgtcTalentDeploy;	// ref +0x918 — deployed/armed count (shieldemit, trapbox, zatboom, larve)
 	float	m_flSgtcLatchA8c;	// ref +0xa8c — talent-case timer
+	char	m_bSgtcLatchA94;	// ref +0xa94 — CTBD latch: renderamt=20 after 0.5s
+	float	m_flSgtcLatchA98;	// ref +0xa98 — +0xa94 latch timer
 	int	m_iSgtcGondArgs[29];	// ref +0x9ac — gond4h9wp progress copy; NewRound
 								//  type-4 reset writes idx 0..0x1c (29 entries) so the ref
 								//  itself overruns a 28-slot tail — field widened to match
