@@ -500,13 +500,8 @@ void ClientCommand( edict_t *pEntity )
 	}
 	else if( FStrEq( pcmd, "fov" ) )
 	{
-		// ref ClientCommand @0xcae0a — prints (pev->netname - gpGlobals->pStringBase)
-		// as "%d\n" via pfnClientPrintf.  Literal ref behavior (string-table delta,
-		// not the field-of-view).
-		CBasePlayer *pPlayer = GetClassPtr( (CBasePlayer *)pev );
-		const int delta = (int)( (const char *)STRING( pPlayer->pev->netname )
-			- gpGlobals->pStringBase );
-		ClientPrint( &pEntity->v, HUD_PRINTCONSOLE, UTIL_VarArgs( "%d\n", delta ) );
+		// ref ClientCommand @0xd8ff2 — 'fov' is consumed with no body
+		// (bare return, no print, no m_iFOV set).
 	}
 	else if( FStrEq( pcmd, "use" ) )
 	{
@@ -531,8 +526,12 @@ void ClientCommand( edict_t *pEntity )
 	}
 	else if( SGTC_HandleClientCommand( GetClassPtr( (CBasePlayer *)pev ), pcmd ) )
 	{
-		// ref ClientCommand @0xc8ff2 is a flat dispatcher — all SGTC verbs
-		// (talent/nvg/vote/gond4h9wp/…) are handled inline, no gamerules hop.
+		// ref ClientCommand @0xd8ff2 flat dispatcher — SGTC verbs first.
+	}
+	else if( g_pGameRules->ClientCommand( GetClassPtr( (CBasePlayer *)pev ), pcmd ) )
+	{
+		// ref @0xdb701-0xdb746 — vtable+0x74 gamerules hop on fallthrough;
+		// TRUE → return, else 'Unknown command' below.
 	}
 	else
 	{

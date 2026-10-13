@@ -372,10 +372,20 @@ static void SGTC_DrawEntranceBanners( CHudSgtc *hud )
 		SPR_Set( gHUD.GetSprite( ammoIdx ), 0x7d, 0x7d, 0x7d );
 		SPR_DrawHoles( 0, 0x60, yAmmo, &rc );
 
-		wrect_t bar = rc;
-		bar.right = bar.left + 199;
-		bar.bottom = bar.top + 9;
-		SPR_DrawHoles( 0, 0, ScreenHeight - 0x9f, &bar );
+		// ref @0x100749a3-0x10074a18 — second draw is the hud_left sprite record
+		// (+0x1c90 handle / +0x1c94 rect) at the SAME anchor (x=0x60, y=yAmmo), with
+		// absolute rect.right = 0xc7 (@0x100749d1 store to +0x4) and rect.top = 0x9
+		// (@0x100749d8 store to +0x8).  Record field order is {left,right,top,bottom}
+		// (proven by weapon-icon block @0x1007591b-0x10075953).
+		const int hlIdx = gHUD.GetSpriteIndex( "hud_left" );
+		if( hlIdx > 0 )
+		{
+			wrect_t bar = gHUD.GetSpriteRect( hlIdx );
+			bar.right = 0xc7;	// ref @0x100749d1 — absolute right edge
+			bar.top = 0x9;		// ref @0x100749d8 — absolute top
+			SPR_Set( gHUD.GetSprite( hlIdx ), 0x7d, 0x7d, 0x7d );
+			SPR_DrawHoles( 0, 0x60, yAmmo, &bar );
+		}
 	}
 
 	// ref @0x10075abb-0x10075b84 — bombkey banner (+0x1cf8 handle / +0x1cfc rect) at (0x2f, H-0x140),
@@ -1465,9 +1475,9 @@ int CHudSgtc::Draw( float flTime )
 		return 0;
 	const int rx = ScreenWidth - 200;
 
-	// ref: Draw has no hud_left (+0x1c90) draw anywhere — the ref draws "ticketdock" (+0x1cc8,
-	// 120x64) at (0, H-h-0x68) gated byte+0x58 (port ticket-mode panel; not in this change list).
-	// Kept: port's bottom-left panel (visual anchor; 200x168 @ (0, H-168)).
+	// ref: hud_left (+0x1c90) IS drawn once by ref Draw — the entrance-banner ammo
+	// underlay @0x100749a3 (ported in SGTC_DrawEntranceBanners).  The full 200x168
+	// bottom-left panel below is a port keep (visual anchor; no matching ref draw).
 	SGTC_DrawSprite( "hud_left", lx, ly );
 	// ref @0x10073ac7-0x10073b43 — bottom-right panel: hud_right (+0x1c98, 200x168) at
 	// (W-0xc6, H-0xa1) with rect.left = 2 / rect.top = 7 forced (@0x10073af1/0x10073b03),

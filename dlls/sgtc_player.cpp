@@ -29,8 +29,9 @@ extern int sgtc_G_tickets;
 extern int sgtc_T_tickets;
 extern void CopyToBodyQue( entvars_t *pev );
 
-// ref global: Elmo @0x2368f0 — bomb-key flag set by dropkey (defined below).
-edict_t *sgtc_Elmo = NULL;
+// ref global: Elmo @0x2368f0 — byte flag set to 1 by dropkey's key spawn
+// (ref @0xda0dc MOV byte ptr).  Never read; not an edict pointer.
+char sgtc_Elmo = 0;
 
 static int SGTC_SupergunsHudAux( void )	// REA: ref reads superguns cvar +0xc; read the port struct directly
 {
@@ -745,6 +746,28 @@ static void SGTC_SpectateClient( CBasePlayer *pPlayer )
 	pPlayer->StartDeathCam();
 }
 
+// ref ClientCommand 'observer' @0xd9daa-0xd9ef7 — short body: HUD reset msgs,
+// +0xa40/pev+0x1ac/team-name clears, StartDeathCam.  NO ticket decrement and
+// NO owned-entity cleanup (unlike 'spectate').
+static void SGTC_ObserveClient( CBasePlayer *pPlayer )
+{
+	MESSAGE_BEGIN( MSG_ALL, gmsgReset, NULL );
+		WRITE_SHORT( pPlayer->entindex() );
+		WRITE_BYTE( 1 );
+	MESSAGE_END();
+	MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pPlayer->pev );
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( 4 );
+		WRITE_BYTE( 0 );
+	MESSAGE_END();
+
+	pPlayer->m_iSgtcPortraitShown = 0;			// ref +0xa40
+	pPlayer->pev->team = 0;						// ref pev+0x1ac
+	strncpy( pPlayer->m_szTeamName, "", TEAM_NAME_LENGTH );	// ref +0xe08
+	pPlayer->StartDeathCam();
+}
+
 BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 {
 	if( FStrEq( pcmd, "stuck" ) )	// ref @0xc9012
@@ -756,7 +779,7 @@ BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 			return TRUE;
 		}
 		pPlayer->pev->origin.z += 20.0f;	// ref pev+0x10 += 20.0
-		pPlayer->pev->velocity = g_vecZero;
+		pPlayer->pev->velocity = g_vecZero;	// ref @0xd90df: velocity * 0.0f (rodata 0x1f0e80)
 		pPlayer->m_flSgtcStuck = gpGlobals->time + 10.0f;
 		return TRUE;
 	}
@@ -901,22 +924,23 @@ BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 		return TRUE;
 	}
 
-	if( FStrEq( pcmd, "observer" ) )	// ref @0xc9f4a — shares the spectate body
+	if( FStrEq( pcmd, "observer" ) )	// ref @0xd9daa — short body (no tickets/cleanup)
 	{
 		if( allow_spectators.value == 0.0f )
 			return TRUE;
-		SGTC_SpectateClient( pPlayer );
+		SGTC_ObserveClient( pPlayer );
 		return TRUE;
 	}
 
-	if( FStrEq( pcmd, "dropkey" ) )	// ref @0xca2e4
+	if( FStrEq( pcmd, "dropkey" ) )	// ref @0xd9efc
 	{
-		if( pPlayer->m_iInBombZone > 0 )
+		if( pPlayer->m_iInBombZone > 0 )	// ref +0xaec
 		{
 			UTIL_MakeVectors( pPlayer->pev->v_angle );
 			TraceResult tr;
-			Vector vecStart = pPlayer->pev->origin + pPlayer->pev->view_ofs;
-			Vector vecEnd = vecStart + gpGlobals->v_forward * 128.0f;	// [INFERENCE]
+			// ref @0xd9f4d-0xda01f: trace origin+fwd*64 → origin+fwd*20.
+			Vector vecStart = pPlayer->pev->origin + gpGlobals->v_forward * 64.0f;
+			Vector vecEnd = pPlayer->pev->origin + gpGlobals->v_forward * 20.0f;
 			UTIL_TraceLine( vecStart, vecEnd, dont_ignore_monsters,
 				pPlayer->edict(), &tr );
 			CBaseEntity *pKey = CBaseEntity::Create( "item_objective",
@@ -925,12 +949,17 @@ BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 			{
 				pKey->pev->angles.x = 0.0f;	// ref pev+0x50/+0x58 zeroed
 				pKey->pev->angles.z = 0.0f;
-				pKey->pev->velocity = gpGlobals->v_forward * 300.0f;	// [INFERENCE]
-				sgtc_Elmo = pKey->edict();
+				// ref @0xda068-0xda0c7: fwd*200 + thrower velocity.
+				pKey->pev->velocity = gpGlobals->v_forward * 200.0f
+					+ pPlayer->pev->velocity;
+				sgtc_Elmo = 1;				// ref @0xda0dc byte flag
 			}
 			pPlayer->m_iInBombZone = 0;
 		}
-		CLIENT_PRINTF( pPlayer->edict(), print_console, "No key to drop\n" );
+		else
+		{
+			CLIENT_PRINTF( pPlayer->edict(), print_console, "No key to drop\n" );	// ref @0xda0e4 ptype=0
+		}
 		return TRUE;
 	}
 
@@ -1044,10 +1073,11 @@ BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 		return TRUE;
 	}
 
-	if( FStrEq( pcmd, "info" ) )	// ref prints string-pool offset of netname
+	if( FStrEq( pcmd, "info" ) )	// ref prints netname string-pool offset
 	{
 		CLIENT_PRINTF( pPlayer->edict(), print_console,
-			UTIL_VarArgs( "%d\n", (int)pPlayer->pev->netname ) );	// [INFERENCE] ref prints string-pool offset
+			UTIL_VarArgs( "%d\n", (int)( STRING( pPlayer->pev->netname )
+				- gpGlobals->pStringBase ) ) );	// ref @0xdae47: pev->netname - pStringBase
 		return TRUE;
 	}
 
