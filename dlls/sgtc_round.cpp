@@ -113,7 +113,8 @@ cvar_t sgtc_cvar_tournament = { "mp_tournament", "0", FCVAR_SERVER };
 cvar_t sgtc_cvar_superweapons = { "mp_superweapons", "0", FCVAR_SERVER };
 cvar_t sgtc_cvar_particlelatency = { "particlelat", "10", FCVAR_SERVER };
 cvar_t sgtc_cvar_respawntime = { "mp_respawntime", "10", FCVAR_SERVER };
-
+cvar_t sgtc_cvar_diepoints = { "mp_diepoints", "2", FCVAR_SERVER };	// ref vicpoints @0x223524
+cvar_t sgtc_cvar_killpoints = { "mp_killpoints", "1", FCVAR_SERVER };	// ref killpoints @0x223538
 void SGTC_RegisterRulesCvars( void )
 {
 	CVAR_REGISTER( &sgtc_cvar_friendlyfire );
@@ -126,6 +127,8 @@ void SGTC_RegisterRulesCvars( void )
 	CVAR_REGISTER( &sgtc_cvar_superweapons );
 	CVAR_REGISTER( &sgtc_cvar_particlelatency );
 	CVAR_REGISTER( &sgtc_cvar_respawntime );
+	CVAR_REGISTER( &sgtc_cvar_diepoints );
+	CVAR_REGISTER( &sgtc_cvar_killpoints );
 }
 
 float sgtc_roundstart = 0.0f; // mirror of rules this+0x72c
@@ -1312,46 +1315,44 @@ void CStargateTeamCP::NewRound( void )
 
 // ---------------------------------------------------------------------------
 // PlayerKilled additions — nm 0x18fb4a (Ghidra 0x19fb4a).
-// Ref PlayerKilled = stock skull drop + RecountTeams + Penalty():
-//   attacker != victim && same team -> penalty score on the killer's team,
-//   ticket bookkeeping on G_tickets/T_tickets, and the victim's +0x4de /
-//   focused-player flags (used by the tournament round gate).
+// Ref order: Penalty FIRST, then killpoints/vicpoints scoring, ticket
+// decrement + broadcast for GameModeSet 1/3/4, and — only when
+// !m_bDisableDeathPenalty (ref this+0x10) — stock PlayerKilled + RecountTeams.
 // ---------------------------------------------------------------------------
-void CStargateTeamDM::Penalty( CBasePlayer *pVictim, CBasePlayer *pKiller )
+void CStargateTeamDM::Penalty( CBasePlayer *pVictim, entvars_t *pKillerEv )
 {
-	// ref Penalty(CBasePlayer*, entvars_t*) @nm 0x17ace2:
-	// guards: killer ev non-null, victim non-null, killer alive
+	// ref Penalty(CBasePlayer*, entvars_t*) @Ghidra 0x18ace2:
+	// guards: killer ev non-null, victim non-null, killer entity alive
 	// (vtable+0xa8 IsAlive), killer entity != victim entity,
-	// victim +0x465 (m_bSgtcPad461) set.
-	if( !pVictim || !pKiller || pVictim == pKiller )
+	// victim +0x465 (m_bSgtcPePreset) set.
+	if( !pVictim || !pKillerEv )
 		return;
-	if( !pKiller->IsAlive() )
+	CBaseEntity *pKiller = CBaseEntity::Instance( pKillerEv );
+	if( !pKiller || !pKiller->IsAlive() )
 		return;
-	// ref Penalty: gate on victim +0x465 (m_bSgtcPePreset — set by SetCap
-	// team 1/3 pick @0x17b265, cleared otherwise).
-	if( !pVictim->m_bSgtcPePreset )
+	if( pKiller == pVictim || !pVictim->m_bSgtcPePreset )
 		return;
 
-	// Walk every "player" entity (ref 0x1dbab0 classname walk):
-	// for each pScan != pKiller:
-	//   same pev->team (+0x1ac) && pScan alive (vtable+0x94 IsAlive)
-	//     -> pScan->Use(pScan->pev, pKiller->pev, 0x800000)  (vtable+0x38)
-	//   if same pev->team -> SendGlobalTextIndex(10)
-	//   if different pev->team -> SendGlobalTextIndex(9)
+	// Walk every "player" entity SKIPPING THE VICTIM (ref @0x18ad88:
+	// CMP param_1(victim) vs scan). For each scanned player:
+	//   same pev->team (+0x1ac) as victim && alive (vtable+0x94 IsAlive)
+	//     -> vtable+0x38 = Use( scan, killerEv, useType=0x800000, 1000.0f )
+	//        (stack pushes verified @0x18adec-0x18dfc: last push 0x800000
+	//        is useType; rodata 0x447a0000 = 1000.0f is value)
+	//   same team  -> SendGlobalTextIndex(10)
+	//   other team -> SendGlobalTextIndex(9)
+	const int victimTeam = (int)pVictim->pev->team;
 	CBaseEntity *pScan = NULL;
 	while( ( pScan = UTIL_FindEntityByClassname( pScan, "player" ) ) != NULL )
 	{
-		if( pScan == pKiller )
+		if( pScan == pVictim )
 			continue;
 		CBasePlayer *pMate = (CBasePlayer *)pScan;
 
-		const int scanTeam = (int)pScan->pev->team;	// ref +0x1ac
-		const int killerTeam = (int)pKiller->pev->team;
+		if( (int)pScan->pev->team == victimTeam && pMate->IsAlive() )
+			pMate->Use( pMate, pKiller, (USE_TYPE)0x800000, 1000.0f );
 
-		if( scanTeam == killerTeam && pMate->IsAlive() )
-			pMate->Use( pMate, pKiller, (USE_TYPE)0x800000, 0.0f );
-
-		if( scanTeam == killerTeam )
+		if( (int)pScan->pev->team == victimTeam )
 			pMate->SendGlobalTextIndex( 10 );
 		else
 			pMate->SendGlobalTextIndex( 9 );
@@ -1361,7 +1362,22 @@ void CStargateTeamDM::Penalty( CBasePlayer *pVictim, CBasePlayer *pKiller )
 void CStargateTeamDM::PlayerKilled( CBasePlayer *pVictim,
 	entvars_t *pKiller, entvars_t *pInflictor )
 {
-	CHalfLifeMultiplay::PlayerKilled( pVictim, pKiller, pInflictor );
+	// ref @0x18fb66: Penalty(victim, killerEv) runs FIRST, before stock.
+	Penalty( pVictim, pKiller );
+
+	if( pKiller )
+	{
+		CBaseEntity *pKillerEnt = CBaseEntity::Instance( pKiller );
+		// ref: killer != victim && killer team (+0x1ac) != victim team ->
+		// killer +0x934 += ROUND(killpoints), victim +0x934 += ROUND(vicpoints).
+		// Ref +0x934 is CBaseEntity+0x930 = pev->frags.
+		if( pKillerEnt && pKillerEnt != pVictim &&
+			pKillerEnt->pev->team != pVictim->pev->team )
+		{
+			pKillerEnt->pev->frags += SGTC_Round_roundf( sgtc_cvar_killpoints.value );
+			pVictim->pev->frags += SGTC_Round_roundf( sgtc_cvar_diepoints.value );
+		}
+	}
 
 	// monster_skull drop on death (PlayerKilled strings).
 	CBaseEntity::Create( "monster_skull", pVictim->pev->origin,
@@ -1370,12 +1386,30 @@ void CStargateTeamDM::PlayerKilled( CBasePlayer *pVictim,
 	// ref +0x4de flag reset: the invis snag latch is cleared on death.
 	pVictim->m_bSnagInvisLatch = 0;
 
-	// ref Penalty: teamkill ticket bookkeeping.
-	CBasePlayer *pKillerPlayer = ( pKiller && FBitSet( pKiller->flags, FL_CLIENT ) )
-		? (CBasePlayer *)CBaseEntity::Instance( pKiller ) : NULL;
-	Penalty( pVictim, pKillerPlayer );
+	// ref @0x18fe70: GameModeSet 1/3/4 -> victim team ticket decrement +
+	// gmsgGtickets/gmsgTtickets WRITE_BYTE broadcasts.
+	if( sgtc_GameModeSet == 1 || sgtc_GameModeSet == 3 || sgtc_GameModeSet == 4 )
+	{
+		if( (int)pVictim->pev->team == 1 && sgtc_G_tickets > 0 )
+			sgtc_G_tickets--;
+		if( (int)pVictim->pev->team == 2 && sgtc_T_tickets > 0 )
+			sgtc_T_tickets--;
 
-	RecountTeams( TRUE );
+		MESSAGE_BEGIN( MSG_ALL, gmsgGtickets );
+			WRITE_BYTE( sgtc_G_tickets );
+		MESSAGE_END();
+		MESSAGE_BEGIN( MSG_ALL, gmsgTtickets );
+			WRITE_BYTE( sgtc_T_tickets );
+		MESSAGE_END();
+	}
+
+	// ref this+0x10 (m_bDisableDeathPenalty): forced ChangePlayerTeam kills
+	// suppress the stock death handling entirely.
+	if( !m_bDisableDeathPenalty )
+	{
+		CHalfLifeMultiplay::PlayerKilled( pVictim, pKiller, pInflictor );
+		RecountTeams( TRUE );
+	}
 }
 
 // ---------------------------------------------------------------------------

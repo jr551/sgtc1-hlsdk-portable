@@ -199,6 +199,8 @@ CStargateTeamDM::CStargateTeamDM( void )
 	m_iSGTCTeamCount = SGTC_MAX_SGTC_TEAMS;
 	m_iSGTCTeamScores[0] = m_iSGTCTeamScores[1] = 0;
 	m_bRoundOver = FALSE;
+	m_bDisableDeathMessages = FALSE;	// ref this+0xc
+	m_bDisableDeathPenalty = FALSE;	// ref this+0x10
 	m_iSgtcModeVote = -1;	// ref +0x770 pending mode vote (-1 none)
 	g_iSgtcMapType = 0;		// ref DM ctor sets MapType=0 (@0x188600)
 
@@ -345,8 +347,14 @@ void CStargateTeamDM::ChangePlayerTeam( CBasePlayer *pPlayer, const char *pTeamN
 	int damageFlags = DMG_GENERIC | ( bGib ? DMG_ALWAYSGIB : DMG_NEVERGIB );
 	if( bKill )
 	{
+		// ref @0x1908c4: this+0xc / this+0x10 set around the forced kill —
+		// suppresses DeathNotice and the PlayerKilled stock path.
+		m_bDisableDeathMessages = TRUE;
+		m_bDisableDeathPenalty = TRUE;
 		entvars_t *pevWorld = VARS( INDEXENT( 0 ) );
 		pPlayer->TakeDamage( pevWorld, pevWorld, 900, damageFlags );
+		m_bDisableDeathMessages = FALSE;
+		m_bDisableDeathPenalty = FALSE;
 	}
 	if( pPlayer->m_szTeamName != pTeamName )
 		snprintf( pPlayer->m_szTeamName, TEAM_NAME_LENGTH, "%s", pTeamName );
@@ -495,6 +503,8 @@ BOOL CStargateTeamDM::FPlayerCanChangeInfo( CBasePlayer *pPlayer )
 
 void CStargateTeamDM::DeathNotice( CBasePlayer *pVictim, entvars_t *pKiller, entvars_t *pInflictor )
 {
+	if( m_bDisableDeathMessages )	// ref this+0xc gate
+		return;
 	if( pVictim && pKiller && ( pKiller->flags & FL_CLIENT ) )
 	{
 		CBasePlayer *pk = (CBasePlayer *)CBaseEntity::Instance( pKiller );

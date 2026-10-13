@@ -122,7 +122,7 @@ public:
 	void StartPortrait( CBasePlayer *pPlayer );
 	void RedrawPortrait( CBasePlayer *pPlayer );
 	void UpdateClassCount( void );
-	void Penalty( CBasePlayer *pVictim, CBasePlayer *pKiller );	// ref Penalty @0x195b48 (PlayerKilled path)
+	void Penalty( CBasePlayer *pVictim, entvars_t *pKillerEv );	// ref Penalty @0x18ace2 (PlayerKilled path)
 
 protected:
 	void SGTC_GiveTeamLoadout( CBasePlayer *pPlayer );
@@ -140,6 +140,8 @@ protected:
 	float m_flSgtcRoundEnd;		// ref +0x724: round end tick
 	int m_iSgtcRoundTicks;		// ref +0x73c: Goal guard + NewRound zero (restart counter)
 	int m_iSgtcFirstTicks;		// ref +0x750: NewRound writes -5 (0xfffffffb)
+	BOOL m_bDisableDeathMessages;	// ref this+0xc — armed around forced ChangePlayerTeam kill
+	BOOL m_bDisableDeathPenalty;	// ref this+0x10 — gates PlayerKilled stock path
 };
 
 class CStargateTeamCP : public CStargateTeamDM
