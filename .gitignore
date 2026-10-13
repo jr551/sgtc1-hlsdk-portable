@@ -9,6 +9,8 @@
 *.dll
 *.pdb
 build/
+build-sgtc/
+build-dbg/
 CMakeLists.txt.*
 cmake_install.cmake
 *.orig
