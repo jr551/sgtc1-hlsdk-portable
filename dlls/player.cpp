@@ -147,6 +147,12 @@ TYPEDESCRIPTION	CBasePlayer::m_playerSaveData[] =
 };	
 
 int giPrecacheGrunt = 0;
+#if !defined( _WIN32 ) && defined( __GNUC__ )
+#pragma GCC visibility push( default )
+#endif
+// Stock user-message ids. Deliberately non-static: the reference hl.so
+// exports these BSS globals (default visibility build); the SGTC block in
+// sgtc_rules.cpp already does the same (see SGTC_LinkUserMessages).
 int gmsgShake = 0;
 int gmsgFade = 0;
 int gmsgSelAmmo = 0;
@@ -185,6 +191,10 @@ int gmsgTeamNames = 0;
 
 int gmsgStatusText = 0;
 int gmsgStatusValue = 0;
+
+#if !defined( _WIN32 ) && defined( __GNUC__ )
+#pragma GCC visibility pop
+#endif
 
 void LinkUserMessages( void )
 {
