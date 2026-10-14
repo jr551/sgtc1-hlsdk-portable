@@ -1670,7 +1670,7 @@ void GoldSourceInput::IN_Init (void)
 	if (sdl2Lib) {
 		for (int j=0; j<ARRAYSIZE(sdlFunctions); ++j) {
 #if XASH_WIN32
-			*(sdlFunctions[j].ppfnFunc) = GetProcAddress((HMODULE)sdl2Lib, sdlFunctions[j].name);
+			*(sdlFunctions[j].ppfnFunc) = (void *)GetProcAddress((HMODULE)sdl2Lib, sdlFunctions[j].name);
 #else
 			*(sdlFunctions[j].ppfnFunc) = dlsym(sdl2Lib, sdlFunctions[j].name);
 #endif

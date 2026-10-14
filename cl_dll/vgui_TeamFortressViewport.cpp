@@ -1344,7 +1344,14 @@ void TeamFortressViewport::SetCurrentMenu( CMenuPanel *pMenu )
 	}
 	else
 	{
-		gEngfuncs.pfnClientCmd( "closemenus;" );
+		// Ref close path (client.dll has no "closemenus" string at all): the
+		// menu chain ends with the panel's Close() plus a cursor/mouse update —
+		// ForceCloseCommandMenu @0x10055fe2 only hides the *command* menu
+		// (FUN_10046c01(viewport) = HideCommandMenu). The stock SDK's
+		// pfnClientCmd( "closemenus;" ) is unknown to the engine ("Unknown
+		// command: closemenus" in a live run), so do what the ref does:
+		// UpdateCursorState() releases the mouse / hides the cursor.
+		UpdateCursorState();
 	}
 }
 

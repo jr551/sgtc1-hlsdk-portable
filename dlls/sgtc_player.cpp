@@ -1973,11 +1973,14 @@ void CBasePlayer::ResetPortrait( int mode )
 // bit9==0) grants WPLIST[0x11] when +0x4f4 armed; solid players get the team
 // base weapon (Torri weapon_couteau / Goa'uld weapon_coujaf); finally +0x4e5=0,
 // +0x4e7=1.
-// WPLIST = 28-entry weapon table @0x220a50 (first 4 entries NULL in ref).
+// WPLIST = 28-entry weapon table (ref nm WPLISTB @0x220a60 = Ghidra 0x230a60;
+// sibling WPLIST @nm 0x220c40 has the same 28 names). Verified 2026-10-14 by
+// read_bytes: the 28 pointers 0x1eae70..0x1eafdc form a contiguous string chain
+// weapon_glstaff .. weapon_goaregen with NO NULL entries — the earlier
+// "first 4 entries NULL" read was wrong and shifted every loadout slot by 4.
 // ===========================================================================
 static const char * const sgtc_WPLIST[28] =
 {
-	NULL, NULL, NULL, NULL,				// ref entries 0..3 are NULL
 	"weapon_glstaff",	"weapon_usas",		"weapon_batsup",
 	"weapon_m92s",		"weapon_mp5",		"weapon_psg1",
 	"weapon_p90",		"weapon_spas",		"weapon_m16",
@@ -1985,7 +1988,9 @@ static const char * const sgtc_WPLIST[28] =
 	"weapon_reetou",	"weapon_zatarc",	"weapon_tacgun",
 	"weapon_handgrenade","weapon_mine",		"weapon_invis",
 	"weapon_invis",		"weapon_gacgoa",	"weapon_c4",
-	"weapon_larve",		"weapon_medic",		"weapon_smokegrenade"
+	"weapon_larve",		"weapon_medic",		"weapon_smokegrenade",
+	"weapon_nervegrenade","weapon_narcogrenade","weapon_mustardgrenade",
+	"weapon_goaregen"
 };
 
 void SGTC_GiveFromMenu( CBasePlayer *pPlayer )

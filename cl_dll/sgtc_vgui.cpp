@@ -1,36 +1,41 @@
-// sgtc_vgui.cpp — StargateTC VGUI-less viewport + screen-status API.
+// sgtc_vgui.cpp — StargateTC viewport routing + screen-status API.
 //
 // Port of the TFC VGUI analogues the SGTC client.dll needs
 // (TeamFortressViewport team/class menus, ScorePanel, MOTD window,
-// SpectatorPanel) onto the hlsdk-xash3d VGUI-less base.
+// SpectatorPanel) onto the hlsdk base.
+//
+// ROUTING (ref MsgFunc_VGUIMenu @0x1004933b / ShowVGUIMenu @0x10047b39):
+//   The real TeamFortressViewport (gViewPort) owns the stock TFC screens —
+//   menu 2 team, 3 class, 4 map briefing, 5 MOTD, 6 class help, 9 spec help —
+//   and hosts the two SGTC-only panels: 10 briefing/objective
+//   (sgtc_vgui_panels.cpp CSgtcBriefingPanel) and 11 "Identifiez-vous"
+//   team+class select (CSgtcTeamClassPanel). This viewport forwards to it and
+//   only falls back to console stubs when there is no viewport (VGUI-less
+//   client, e.g. hlsdk-xash3d whose false_vgui has no Label/Button/ScrollPanel/
+//   TextPanel and no TeamFortressViewport at all).
 //
 // STATUS (stub vs live):
-//   Root/viewport panel ....... STUB  — false_vgui Panel draws nothing;
-//                                the real TFC viewport was a widget host.
-//   Team menu (Torri/Marine/  STUB→live — VGUI buttons are stubs; we print
-//     Goa'uld/Unas)                 jointeam cmds and show the team's slot.
-//   Class menu ................ STUB→live — 12 info/*.txt classes; server
-//                                uses ShowMenu/ValClass, so CHudMenu's live
-//                                text menu already picks it up.
-//   ScorePanel ................ STUB (container) + LIVE CHudScoreboard —
-//                                the xash scoreboard hooks ScoreInfo/
+//   Root/viewport panel ....... LIVE  — engine VGUI root host + paint hook;
+//                                the widget-less build keeps a drawing-less
+//                                Panel that only carries the protocol handlers.
+//   Team/class/menu 2-9 ...... LIVE  — delegated to the real viewport when it
+//                                exists, else console stub + CHudMenu fallback.
+//   Briefing (10) / team+class (11)  LIVE — SGTC panels via the viewport,
+//                                else console stub.
+//   ScorePanel ................ LIVE  — CHudScoreboard hooks ScoreInfo/
 //                                TeamInfo/TeamScore directly.
 //   MOTD / map briefing ....... LIVE  — CHudMOTD draws motd.txt text.
 //   SpectatorPanel ............ LIVE  — CHudSpectator + Spec_Mode titles.
 //   CommandMenu ............... STUB  — commandmenu.txt parsed only for
 //                                console echo; no CCommandMenu widgets.
-//   Server browser ............ STUB  — no browser on VGUI-less client.
+//   Server browser ............ STUB  — no browser on the SGTC client.
 //   Gate/DHD overlay .......... STUB  — no client-side VGUI screens for the
 //                                gate; DHD UI is world/model + ShowMenu.
 //
-// false_vgui has no Frame/Label/Button/TablePanel/TextImage, so widget
-// code is intentionally NOT ported — only the Panel-derived viewport,
-// the VGUIMenu/TeamNames/ValClass protocol handlers and the stub-vs-live
-// table are implemented here.
-//
 // NEW file — sgtc_* only, no stock edits.
 // Headers used: hud.h, cl_util.h, parsemsg.h, sgtc_vgui.h
-//               (-> VGUI_Panel.h, VGUI_App.h + false_vgui transitive set)
+//               (-> VGUI_Panel.h, VGUI_App.h + VGUI transitive set) and, when
+//               the tree ships the widget stack, vgui_TeamFortressViewport.h
 
 #include "hud.h"
 #include "cl_util.h"
@@ -38,8 +43,67 @@
 #include "sgtc_vgui.h"
 #include "sgtc_hud.h"
 
+// The real TFC viewport (gViewPort) only exists in the tree that ships the
+// widget stack — see SGTC_REAL_VGUI in sgtc_vgui.h.
+#ifdef SGTC_REAL_VGUI
+#include "vgui_TeamFortressViewport.h"
+#endif
+
 #include <string.h>
 #include <stdio.h>
+
+// ---------------------------------------------------------------------------
+// routing helpers — ref MsgFunc_VGUIMenu @0x1004933b / ShowVGUIMenu @0x10047b39
+// ---------------------------------------------------------------------------
+
+// Menu ids the stock TeamFortressViewport implements itself (ref ShowVGUIMenu
+// cases 2,3,4,5,6,9 → team, class, map briefing, MOTD, class help, spec help).
+static bool SgtcVgui_IsStockMenu( int menu )
+{
+	return menu == SGTC_MENU_TEAM || menu == SGTC_MENU_CLASS
+		|| menu == SGTC_MENU_MAPBRIEFING || menu == SGTC_MENU_INTRO
+		|| menu == SGTC_MENU_CLASSHELP || menu == SGTC_MENU_SPECHELP;
+}
+
+// Menu ids this port knows about: the stock TFC set (2..9) plus the SGTC-only
+// ids 10 (briefing), 11 (team+class), 12 (weapon loadout) and 60 (pack select).
+static bool SgtcVgui_IsKnownMenu( int menu )
+{
+	return ( menu >= SGTC_MENU_DEFAULT && menu <= SGTC_MENU_WPSEL )
+		|| menu == SGTC_MENU_PACKSEL;
+}
+
+// Hand a menu id to the real viewport. Returns true when it owns the id (even
+// if it decided not to show anything); false → caller uses the console stubs,
+// i.e. the VGUI-less client.
+static bool SgtcVgui_RouteToViewport( int menu )
+{
+#ifdef SGTC_REAL_VGUI
+	if ( !gViewPort )
+		return false;
+
+	if ( SgtcVgui_IsStockMenu( menu ) )
+	{
+		gViewPort->ShowVGUIMenu( menu );
+		return true;
+	}
+
+	switch ( menu )
+	{
+	case SGTC_MENU_BRIEFING:
+		return SgtcBriefing_ShowPanel() != NULL;
+	case SGTC_MENU_TEAMCLASS:
+		return SgtcTeamClass_ShowPanel() != NULL;
+	case SGTC_MENU_WPSEL:
+		return SgtcWeaponSel_ShowPanel() != NULL;
+	case SGTC_MENU_PACKSEL:
+		return SgtcPackSel_ShowPanel() != NULL;
+	default:
+		break;
+	}
+#endif
+	return false;
+}
 
 // ---------------------------------------------------------------------------
 // globals
@@ -86,14 +150,17 @@ void CSgtcViewport::paintBackground()
 }
 
 // ---------------------------------------------------------------------------
-// menu dispatch — stub widgets would need >200 extra vgui classes; on Xash
-// we surface the same screens through the live CHudMenu text menu and
-// console guidance instead of dead panels.
+// menu dispatch — the real viewport owns the stock TFC screens and hosts the
+// two SGTC-only panels; the console stubs below are the VGUI-less fallback.
 // ---------------------------------------------------------------------------
 
 void CSgtcViewport::ShowVGUIMenu( int menu )
 {
 	m_iCurrentMenu = menu;
+
+	// Ref ShowVGUIMenu @0x10047b39.
+	if ( SgtcVgui_RouteToViewport( menu ) )
+		return;
 
 	switch ( menu )
 	{
@@ -121,6 +188,25 @@ void CSgtcViewport::ShowVGUIMenu( int menu )
 	case SGTC_MENU_SPECHELP:
 		gEngfuncs.Con_Printf( "[sgtc] Help panel stubbed (VGUI-less).\n" );
 		break;
+	case SGTC_MENU_BRIEFING:
+		// Ref: briefing/objective window (FUN_1003f640) — needs the VGUI stack.
+		gEngfuncs.Con_Printf( "[sgtc] Briefing/objective window stubbed (VGUI-less); "
+			"objectives live in maps/<map>.txt.\n" );
+		break;
+	case SGTC_MENU_TEAMCLASS:
+		// Ref: "Identifiez-vous" team+class select (FUN_1002bec0).
+		gEngfuncs.Con_Printf( "[sgtc] Team/class select stubbed (VGUI-less); "
+			"use \"jointeam <n>\" / \"classe <n>\" / autopick / spectate.\n" );
+		break;
+	case SGTC_MENU_WPSEL:
+		// Ref: weapon loadout (FUN_100261c0, apply = "gond4h9wp <28 values>").
+		gEngfuncs.Con_Printf( "[sgtc] Weapon loadout stubbed (VGUI-less); "
+			"the server applies \"gond4h9wp <28 values>\" at spawn.\n" );
+		break;
+	case SGTC_MENU_PACKSEL:
+		// Ref: pack select (FUN_10029ea0).
+		gEngfuncs.Con_Printf( "[sgtc] Pack select stubbed (VGUI-less).\n" );
+		break;
 	default:
 		break;
 	}
@@ -128,6 +214,12 @@ void CSgtcViewport::ShowVGUIMenu( int menu )
 
 void CSgtcViewport::HideVGUIMenu()
 {
+#ifdef SGTC_REAL_VGUI
+	// Ref viewport vtable slot: remove every VGUI menu, which includes the SGTC
+	// panels hosted above (the server sends HideVGUI on round restart).
+	if ( gViewPort )
+		gViewPort->HideVGUIMenu();
+#endif
 	m_iCurrentMenu = SGTC_MENU_DEFAULT;
 }
 
@@ -141,13 +233,24 @@ int CSgtcViewport::MsgFunc_VGUIMenu( const char *pszName, int iSize, void *pbuf 
 
 	int menu = READ_BYTE();
 
-	if ( menu == SGTC_MENU_MAPBRIEFING )
+	// Stock TFC ids: the real viewport re-reads the message itself (and stores
+	// the map name for the briefing), so hand it the untouched buffer.
+	if ( SgtcVgui_IsStockMenu( menu ) )
 	{
-		// briefing carries the map name; consume it like the stock handler.
-		READ_STRING();
+#ifdef SGTC_REAL_VGUI
+		if ( gViewPort )
+			return gViewPort->MsgFunc_VGUIMenu( pszName, iSize, pbuf );
+#endif
+		// VGUI-less fallback: consume the briefing's map name like the stock
+		// handler does, then let ShowVGUIMenu print its stub.
+		if ( menu == SGTC_MENU_MAPBRIEFING )
+			READ_STRING();
 	}
 
-	if ( menu < SGTC_MENU_DEFAULT || menu > SGTC_MENU_SPECHELP )
+	// Known ids only: 1..12 (stock 2..9 + SGTC 10 briefing, 11 team+class,
+	// 12 weapon loadout) plus 60 (pack select). Unknown ids are dropped like the
+	// stock handler's default branch does.
+	if ( !SgtcVgui_IsKnownMenu( menu ) )
 		return 1;
 
 	ShowVGUIMenu( menu );
@@ -245,11 +348,27 @@ void Sgtc_JoinTeam( int team )
 
 const char *SgtcVgui_ScreenStatus( const char *screen )
 {
+#ifdef SGTC_REAL_VGUI
+	// With the real viewport up the stock TFC screens and the two SGTC panels
+	// are drawn by the widget stack (see SgtcVgui_RouteToViewport).
+	if ( gViewPort )
+	{
+		if ( !stricmp( screen, "team" ) || !stricmp( screen, "class" )
+			|| !stricmp( screen, "motd" ) || !stricmp( screen, "briefing" )
+			|| !stricmp( screen, "teamclass" ) || !stricmp( screen, "wpsel" )
+			|| !stricmp( screen, "packsel" ) )
+			return "live";
+	}
+#endif
 	if ( !stricmp( screen, "team" ) )		return "stub";	// VGUI buttons → jointeam console
 	if ( !stricmp( screen, "class" ) )		return "live";	// ShowMenu/CHudMenu text menu
 	if ( !stricmp( screen, "score" ) )		return "live";	// CHudScoreboard
 	if ( !stricmp( screen, "motd" ) )		return "live";	// CHudMOTD
 	if ( !stricmp( screen, "spectator" ) )	return "live";	// CHudSpectator
+	if ( !stricmp( screen, "briefing" ) )	return "stub";	// menu 10 — VGUI-only panel
+	if ( !stricmp( screen, "teamclass" ) )	return "stub";	// menu 11 — VGUI-only panel
+	if ( !stricmp( screen, "wpsel" ) )	return "stub";	// menu 12 — VGUI-only panel
+	if ( !stricmp( screen, "packsel" ) )	return "stub";	// menu 60 — VGUI-only panel
 	if ( !stricmp( screen, "commandmenu" ) )	return "stub";	// commandmenu.txt echo only
 	if ( !stricmp( screen, "serverbrowser" ) )return "stub";
 	if ( !stricmp( screen, "gate" ) )		return "stub";	// no client VGUI gate screens
@@ -262,6 +381,7 @@ void SgtcVgui_DumpStatus( void )
 {
 	static const char *screens[] = {
 		"team", "class", "score", "motd", "spectator", "progress",
+		"briefing", "teamclass", "wpsel", "packsel",
 		"commandmenu", "serverbrowser", "gate", NULL
 	};
 	gEngfuncs.Con_Printf( "[sgtc] VGUI screen status (live=draws in Xash, stub=false_vgui no-op):\n" );

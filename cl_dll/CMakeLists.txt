@@ -124,6 +124,7 @@ set (CLDLL_SOURCES
 	sgtc_protocol.cpp
 	sgtc_hud.cpp
 	sgtc_vgui.cpp
+	sgtc_vgui_panels.cpp
 	sgtc_env.cpp
 	sgtc_weapons_client.cpp
 )
