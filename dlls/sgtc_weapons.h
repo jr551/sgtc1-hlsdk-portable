@@ -237,6 +237,8 @@ private:
 	unsigned short m_usFire2;
 	BOOL m_bSgtcCloakOn;		// ref CReetou+0x204 cloak toggle
 	float m_flSgtcCloakTimer;	// ref CReetou+0x1fc cloak timer
+	void ThinkSearchInvisible( void );	// ref SearchInvisible @0x175 (m_pfnThink arm)
+	void ThinkGuardStub( void );	// ref guard stub @0x175
 };
 
 // Local bolt spawned by staff weapons (CGrenade child so no ODR clash

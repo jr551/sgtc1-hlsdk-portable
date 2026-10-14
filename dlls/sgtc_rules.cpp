@@ -8,10 +8,8 @@
 //
 // STOCK HOOK POINTS (report only — NO stock file is edited by this change):
 //   1. hlsdk-xash3d/dlls/gamerules.cpp:310 `InstallGameRules()` — add:
-//         const char *mode = CVAR_GET_STRING( "mp_gamemode" );
-//         CGameRules *sg = SGTC_InstallGameRules( mode );
-//         if( sg ) return sg;
-//     before the stock deathmatch/teamplay chain. Needs #include "sgtc_rules.h".
+//         SGTC_InstallGameRules( STRING( gpGlobals->mapname ) )
+//     which dispatches on the map-name prefix (never returns NULL).
 //   2. hlsdk-xash3d/dlls/player.cpp:191 `LinkUserMessages()` — add
 //     `SGTC_LinkUserMessages();` at the end (registers the gmsg* below).
 //   3. hlsdk-xash3d/dlls/player.cpp:2701 `EntSelectSpawnPoint()` — SGTC team
@@ -137,28 +135,62 @@ void SGTC_LinkUserMessages( void )
 	gmsgZatTouch = REG_USER_MSG( "ZatTouch", 0 );
 }
 
-// ---------------------------------------------------------------------------
-// Mode installer. mp_gamemode prefix chain from InstallGameRules disasm
-// (rodata 0x1d1ab0: "sg_" "sgi_" "ctp_" "un_" "inv_" "rep_").
+extern int g_teamplay;	// gamerules.cpp
+extern int sgtc_GameModeSet;	// sgtc_round.cpp (ref g_mapmode)
+
+// Mode installer. ref InstallGameRules @0x102e7a compares the MAP NAME
+// (STRING(gpGlobals->mapname)) against the prefix table, NOT mp_gamemode:
+//   sg_*->1 DM, sgi_*->2 DM, ctp_*->3 CP, un_*->5 Unas, inv_*->6 Invis,
+//   rep_*->7 Replicateur, else->8 CHalfLifeMultiplay (g_teamplay=0).
+// SGTC modes set g_teamplay=1. sgtc_GameModeSet mirrors ref g_mapmode.
 // ---------------------------------------------------------------------------
 #if !defined( _WIN32 ) && defined( __GNUC__ )
 __attribute__(( visibility( "default" ) ))
 #endif
-CGameRules *SGTC_InstallGameRules( const char *pszMode )
+CGameRules *SGTC_InstallGameRules( const char *pszMapName )
 {
-	if( !pszMode || !*pszMode )
-		return NULL;
-	if( !strncmp( pszMode, "sgi_", 4 ) || !strncmp( pszMode, "ctp_", 4 ) )
-		return new CStargateTeamCP;
-	if( !strncmp( pszMode, "sg_", 3 ) )
-		return new CStargateTeamDM;
-	if( !strncmp( pszMode, "un_", 3 ) )
-		return new CStargateUnas;
-	if( !strncmp( pszMode, "inv_", 4 ) )
-		return new CStargateInvis;
-	if( !strncmp( pszMode, "rep_", 4 ) )
-		return new CStargateReplicateur;
-	return NULL;
+	if( pszMapName && *pszMapName )
+	{
+		if( !strncmp( pszMapName, "sg_", 3 ) )
+		{
+			sgtc_GameModeSet = 1;
+			g_teamplay = 1;
+			return new CStargateTeamDM;
+		}
+		if( !strncmp( pszMapName, "sgi_", 4 ) )
+		{
+			sgtc_GameModeSet = 2;
+			g_teamplay = 1;
+			return new CStargateTeamDM;
+		}
+		if( !strncmp( pszMapName, "ctp_", 4 ) )
+		{
+			sgtc_GameModeSet = 3;
+			g_teamplay = 1;
+			return new CStargateTeamCP;
+		}
+		if( !strncmp( pszMapName, "un_", 3 ) )
+		{
+			sgtc_GameModeSet = 5;
+			g_teamplay = 1;
+			return new CStargateUnas;
+		}
+		if( !strncmp( pszMapName, "inv_", 4 ) )
+		{
+			sgtc_GameModeSet = 6;
+			g_teamplay = 1;
+			return new CStargateInvis;
+		}
+		if( !strncmp( pszMapName, "rep_", 4 ) )
+		{
+			sgtc_GameModeSet = 7;
+			g_teamplay = 1;
+			return new CStargateReplicateur;
+		}
+	}
+	sgtc_GameModeSet = 8;
+	g_teamplay = 0;
+	return new CHalfLifeMultiplay;
 }
 
 extern cvar_t timeleft, fragsleft;

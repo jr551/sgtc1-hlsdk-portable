@@ -102,11 +102,24 @@ void CReetou::SecondaryAttack( void )	// ref CReetou::SecondaryAttack @0x162680
 	m_flSgtcCloakTimer = gpGlobals->time + 1.0f;	// ref this+0x1fc
 	m_flNextSecondaryAttack = UTIL_WeaponTimeBase() + 1.0f;	// ref this+0x1d4
 	m_flNextPrimaryAttack = UTIL_WeaponTimeBase() + 3.0f;	// ref this+0x1d8
-	if( !m_bSgtcCloakOn )
-		m_pPlayer->m_flSgtcSnagTimer = 0.0f;	// ref clears SearchInvisible arming slot
-	else
-		m_pPlayer->m_flSgtcSnagTimer = gpGlobals->time + 0.3f;	// ref schedules SearchInvisible path
+	// ref writes this+0x134 (m_pfnThink): cloak-off arms a guard stub at
+	// 0x175, cloak-on arms SearchInvisible. Ported via a local thunk.
+	SetThink( m_bSgtcCloakOn ? &CReetou::ThinkSearchInvisible : &CReetou::ThinkGuardStub );
 	pev->nextthink = gpGlobals->time + 0.3f;
+}
+
+void CReetou::ThinkSearchInvisible( void )
+{
+	// ref SearchInvisible @0x175 (armed from SecondaryAttack):
+	// schedule the snag on the owner, then re-arm the guard stub.
+	m_pPlayer->m_flSgtcSnagTimer = gpGlobals->time + 0.3f;
+	SetThink( &CReetou::ThinkGuardStub );
+}
+
+void CReetou::ThinkGuardStub( void )
+{
+	// ref stub @0x175: single-shot guard; clears the think.
+	SetThink( NULL );
 }
 
 SGTC_NO_RELOAD( CReetou )

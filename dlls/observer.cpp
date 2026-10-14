@@ -26,6 +26,7 @@
 extern int gmsgCurWeapon;
 extern int gmsgSetFOV;
 extern int gmsgTeamInfo;
+extern int gmsgSpectator;	// sgtc_rules.cpp
          
 extern int g_teamplay;
 
@@ -274,20 +275,24 @@ void CBasePlayer::Observer_SetMode( int iMode )
 
 void CBasePlayer::StopObserver()
 {
-	// Turn off spectator
-	pev->iuser1 = pev->iuser2 = 0;
-	m_iHideHUD = 0;
+	// ref CBasePlayer::StopObserver @0x138564: clear spectator keys, send
+	// Spectator-off, drop the target, set the +0xa3d flag. It does NOT
+	// respawn — the old stock body called Spawn() which re-entered
+	// g_pGameRules->PlayerSpawn -> StopObserver ad infinitum.
+	if( !IsObserver() )
+		return;
+	if( pev->iuser1 == 0 && pev->iuser2 == 0 )
+		return;
 
-	GetClassPtr( (CBasePlayer *)pev )->Spawn();
-	g_pGameRules->SetDefaultPlayerTeam( this );
-	pev->nextthink = -1;
-
-	// Update Team Status
-	MESSAGE_BEGIN( MSG_ALL, gmsgTeamInfo );
-		WRITE_BYTE( ENTINDEX( edict() ) ); // index number of primary entity
-	if( g_teamplay )
-		WRITE_STRING( TeamID() );
-	else
-		WRITE_STRING( "Players" );
+	MESSAGE_BEGIN( MSG_ALL, gmsgSpectator );
+		WRITE_BYTE( ENTINDEX( edict() ) );
+		WRITE_BYTE( 0 );
 	MESSAGE_END();
+
+	pev->iuser2 = 0;
+	pev->iuser1 = pev->iuser2;
+	m_hObserverTarget = NULL;
+	m_bSgtcPadA3D = 1;
 }
+
+

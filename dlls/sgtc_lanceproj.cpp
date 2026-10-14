@@ -136,6 +136,8 @@ void CSGTCProjBase::Accelere( void )
 // same skeleton, per-class debris set + TE sprite).
 void CSGTCProjBase::Exploder( TraceResult *pTrace, int bitsDamageType )
 {
+	pev->model = iStringNull;	// ref @0x10e508 zeroes pev+0xb8 (model)
+	pev->solid = SOLID_NOT;
 	pev->takedamage = DAMAGE_NO;
 
 	if( pTrace->flFraction != 1.0 )
@@ -192,7 +194,9 @@ void CSGTCProjBase::Exploder( TraceResult *pTrace, int bitsDamageType )
 	EMIT_SOUND( ENT( pev ), CHAN_ITEM,
 		DebrisSounds()[RANDOM_LONG( 0, 2 )], 0.8f, 0.9f );
 
-	pev->nextthink = gpGlobals->time + 0.3;
+	pev->effects |= EF_NODRAW;	// ref @0x10e508 tail: |0x80 then g_vecZero
+	pev->velocity = g_vecZero;
+	pev->nextthink = gpGlobals->time + 0.3f;
 	SetThink( &CBaseEntity::SUB_Remove );
 }
 
@@ -244,10 +248,11 @@ void CSGTCProjBase::EffectThink( void )
 	UTIL_TraceLine( vecStart, vecStart + gpGlobals->v_forward * 50.0f,
 		dont_ignore_monsters, ENT( pev ), &tr );
 
+	// ref @0x10eb9c: only touch when the trace hit closer than 50u lead
+	// (vecEndPos vs origin+v_forward*50 via Endo_distance3d).
 	CBaseEntity *pHit = CBaseEntity::Instance( tr.pHit );
-	if( pHit &&
-		SGTC_Endo_distance3d( vecStart + gpGlobals->v_forward * 50.0f,
-			tr.vecEndPos ) > 0 )
+	if( pHit && SGTC_Endo_distance3d( tr.vecEndPos,
+		vecStart + gpGlobals->v_forward * 50.0f ) < 50 )
 	{
 		Touch( pHit );
 	}
@@ -262,11 +267,15 @@ void CSGTCProjBase::EffectThink( void )
 			continue;
 
 		float dz = pev->origin.z - pEnt->pev->origin.z;	// bolt.z - emitter.z
-		if( ( dz > 100.0f || -dz > 200.0f ) && !m_fAttendExplosion )
+		// ref @0x10ec63: emitter above bolt by >200 or bolt above emitter
+		// by >100; then explode and set the EMITTER's nextthink = 1.0.
+		if( ( pEnt->pev->origin.z - pev->origin.z > 200.0f ||
+				dz > 100.0f ) && !m_fAttendExplosion )
 		{
 			m_fAttendExplosion = TRUE;
+			m_fExplosionProtection = TRUE;
 			pEnt->pev->nextthink = 1.0f;
-			Exploder( &tr, DMG_ALWAYSGIB );
+			Exploder( &tr, DMG_NEVERGIB );
 		}
 	}
 
@@ -325,6 +334,7 @@ CLanceProj *CLanceProj::CreateTourrelleProj( Vector vecOrigin, Vector vecAngles 
 CLanceProj *CLanceProj::CreateLanceProj( Vector vecStart, Vector vecVel,
 	Vector vecTarget, CBaseEntity *pOwner, CLanceJaffa *pWeapon )
 {
+	CBasePlayer *pPlayer = pWeapon ? pWeapon->m_pPlayer : NULL;
 	CLanceProj *pProj = GetClassPtr( (CLanceProj *)NULL );
 
 	UTIL_SetOrigin( pProj->pev, vecStart );
@@ -340,8 +350,11 @@ CLanceProj *CLanceProj::CreateLanceProj( Vector vecStart, Vector vecVel,
 	pProj->m_vecDir = vecVel;
 	pProj->pev->sequence = 4;
 	pProj->pev->framerate = 0.0f;
-	if( pOwner && pOwner->pev->deadflag != DEAD_NO )
+	// ref @0x110358 tail: bolt arming window -> m_fAttendExplosion (this+0xd5),
+	// then proj->pev->v_angle := player->pev->v_angle (v_angle copy).
+	if( pPlayer && gpGlobals->time < pPlayer->m_flTalentCooldown )
 		pProj->m_fAttendExplosion = TRUE;
+	pProj->pev->v_angle = pPlayer->pev->v_angle;
 	return pProj;
 }
 
@@ -491,6 +504,18 @@ void CReetouProj::EffectThink( void )
 		m_flNarcoNext = gpGlobals->time + 0.1;
 	}
 
+	// ref @0x152143: end-of-life — owner link + explode, 0.008s re-think.
+	if( gpGlobals->time < m_flDie && !m_fAttendExplosion )
+	{
+		if( pev->owner )
+			VARS( pev->owner )->nextthink = 1.0f;
+		TraceResult tr;
+		UTIL_MakeVectors( pev->angles );
+		UTIL_TraceLine( pev->origin, pev->origin + gpGlobals->v_forward,
+			dont_ignore_monsters, ENT( pev ), &tr );
+		Explodera( &tr, DMG_NEVERGIB );
+	}
+
 	pev->nextthink = gpGlobals->time + 0.008;
 }
 
@@ -506,7 +531,12 @@ CReetouProj *CReetouProj::CreateReetouProj( Vector vecStart, Vector vecAngles,
 	pProj->m_pfnUse = NULL;
 	pProj->m_pWeapon = (CBaseEntity *)pWeapon;
 	pProj->pev->owner = pOwner ? pOwner->edict() : NULL;
+	if( pOwner && pOwner->IsPlayer() )
+		pProj->m_pOwner = pOwner;	// ref sets this+0x3f0 only when IsPlayer()
 	pProj->pev->velocity = vecAngles * 1600.0f;
+	// ref @0x162e32 tail: owner arming window -> m_fAttendExplosion.
+	if( pOwner && gpGlobals->time < pOwner->pev->fuser4 )
+		pProj->m_fAttendExplosion = TRUE;
 	pProj->pev->nextthink = gpGlobals->time + 0.15;
 	return pProj;
 }

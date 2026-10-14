@@ -53,7 +53,9 @@ enum SGTCWeaponId
 	SGTC_WPN_NARCOGRENADE = 28,
 	SGTC_WPN_MUSTARDGRENADE = 29,
 	SGTC_WPN_GOAREGEN = 30, // CMedicxgoa (goauld regen)
-	SGTC_WPN_9MMAR = 31, // link weapon_9mmAR (autorifle)
+	// weapon_9mmAR aliases weapon_mp5's CMP5 class (both link thunks call
+	// GetClassPtr<CMP5>) and its ItemInfo reports iId = 4, so there is no
+	// separate 9mmAR id; use SGTC_WPN_MP5 for that link.
 };
 
 // One row per client-linkable weapon (31 links in client.dll; weapon_s is
@@ -66,14 +68,17 @@ struct SGTCClientWeaponInfo
 	int iPos; // bucket position (GetItemInfo iPosition)
 	const char *pszAmmo1; // primary ammo registry name
 	int iMaxAmmo1;
+	const char *pszAmmo2; // secondary ammo registry name (only weapon_invis uses it)
+	int iMaxAmmo2;
 	int iMaxClip;
 	const char *pszViewModel; // models/v_*.mdl
 	const char *pszWorldModel; // models/p_*.mdl (w_ in table below)
 	const char *pszEvent; // events/*.sc (NULL = silent/melee)
 };
 
-// Full table, in link-name order. Ammo names pending server-peer
-// confirmation where marked TBD — prediction compiles without them
+// Full table, in link-name order. All ItemInfo fields are REA-verified
+// against ref/stc_i386.so GetItemInfo decompiles (ammo names are the exact
+// .rodata registry strings); prediction compiles without them
 // (Deploy/Holster/Idle only); fire-effect strings come from events.
 extern const SGTCClientWeaponInfo g_SGTCClientWeapons[];
 extern const int g_SGTCClientWeaponCount;

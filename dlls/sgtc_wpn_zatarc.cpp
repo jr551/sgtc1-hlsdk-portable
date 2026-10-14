@@ -113,7 +113,7 @@ void CZatarc::SecondaryAttack( void )	// ref CZatarc::SecondaryAttack @0x1c75d4 
 		m_pPlayer->pev->fov = 50.0f;
 		m_iSgtcZoomStage = 1;
 	}
-	pev->nextthink = UTIL_WeaponTimeBase() + 0.1f;
+	pev->nextthink = gpGlobals->time + 0.1f;	// ref reads *gpGlobals, not WTB
 	m_flNextPrimaryAttack = UTIL_WeaponTimeBase() + 0.5f;
 }
 

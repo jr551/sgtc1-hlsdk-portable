@@ -326,35 +326,11 @@ CGameRules *InstallGameRules( void )
 	}
 	else
 	{
-		// StargateTC: ref InstallGameRules reads mp_gamemode and dispatches on
-		// the sg_/sgi_/ctp_/un_/inv_/rep_ prefix (rodata 0x1d1ab0). Non-matching
-		// values fall through to the stock teamplay/deathmatch path.
-		CGameRules *pSGTC = SGTC_InstallGameRules( CVAR_GET_STRING( "mp_gamemode" ) );
-		if( pSGTC )
-			return pSGTC;
-
-		if( teamplay.value > 0 )
-		{
-			// teamplay
-			g_teamplay = 1;
-			return new CHalfLifeTeamplay;
-		}
-		if( sv_busters.value > 0 )
-		{
-			g_teamplay = 0;
-			return new CMultiplayBusters;
-		}
-		if( (int)gpGlobals->deathmatch == 1 )
-		{
-			// vanilla deathmatch
-			g_teamplay = 0;
-			return new CHalfLifeMultiplay;
-		}
-		else
-		{
-			// vanilla deathmatch??
-			g_teamplay = 0;
-			return new CHalfLifeMultiplay;
-		}
+		// StargateTC: ref InstallGameRules @0x102e7a compares the MAP NAME
+		// (STRING(gpGlobals->mapname)) against sg_/sgi_/ctp_/un_/inv_/rep_
+		// prefixes and always returns a rules object — CHalfLifeMultiplay
+		// for unmatched names (g_mapmode=8, g_teamplay=0). It does NOT
+		// read mp_gamemode, teamplay or sv_busters.
+		return SGTC_InstallGameRules( STRING( gpGlobals->mapname ) );
 	}
 }
