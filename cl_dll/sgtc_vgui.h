@@ -114,6 +114,23 @@ CMenuPanel *SgtcTeamClass_ShowPanel( void );		// VGUIMenu 11
 CMenuPanel *SgtcWeaponSel_ShowPanel( void );		// VGUIMenu 12
 CMenuPanel *SgtcPackSel_ShowPanel( void );		// VGUIMenu 60
 
+// --- weapon-selection economy state (ref client.dll globals) ----------------
+// The server feeds the menu-12 economy through two usermessages:
+//   TeamNames  : BYTE num_teams + STRING names + 28 BYTE costs  → DAT_100dd974
+//                (handler FUN_1004910b @0x1004910b, READ_BYTE ×28)
+//   Progress   : BYTE nuke + BYTE budget + 28 BYTE slot states + BYTE reset
+//                → DAT_100ddad4 / DAT_100dd9e4 / DAT_100ddad8
+//                (handler FUN_10073faa @0x10073faa)
+//   Armor      : SHORT armor + BYTE mode → DAT_100f225c (FUN_10073e85)
+// These are the exact values the ref's CSgtcWeaponSelPanel::Update/Reset read.
+void SgtcWepSel_SetCosts( const unsigned char *pCosts );	// 28 bytes (TeamNames tail)
+void SgtcWepSel_SetProgress( int iBudget, const unsigned char *pStates, int iReset );	// Progress
+void SgtcWepSel_SetArmorMode( int iMode );			// Armor (DAT_100f225c)
+void SgtcWepSel_Refresh( void );				// re-open/refresh the panel if alive
+// Pack preset table producer (ref FUN_1002b15b): team × class × pack → slots.
+// Returns the number of slot indices written into piSlots (max 5).
+int SgtcPack_GetSlots( int iTeam, int iClass, int iPack, int *piSlots );
+
 // Create + parent to the engine root panel (no-op when the engine has no
 // VGUI root, which is the normal Xash case). Call from HUD_VidInit.
 void SgtcVgui_AttachToRoot( void );

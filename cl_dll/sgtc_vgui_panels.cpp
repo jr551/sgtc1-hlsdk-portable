@@ -131,6 +131,78 @@ static void SgtcPanels_ShowMenu( CMenuPanel *pNewMenu, int iMenu )
 }
 
 //============================================================================
+// Weapon-selection economy state — exact port of the ref client.dll globals
+// the menu-12 panel reads (all BSS in the ref, filled by two usermessages):
+//   DAT_100dd974[28]  per-slot cost       (TeamNames tail, 28 BYTE reads)
+//   DAT_100ddad4      budget              (Progress byte 2)
+//   DAT_100dd9e4[28]  per-slot state      (Progress bytes 3..30; 0/1/2)
+//   DAT_100ddad8      reset-request flag  (Progress last byte)
+//   DAT_100dda5c[28]  selection flags     (0 free, 1 selected, 2 blocked)
+//   DAT_100ddad0      used points, DAT_100dda58 primaries, DAT_100dda54 specials
+//   DAT_100f225c      armor mode byte     (Armor message; gates slots 0/1)
+//============================================================================
+
+#define SGTC_WEP_SLOTS	28
+#define SGTC_WEP_PRIM	14	// slots 0..13 use DAT_100dd974
+#define SGTC_WEP_MAX_PRIM	3	// ref: DAT_100dda58 < 3
+#define SGTC_WEP_MAX_SPECIAL	2	// ref: DAT_100dda54 < 2 (c4 + gas grenades)
+
+static int s_iWepCost[SGTC_WEP_SLOTS];
+static int s_iWepState[SGTC_WEP_SLOTS];
+static int s_iWepFlag[SGTC_WEP_SLOTS];
+static int s_iWepBudget;
+static int s_iWepUsed;
+static int s_iWepPrimCount;
+static int s_iWepSpecialCount;
+static int s_iWepResetFlag;
+static int s_iArmorMode;
+
+// ref: the special-count group = c4 (slot 20) plus the four gas grenades
+// (slots 23..26) — Update secondary loop `(0x16 < i+0xe && i+0xe < 0x1b) || i == 6`.
+static bool SgtcWep_IsSpecialSlot( int iSlot )
+{
+	return iSlot == 20 || ( iSlot >= 23 && iSlot <= 26 );
+}
+
+// Forward decls — the panels below implement these.
+static void SgtcWepSel_ApplyServerState( void );
+
+void SgtcWepSel_SetCosts( const unsigned char *pCosts )
+{
+	if ( !pCosts )
+		return;
+	for ( int i = 0; i < SGTC_WEP_SLOTS; i++ )
+		s_iWepCost[i] = pCosts[i];	// ref: READ_BYTE per slot
+	SgtcWepSel_Refresh();
+}
+
+void SgtcWepSel_SetProgress( int iBudget, const unsigned char *pStates, int iReset )
+{
+	s_iWepBudget = iBudget;			// ref DAT_100ddad4
+	if ( pStates )
+	{
+		for ( int i = 0; i < SGTC_WEP_SLOTS; i++ )
+			s_iWepState[i] = pStates[i];	// ref DAT_100dd9e4
+	}
+	s_iWepResetFlag = iReset;		// ref DAT_100ddad8
+	SgtcWepSel_Refresh();
+}
+
+void SgtcWepSel_SetArmorMode( int iMode )
+{
+	s_iArmorMode = iMode;			// ref DAT_100f225c
+}
+
+void SgtcWepSel_Refresh( void )
+{
+	// ref FUN_1004910b calls vtable+0x210 (Update) on the three SGTC panels;
+	// FUN_10028323/FUN_1002a7a7 honour DAT_100ddad8 by running Reset first.
+	if ( !gViewPort )
+		return;
+	SgtcWepSel_ApplyServerState();
+}
+
+//============================================================================
 // Menu 10 — briefing/objective window (ref FUN_1003f640 / FUN_100404a0)
 //============================================================================
 class CSgtcBriefingPanel : public CMenuPanel
@@ -166,19 +238,21 @@ CSgtcBriefingPanel::CSgtcBriefingPanel( int iTrans, int iRemoveMe, int x, int y,
 
 	// Background TextPanel + LineBorder (ref +0xf8: 0x15,0x15, W-0x2a, H-0x3c)
 	TextPanel *pBackground = new TextPanel( "", XRES( 21 ), YRES( 21 ),
-		ScreenWidth - XRES( 42 ), ScreenHeight - YRES( 36 ) );
+		ScreenWidth - XRES( 42 ), ScreenHeight - YRES( 60 ) );
 	pBackground->setParent( this );
 	pBackground->setBorder( new LineBorder( Color( 255 * 0.7, 170 * 0.7, 0, 0 ) ) );
 
-	// Inner window (ref +0xdc) with its own LineBorder
-	m_pWindow = new CTransparentPanel( 255, XRES( 42 ), YRES( 42 ),
-		ScreenWidth - XRES( 84 ), ScreenHeight - YRES( 84 ) );
+	// Inner window (ref +0xdc) with its own LineBorder — ctor asm @0x1003f855:
+	// X(40), Y(40)+0x5a, X(560), Y(0x1009be28=360)-0x32.
+	m_pWindow = new CTransparentPanel( 255, XRES( 40 ), YRES( 40 ) + 90,
+		XRES( 560 ), YRES( 360 ) - 50 );
 	m_pWindow->setParent( this );
 	m_pWindow->setBorder( new LineBorder( Color( 255 * 0.7, 170 * 0.7, 0, 0 ) ) );
 
 	// Title (ref +0xec, Title Font, ScreenWidth/2-200 @0x23; the ref passes the
-	// literal string "title" — kept verbatim)
-	m_pTitle = new Label( "", ScreenWidth / 2 - XRES( 200 ), YRES( 35 ) );
+	// literal string "title" — kept verbatim). The x/y are the ref's raw
+	// ScreenWidth/2-0xc8 and literal 0x23 (35), not resolution-scaled.
+	m_pTitle = new Label( "", ScreenWidth / 2 - 200, 35 );
 	m_pTitle->setParent( m_pWindow );
 	m_pTitle->setFont( pSchemes->getFont( hTitleScheme ) );
 	pSchemes->getFgColor( hTitleScheme, r, g, b, a );
@@ -196,14 +270,14 @@ CSgtcBriefingPanel::CSgtcBriefingPanel( int iTrans, int iRemoveMe, int x, int y,
 	// fg 0x55,0x73,0xb9, bg black, content alignment 3. In the SDK enum the mod
 	// was built against that value is Label::a_west (a_northwest=0, a_north,
 	// a_northeast, a_west) — not centred, contrary to the port spec's note.
-	m_pServerName = new Label( "", XRES( 42 ), YRES( 62 ) );
+	m_pServerName = new Label( "", XRES( 16 ), YRES( 16 ) - 10 );
 	m_pServerName->setParent( m_pWindow );
 	m_pServerName->setFont( pSchemes->getFont( hTitleScheme ) );
 	m_pServerName->setFgColor( 0x55, 0x73, 0xb9, 0 );
 	m_pServerName->setBgColor( 0, 0, 0, 0xff );
 	m_pServerName->setContentAlignment( vgui::Label::a_west );
 
-	m_pMapName = new Label( "", XRES( 42 ), YRES( 82 ) );
+	m_pMapName = new Label( "", XRES( 16 ), YRES( 16 ) + 40 );
 	m_pMapName->setParent( m_pWindow );
 	m_pMapName->setFont( pSchemes->getFont( hTitleScheme ) );
 	m_pMapName->setFgColor( 0x55, 0x73, 0xb9, 0 );
@@ -215,23 +289,22 @@ CSgtcBriefingPanel::CSgtcBriefingPanel( int iTrans, int iRemoveMe, int x, int y,
 	// "#objectif_manquant" key, exactly as the ref sets it
 	// (FUN_1007ad9c(s__objectif_manquant_100b4cbc)).
 	//
-	// Ref geometry (FUN_1003f640): the TextPanel is built with the *scroll
-	// panel's* own size and a fixed 0x2d (45 px) y offset inside the scroll
-	// client, and is never resized afterwards. The client is therefore larger
-	// than the client clip on both axes, so ScrollPanel's auto-visible mode
-	// shows BOTH scrollbars at runtime — the orig panel shows the vertical bar
-	// on the right and the horizontal bar at the bottom of the text area, even
-	// though the ctor calls setScrollBarVisible(0,0) (ScrollPanel slot +0x1fc =
-	// setScrollBarVisible; Panel has 127 virtuals, so +0x1fc is ScrollPanel's
-	// first own slot, ahead of setScrollBarAutoVisible at +0x200).
-	const int iScrollWide = ScreenWidth - XRES( 84 );
-	const int iScrollTall = ScreenHeight - YRES( 190 );
+	// Ref geometry (FUN_1003f640 asm @0x1003fe00..0x1003ff69):
+	//   scroll  = ( X(16), Y(48)+0x2d, X(0x1009be24=560)-2*X(16), Y(0x1009be20=296)-0x5a )
+	//   text    = ( 0, 0x2d, X(560)-X(16), Y(296)-0x5a )
+	// The client TextPanel is larger than the client clip on both axes, so
+	// ScrollPanel's auto-visible mode shows BOTH scrollbars at runtime — the
+	// orig panel shows the vertical bar on the right and the horizontal bar at
+	// the bottom of the text area, even though the ctor calls
+	// setScrollBarVisible(0,0).
+	const int iScrollWide = XRES( 560 ) - 2 * XRES( 16 );
+	const int iScrollTall = YRES( 296 ) - 90;
 
-	m_pScrollPanel = new CTFScrollPanel( XRES( 42 ), YRES( 102 ), iScrollWide, iScrollTall );
+	m_pScrollPanel = new CTFScrollPanel( XRES( 16 ), YRES( 48 ) + 45, iScrollWide, iScrollTall );
 	m_pScrollPanel->setParent( m_pWindow );
 	m_pScrollPanel->setScrollBarVisible( false, false );
 
-	m_pBriefing = new TextPanel( "", 0, 45, iScrollWide, iScrollTall );
+	m_pBriefing = new TextPanel( "", 0, 45, XRES( 560 ) - XRES( 16 ), YRES( 296 ) - 90 );
 	m_pBriefing->setParent( m_pScrollPanel->getClient() );
 	m_pBriefing->setFont( pSchemes->getFont( hBriefingText ) );
 	pSchemes->getFgColor( hBriefingText, r, g, b, a );
@@ -240,9 +313,27 @@ CSgtcBriefingPanel::CSgtcBriefingPanel( int iTrans, int iRemoveMe, int x, int y,
 	m_pBriefing->setBgColor( r, g, b, a );
 	m_pBriefing->setText( gHUD.m_TextMessage.BufferedLocaliseTextString( "#objectif_manquant" ) );
 
-	// OK button (ref +0xd4, localised "#Ok", close handler id 0xb)
+	// OK button (ref +0xd4, localised "#Ok", close handler id 0xb). The ref
+	// builds two variants (asm @0x100400b5): W < 0x400 (low-res) uses
+	// x=X(320)-X(62), y=H-Y(40)-Y(12)+5, w=X(124), h=Y(24)-10; the wide variant
+	// uses y=H-Y(40)-Y(12), h=Y(24) with the same x/w.
+	const int iOkX = XRES( 320 ) - XRES( 62 );
+	const int iOkW = XRES( 124 );
+	int iOkY;
+	int iOkH;
+	if ( ScreenWidth < 0x400 )
+	{
+		iOkY = ScreenHeight - YRES( 40 ) - YRES( 12 ) + 5;
+		iOkH = YRES( 24 ) - 10;
+	}
+	else
+	{
+		iOkY = ScreenHeight - YRES( 40 ) - YRES( 12 );
+		iOkH = YRES( 24 );
+	}
+
 	m_pOKButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Ok" ),
-		XRES( 42 ), ScreenHeight - YRES( 72 ), CMENU_SIZE_X, BUTTON_SIZE_Y );
+		iOkX, iOkY, iOkW, iOkH );
 	m_pOKButton->setParent( this );
 	m_pOKButton->addActionSignal( new CMenuHandler_TextWindow( HIDE_TEXTWINDOW ) );
 
@@ -442,8 +533,15 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 	SchemeHandle_t hBriefingText = pSchemes->getSchemeHandle( "Briefing Text" );
 	int r, g, b, a;
 
-	// Title (ref +0x1b0, literal French string, not localised)
-	Label *pTitle = new Label( "", XRES( 40 ), YRES( 20 ) );
+	// Background (ref +0x110: TextPanel 0x15,0x15, W-0x2a, H-0x15 + border)
+	TextPanel *pBackground = new TextPanel( "", XRES( 21 ), YRES( 21 ),
+		ScreenWidth - XRES( 42 ), ScreenHeight - YRES( 21 ) );
+	pBackground->setParent( this );
+	pBackground->setBorder( new LineBorder( Color( 255 * 0.7, 170 * 0.7, 0, 0 ) ) );
+
+	// Title (ref +0x1b0, literal French string, not localised) — ctor asm
+	// @0x1002bfa3: Label(0,0, X(0x100974e0=640), Y(0x100974e8=21)).
+	Label *pTitle = new Label( "", 0, 0, XRES( 640 ), YRES( 21 ) );
 	pTitle->setParent( this );
 	pTitle->setFont( pSchemes->getFont( hTitleScheme ) );
 	pSchemes->getFgColor( hTitleScheme, r, g, b, a );
@@ -452,8 +550,13 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 	pTitle->setBgColor( r, g, b, a );
 	pTitle->setText( "%s", "Identifiez-vous" );
 
-	const int iWindowWide = ( ScreenWidth - XRES( 104 ) ) / 2;
-	const int iWindowTall = ScreenHeight - YRES( 156 );
+	// Ref column geometry (asm @0x1002c260..0x1002c4f3):
+	//   Torri window  = TextPanel(255, X(21),  Y(105), X(210), Y(241))
+	//   Goauld window = TextPanel(255, X(409), Y(105), X(210), Y(241))
+	// (constants 0x100974e8=21, 0x10097f7c=105, 0x10097f80=210, 0x10097f84=241,
+	//  0x10097f78=409)
+	const int iWindowWide = XRES( 210 );
+	const int iWindowTall = YRES( 241 );
 	const int iClassWide = XRES( 48 );
 	char *pfile = NULL;
 
@@ -461,9 +564,9 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 	// its team header label, its team info panel and its 5 class cells.
 	for ( int iTeam = 0; iTeam < SGTC_TEAMCLASS_TEAMS; iTeam++ )
 	{
-		const int iWindowX = XRES( 40 ) + iTeam * ( iWindowWide + XRES( 24 ) );
+		const int iWindowX = ( iTeam == 0 ) ? XRES( 21 ) : XRES( 409 );
 
-		m_pTeamWindow[iTeam] = new CTransparentPanel( 255, iWindowX, YRES( 48 ), iWindowWide, iWindowTall );
+		m_pTeamWindow[iTeam] = new CTransparentPanel( 255, iWindowX, YRES( 105 ), iWindowWide, iWindowTall );
 		m_pTeamWindow[iTeam]->setParent( this );
 		m_pTeamWindow[iTeam]->setBorder( new LineBorder( Color( 255 * 0.7, 170 * 0.7, 0, 0 ) ) );
 
@@ -584,9 +687,14 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 	m_pSpecButton->setParent( this );
 	m_pSpecButton->addActionSignal( new CMenuHandler_StringCommand( "spectate", 1 ) );
 
-	// Footer panel (ref +0x17c info_equipe.txt, fallback literal)
+	// Footer panel (ref +0x17c info_equipe.txt, fallback literal).
+	// Ref ctor asm @0x1002cd1f builds it as TextPanel(0, 0, X(640)-2*X(21),
+	// Y(0x10097f74=76)+Y(10)) and parents it to the container at panel+0x144,
+	// which the port does not have — with `this` as the parent the ref (0,0)
+	// origin lands on the title, so the size is taken from the ref and the
+	// origin kept at the previously verified bottom-of-panel position.
 	m_pFooter = new TextPanel( "", XRES( 40 ), ScreenHeight - YRES( 104 ),
-		ScreenWidth - XRES( 80 ), YRES( 40 ) );
+		ScreenWidth - 2 * XRES( 21 ), YRES( 76 ) + YRES( 10 ) );
 	m_pFooter->setParent( this );
 	m_pFooter->setFont( pSchemes->getFont( hBriefingText ) );
 	pSchemes->getFgColor( hBriefingText, r, g, b, a );
@@ -742,6 +850,10 @@ public:
 	virtual void Reset( void );
 	virtual void SetActiveInfo( int iInput );	// hovered slot (0..27)
 
+	// ref FUN_10029888 + DAT_100ddad8 gate: restore the selection from the
+	// server's 28 per-slot state bytes (Progress message).
+	void ApplyServerState( void );
+
 	void ToggleSlot( int iSlot );			// click: select / deselect
 	int SelectedSlotCount( void );
 	int IsSlotSelected( int iSlot ) { return ( iSlot >= 0 && iSlot < SGTC_WPSEL_SLOTS ) ? m_iSelected[iSlot] : 0; }
@@ -754,6 +866,7 @@ private:
 	CTransparentPanel *m_pWindow;
 	TextPanel *m_pInfo;
 	CommandButton *m_pSlotButton[SGTC_WPSEL_SLOTS];
+	TextPanel *m_pSlotCost[SGTC_WPSEL_SLOTS];	// ref cost labels (+0x270 / +0x2a8)
 	TextPanel *m_pCounter[3];			// #Total / #Used / #Free
 	CommandButton *m_pCancelButton;
 	CommandButton *m_pResetButton;
@@ -886,6 +999,15 @@ CSgtcWeaponSelPanel::CSgtcWeaponSelPanel( int iTrans, int iRemoveMe, int x, int 
 		m_pSlotButton[iSlot]->addActionSignal( new CSgtcHandler_SlotClick( this, iSlot ) );
 		m_pSlotButton[iSlot]->addInputSignal( new CSgtcHandler_SlotOver( this, iSlot ) );
 
+		// Per-slot cost label (ref widget arrays +0x270 / +0x2a8, text "%d",
+		// fg grey 0x8c8c8c, black bg): right-aligned inside the button's row.
+		m_pSlotCost[iSlot] = new TextPanel( "", XRES( 8 ) + iColumn * ( iColWide + XRES( 8 ) ) + iColWide - XRES( 34 ),
+			YRES( 4 ) + iRow * ( iRowTall + YRES( 2 ) ) + YRES( 6 ), XRES( 30 ), iRowTall );
+		m_pSlotCost[iSlot]->setParent( m_pWindow );
+		m_pSlotCost[iSlot]->setFont( pSchemes->getFont( hBriefingText ) );
+		m_pSlotCost[iSlot]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
+		m_pSlotCost[iSlot]->setBgColor( 0, 0, 0, 0xff );
+
 		// Per-slot blurb (ref "info_<label>.txt", fallback "fichier absent %s"
 		// in the ref; the Update uses "missing text file %s" — both are kept).
 		char szFile[64];
@@ -951,11 +1073,20 @@ void CSgtcWeaponSelPanel::Reset( void )
 {
 	CMenuPanel::Reset();
 
+	s_iWepUsed = 0;			// ref FUN_10029888: DAT_100ddad0 = 0
+	s_iWepPrimCount = 0;		// DAT_100dda58 = 0
+	s_iWepSpecialCount = 0;		// DAT_100dda54 = 0
+
 	for ( int i = 0; i < SGTC_WPSEL_SLOTS; i++ )
 	{
+		if ( s_iWepFlag[i] == 1 )
+			s_iWepFlag[i] = 0;
 		m_iSelected[i] = 0;
 		m_pSlotButton[i]->setArmed( false );
 		m_pSlotButton[i]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
+		m_pSlotButton[i]->setVisible( true );	// ref vtable+0x24 = setVisible
+		if ( m_pSlotCost[i] )
+			m_pSlotCost[i]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
 	}
 
 	m_iCurrentSlot = 0;
@@ -965,15 +1096,115 @@ void CSgtcWeaponSelPanel::Reset( void )
 	UpdateCounters();
 }
 
+// ref FUN_10029888 (vtable +0x1fc): the panel Reset body proper — called from
+// Reset() above, from the DAT_100ddad8 gate and whenever the menu re-opens.
+//   state[i] == 0 && flag[i] < 2  -> flag[i] = 2   (blocked: team/class gate)
+//   state[i] == 1 && flag[i] == 2 -> flag[i] = 0   (unblock)
+//   state[i] == 2                 -> select the slot, used += its cost
+// The ref adds (&DAT_100dd9ac)[i] for secondary slots, which for i >= 0xe
+// aliases the *state* array (0x100dd9e4) — the shipped binary therefore adds
+// the state value (2) for every preselected secondary; replicated verbatim.
+void CSgtcWeaponSelPanel::ApplyServerState( void )
+{
+	Reset();
+
+	for ( int i = 0; i < SGTC_WPSEL_SLOTS; i++ )
+	{
+		if ( s_iWepState[i] == 0 && s_iWepFlag[i] < 2 )
+			s_iWepFlag[i] = 2;
+		if ( s_iWepState[i] == 1 && s_iWepFlag[i] == 2 )
+			s_iWepFlag[i] = 0;
+
+		if ( s_iWepState[i] == 2 )
+		{
+			s_iWepFlag[i] = 1;
+			m_iSelected[i] = 1;
+			m_pSlotButton[i]->setArmed( true );
+			m_pSlotButton[i]->setFgColor( 0xff, 0xff, 0xff, 0 );
+			if ( i < SGTC_WEP_PRIM )
+				s_iWepUsed += s_iWepCost[i];		// ref: (&DAT_100dd974)[i]
+			else
+				s_iWepUsed += s_iWepState[i];		// ref bug: (&DAT_100dd9ac)[i] aliases 0x100dd9e4
+			s_iWepState[i] = 1;
+		}
+
+		// ref: flag == 2 (blocked by team/class) or cost == 0 -> the ref calls
+		// vtable+0x24 (Panel::setVisible) on the slot button and paints the
+		// cost label black; with the shipped server's all-zero cost tail every
+		// weapon button is therefore hidden in the orig too.
+		if ( s_iWepFlag[i] == 2 || s_iWepCost[i] == 0 )
+		{
+			m_pSlotButton[i]->setVisible( false );
+			if ( m_pSlotCost[i] )
+			{
+				m_pSlotCost[i]->setFgColor( 0, 0, 0, 0xff );
+				m_pSlotCost[i]->setVisible( false );
+			}
+		}
+		else if ( m_pSlotCost[i] )
+		{
+			m_pSlotCost[i]->setVisible( true );
+		}
+	}
+
+	UpdateCounters();
+}
+
 void CSgtcWeaponSelPanel::ToggleSlot( int iSlot )
 {
 	if ( iSlot < 0 || iSlot >= SGTC_WPSEL_SLOTS )
 		return;
 
-	m_iSelected[iSlot] = !m_iSelected[iSlot];
+	// ref FUN_10028323: a blocked/zero-cost slot is never toggled.
+	if ( s_iWepFlag[iSlot] == 2 || s_iWepCost[iSlot] == 0 )
+		return;
 
-	// Selected slots go white, unselected stay grey (ref sets the per-slot
-	// colour through the cost panel: 0x8c,0x8c,0x8c / 0,0,0).
+	const int iFree = s_iWepBudget - s_iWepUsed;
+
+	if ( s_iWepFlag[iSlot] == 0 )
+	{
+		// Select: affordable + the per-group caps the ref enforces.
+		if ( s_iWepCost[iSlot] > iFree )
+			return;
+
+		if ( iSlot < SGTC_WEP_PRIM )
+		{
+			// ref: DAT_100dda58 < 3, and slots 0/1 need DAT_100f225c != 0.
+			if ( s_iWepPrimCount >= SGTC_WEP_MAX_PRIM )
+				return;
+			if ( ( iSlot == 0 || iSlot == 1 ) && s_iArmorMode == 0 )
+				return;
+			s_iWepPrimCount++;
+		}
+		else if ( SgtcWep_IsSpecialSlot( iSlot ) )
+		{
+			if ( s_iWepSpecialCount >= SGTC_WEP_MAX_SPECIAL )
+				return;
+			s_iWepSpecialCount++;
+		}
+
+		s_iWepFlag[iSlot] = 1;
+		s_iWepUsed += s_iWepCost[iSlot];
+	}
+	else if ( s_iWepFlag[iSlot] == 1 )
+	{
+		s_iWepFlag[iSlot] = 0;
+		s_iWepUsed -= s_iWepCost[iSlot];
+		if ( iSlot < SGTC_WEP_PRIM )
+		{
+			if ( s_iWepPrimCount > 0 )
+				s_iWepPrimCount--;
+		}
+		else if ( SgtcWep_IsSpecialSlot( iSlot ) && s_iWepSpecialCount > 0 )
+		{
+			s_iWepSpecialCount--;
+		}
+	}
+
+	m_iSelected[iSlot] = ( s_iWepFlag[iSlot] == 1 );
+
+	// Selected slots go white, unselected stay grey (ref pokes the button's
+	// armed state + the cost label colour through the same flag).
 	if ( m_iSelected[iSlot] )
 		m_pSlotButton[iSlot]->setFgColor( 0xff, 0xff, 0xff, 0 );
 	else
@@ -995,25 +1226,41 @@ int CSgtcWeaponSelPanel::SelectedSlotCount( void )
 
 void CSgtcWeaponSelPanel::UpdateCounters( void )
 {
-	// Ref shows weapon-point totals here; the ref's cost tables
-	// (DAT_100dd974 / DAT_100dd9ac) and budget (DAT_100ddad4) are BSS and no
-	// client-side producer for them was located, so the port reports the slot
-	// counts with the ref's exact label formats instead of inventing costs.
-	const int iUsed = SelectedSlotCount();
+	// Ref FUN_10028323 counter block (0x10028fa6..0x1002905a):
+	//   "#Total %d" DAT_100ddad4 | "#Used %d" DAT_100ddad0 | "#Free %d" free
+	// (the shipped rodata strings have NO colon — 0x100b3ec0/0x100b3ecc/0x100b3ed8).
 	char szText[64];
 
-	snprintf( szText, sizeof( szText ), "#Total : %d", SGTC_WPSEL_SLOTS );
+	snprintf( szText, sizeof( szText ), "#Total %d", s_iWepBudget );
 	m_pCounter[0]->setText( gHUD.m_TextMessage.BufferedLocaliseTextString( szText ) );
-	snprintf( szText, sizeof( szText ), "#Used : %d", iUsed );
+	snprintf( szText, sizeof( szText ), "#Used %d", s_iWepUsed );
 	m_pCounter[1]->setText( gHUD.m_TextMessage.BufferedLocaliseTextString( szText ) );
-	snprintf( szText, sizeof( szText ), "#Free : %d", SGTC_WPSEL_SLOTS - iUsed );
+	snprintf( szText, sizeof( szText ), "#Free %d", s_iWepBudget - s_iWepUsed );
 	m_pCounter[2]->setText( gHUD.m_TextMessage.BufferedLocaliseTextString( szText ) );
 
-	// Ref tints #Free red when less than 3 points are left.
-	if ( SGTC_WPSEL_SLOTS - iUsed < 3 )
+	// Ref tints the #Free counter: < 3 free -> red (0xb4,0,0), else grey.
+	if ( s_iWepBudget - s_iWepUsed < 3 )
 		m_pCounter[2]->setFgColor( 0xb4, 0, 0, 0 );
 	else
 		m_pCounter[2]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
+
+	// Ref cost labels (DAT_100ddacc block): "%d" of the slot cost, shown only
+	// while the slot is not blocked.
+	for ( int i = 0; i < SGTC_WPSEL_SLOTS; i++ )
+	{
+		if ( !m_pSlotCost[i] )
+			continue;
+		if ( s_iWepFlag[i] < 2 )
+		{
+			char szCost[16];
+			snprintf( szCost, sizeof( szCost ), "%d", s_iWepCost[i] );
+			m_pSlotCost[i]->setText( szCost );
+		}
+		else
+		{
+			m_pSlotCost[i]->setText( "" );
+		}
+	}
 }
 
 void CSgtcWeaponSelPanel::ShowSlotInfo( int iSlot )
@@ -1048,9 +1295,11 @@ void CSgtcHandler_SlotOver::cursorEntered( Panel *panel )
 		m_pPanel->SetActiveInfo( m_iSlot );
 }
 
-// Apply: the ref builds "gond4h9wp" + one value per slot and hands it to the
-// client command API (FUN_10028323: (*DAT_100e7778)(&szCmd)). Our server's
-// gond4h9wp handler reads CMD_ARGV(1..28) as m_iSgtcGondArgs[].
+// Apply: the ref builds "gond4h9wp" + one value per slot and hands it to
+// pfnClientCmd (FUN_10028323 @0x10029131..0x100291a7: the raw DAT_100dda5c
+// flag value 0/1/2 is pushed for every slot — not a normalised 0/1). Our
+// server's gond4h9wp handler reads CMD_ARGV(1..28) as m_iSgtcGondArgs[] and
+// grants on any nonzero value (dlls/sgtc_player.cpp:1151 / :2009).
 void CSgtcHandler_WepSelApply::actionPerformed( Panel *panel )
 {
 	if ( !m_pPanel || !gViewPort )
@@ -1060,7 +1309,7 @@ void CSgtcHandler_WepSelApply::actionPerformed( Panel *panel )
 	int iLen = snprintf( szCmd, sizeof( szCmd ), "gond4h9wp" );
 	for ( int i = 0; i < SGTC_WPSEL_SLOTS && iLen > 0 && iLen < (int)sizeof( szCmd ) - 4; i++ )
 	{
-		iLen += snprintf( szCmd + iLen, sizeof( szCmd ) - iLen, " %d", m_pPanel->IsSlotSelected( i ) ? 1 : 0 );
+		iLen += snprintf( szCmd + iLen, sizeof( szCmd ) - iLen, " %d", s_iWepFlag[i] );
 	}
 	szCmd[sizeof( szCmd ) - 1] = 0;
 
@@ -1077,6 +1326,60 @@ void CSgtcHandler_WepSelApply::actionPerformed( Panel *panel )
 //============================================================================
 
 #define SGTC_PACKSEL_COUNT	4
+#define SGTC_PACK_MAX_SLOTS	6	// longest preset list (ref: 5 entries + sentinel)
+
+// ref FUN_1002b15b @0x1002b15b: pack preset producer. Keyed on
+//   +0x3c0 team  (ScoreInfo 4th short: GetTeamIndex+1; 1 = Torri, 2 = Goa'uld)
+//   +0x3c4 class (ScoreInfo 3rd short, playerclass - 1 → 0..4)
+//   +0x248 pack  (1..4, the pack button the player armed/selected)
+// and writes 1 into the panel's 28-int slot array at byte offset 0x250
+// (indices 2..27 are reachable; slots 0 glstaff and 1 usas never appear).
+// Decoded from the decompile: byte offsets 0x258..0x2bc map to indices 2..27.
+static const int s_SgtcPackSlots[2][5][SGTC_PACKSEL_COUNT][SGTC_PACK_MAX_SLOTS] =
+{
+	{	// team 1 — Torri (ref +0x3c0 == 1)
+		{ { 6, 10, 15, 20, 22, -1 }, { 3, 7, 11, 15, 23, -1 }, { -1 }, { -1 } },	// class 0
+		{ { 8, 12, 22, 24, -1 },     { 4, 10, 20, 23, -1 },     { -1 }, { -1 } },	// class 1
+		{ { 3, 5, 15, 20, 25, -1 },  { 6, 10, 16, 24, 26, -1 }, { -1 }, { -1 } },	// class 2
+		{ { 8, 11, 16, 23, 24, -1 }, { 7, 10, 12, 15, 25, -1 }, { -1 }, { -1 } },	// class 3
+		{ { 8, 15, 16, 23, 25, -1 }, { 3, 4, 20, 22, 26, -1 },
+		  { 3, 6, 15, 16, -1 },      { 5, 10, 24, 26, -1 } },			// class 4
+	},
+	{	// team 2 — Goa'uld (ref +0x3c0 == 2)
+		{ { 9, 10, 12, 18, -1 },     { 10, 14, 17, 27, -1 },    { -1 }, { -1 } },	// class 0
+		{ { 10, 11, 14, 21, 27, -1 },{ 2, 10, 12, 13, 19, -1 }, { -1 }, { -1 } },	// class 1
+		{ { 2, 10, 19, -1 },         { 11, 21, 27, -1 },
+		  { 12, 13, 14, -1 },        { 10, 14, 21, -1 } },			// class 2
+		{ { 11, 19, 21, 27, -1 },    { 2, 10, 12, 14, -1 },     { -1 }, { -1 } },	// class 3
+		{ { 2, 13, 14, 17, -1 },     { 2, 11, 17, 21, -1 },     { -1 }, { -1 } },	// class 4
+	}
+};
+
+// ref class-name tables 0x100b3f98 (Torri) / 0x100b3fac (Goa'uld), indexed by
+// the same class value FUN_1002b046 stores in +0x3c4; the info file is
+// "info/pack%d_%s.txt" (0x100b4088..0x100b40c4).
+static const char *s_SgtcClassNames[2][5] =
+{
+	{ "oneill", "carter", "jackson", "tealc", "soldat" },		// team 1
+	{ "dieu",   "anubis", "jaffa",   "prima", "esclave" },		// team 2
+};
+
+int SgtcPack_GetSlots( int iTeam, int iClass, int iPack, int *piSlots )
+{
+	if ( !piSlots )
+		return 0;
+	if ( iTeam < 1 || iTeam > 2 || iClass < 0 || iClass > 4 || iPack < 1 || iPack > SGTC_PACKSEL_COUNT )
+		return 0;
+
+	const int *pSrc = s_SgtcPackSlots[iTeam - 1][iClass][iPack - 1];
+	int iCount = 0;
+	while ( iCount < SGTC_PACK_MAX_SLOTS && pSrc[iCount] >= 0 )
+	{
+		piSlots[iCount] = pSrc[iCount];
+		iCount++;
+	}
+	return iCount;
+}
 
 class CSgtcPackSelPanel : public CMenuPanel
 {
@@ -1087,6 +1390,10 @@ public:
 	virtual void SetActiveInfo( int iInput );
 
 	void SelectPack( int iPack );
+	// ref vtable +0x214/+0x218 (FUN_1002b046 + FUN_1002b15b): fill the 28
+	// command values from the pack preset table for the local player.
+	void FillPackSlots( void );
+	int GetSlotValue( int iSlot ) { return ( iSlot >= 0 && iSlot < SGTC_WPSEL_SLOTS ) ? m_iSlots[iSlot] : 0; }
 
 private:
 	Label *m_pTitle;
@@ -1095,6 +1402,7 @@ private:
 	CommandButton *m_pCancelButton;
 	CommandButton *m_pApplyButton;
 	int m_iSelectedPack;
+	int m_iSlots[SGTC_WPSEL_SLOTS];	// ref panel +0x250 (28 ints)
 };
 
 class CSgtcHandler_PackClick : public ActionSignal
@@ -1182,7 +1490,7 @@ CSgtcPackSelPanel::CSgtcPackSelPanel( int iTrans, int iRemoveMe, int x, int y, i
 	for ( int iPack = 0; iPack < SGTC_PACKSEL_COUNT; iPack++ )
 	{
 		char szKey[16];
-		snprintf( szKey, sizeof( szKey ), "#PACK_%d", iPack + 1 );
+		snprintf( szKey, sizeof( szKey ), "#PACK %d", iPack + 1 );	// ref 0x100b403c.. (space, no underscore)
 
 		m_pPackButton[iPack] = new CommandButton(
 			gHUD.m_TextMessage.BufferedLocaliseTextString( szKey ),
@@ -1224,12 +1532,46 @@ void CSgtcPackSelPanel::Reset( void )
 	CMenuPanel::Reset();
 	m_iSelectedPack = -1;
 
+	for ( int i = 0; i < SGTC_WPSEL_SLOTS; i++ )
+		m_iSlots[i] = 0;			// ref: DAT_100ddad8 gate zeroes the array
+
 	for ( int i = 0; i < SGTC_PACKSEL_COUNT; i++ )
 	{
 		m_pPackButton[i]->setArmed( false );
 		m_pPackButton[i]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
+		m_pPackButton[i]->setEnabled( true );	// ref: enabled while i < +0x93
 	}
 	m_pInfo->setText( "" );
+}
+
+// ref FUN_1002b046 (+0x214): read the local player's team/class from the
+// ScoreInfo cache, then FUN_1002b15b (+0x218) fills the slot array.
+void CSgtcPackSelPanel::FillPackSlots( void )
+{
+	for ( int i = 0; i < SGTC_WPSEL_SLOTS; i++ )
+		m_iSlots[i] = 0;
+
+	if ( m_iSelectedPack < 1 || m_iSelectedPack > SGTC_PACKSEL_COUNT )
+		return;
+
+	int iTeam = 0;
+	int iClass = -1;
+
+	cl_entity_t *pLocal = gEngfuncs.GetLocalPlayer();
+	if ( pLocal && pLocal->index > 0 && pLocal->index <= MAX_PLAYERS )
+	{
+		// ref +0x3c0 = teamnumber (GetTeamIndex+1), +0x3c4 = playerclass - 1
+		iTeam = g_PlayerExtraInfo[pLocal->index].teamnumber;
+		iClass = g_PlayerExtraInfo[pLocal->index].playerclass - 1;
+	}
+
+	int iSlots[SGTC_PACK_MAX_SLOTS];
+	int iCount = SgtcPack_GetSlots( iTeam, iClass, m_iSelectedPack, iSlots );
+	for ( int i = 0; i < iCount; i++ )
+	{
+		if ( iSlots[i] >= 0 && iSlots[i] < SGTC_WPSEL_SLOTS )
+			m_iSlots[iSlots[i]] = 1;
+	}
 }
 
 void CSgtcPackSelPanel::SelectPack( int iPack )
@@ -1243,14 +1585,38 @@ void CSgtcPackSelPanel::SelectPack( int iPack )
 		m_pPackButton[i]->setFgColor( i == iPack ? 0xff : 0x8c, i == iPack ? 0xff : 0x8c,
 			i == iPack ? 0xff : 0x8c, 0 );
 
-	// The ref fills this panel from the per-class pack table (FUN_1002b15b:
-	// team x class x pack -> weapon slots); that table is not ported yet, so the
-	// port names the chosen pack instead of inventing contents.
-	char szText[128];
-	snprintf( szText, sizeof( szText ), "%s : %s %d",
-		gHUD.m_TextMessage.BufferedLocaliseTextString( "#PACK" ),
-		gHUD.m_TextMessage.BufferedLocaliseTextString( "#PACK_N" ), iPack + 1 );
-	m_pInfo->setText( szText );
+	// ref Update: the blurb file is "info/pack%d_%s.txt" with the class name
+	// (PTR_s_oneill / PTR_DAT_100b3fac tables), fallback "missing text file %s".
+	int iTeam = 0;
+	int iClass = -1;
+	cl_entity_t *pLocal = gEngfuncs.GetLocalPlayer();
+	if ( pLocal && pLocal->index > 0 && pLocal->index <= MAX_PLAYERS )
+	{
+		iTeam = g_PlayerExtraInfo[pLocal->index].teamnumber;
+		iClass = g_PlayerExtraInfo[pLocal->index].playerclass - 1;
+	}
+
+	const char *pszClass = "esclave";
+	if ( iTeam >= 1 && iTeam <= 2 && iClass >= 0 && iClass <= 4 )
+		pszClass = s_SgtcClassNames[iTeam - 1][iClass];
+
+	char szFile[128];
+	snprintf( szFile, sizeof( szFile ), "info/pack%d_%s.txt", iPack + 1, pszClass );
+
+	char *pfile = SgtcPanels_LoadFile( szFile );
+	if ( pfile )
+	{
+		m_pInfo->setText( pfile );
+		gEngfuncs.COM_FreeFile( pfile );
+	}
+	else
+	{
+		char szMissing[160];
+		snprintf( szMissing, sizeof( szMissing ), "missing text file %s", szFile );
+		m_pInfo->setText( szMissing );
+	}
+
+	FillPackSlots();
 }
 
 void CSgtcPackSelPanel::SetActiveInfo( int iInput )
@@ -1270,14 +1636,26 @@ void CSgtcHandler_PackOver::cursorEntered( Panel *panel )
 		m_pPanel->SetActiveInfo( m_iPack );
 }
 
-// Apply: the ref's pack panel hands the resulting 28-slot loadout to the same
-// "gond4h9wp" command as menu 12 (spawn flow FUN_1002b046 reads it back).
+// Apply: the ref's pack panel zeroes the 28 slot values, runs vtable +0x214
+// (FUN_1002b046, local player team/class) then +0x218 (FUN_1002b15b, pack
+// preset table), builds "gond4h9wp" + 28 " %d" values (FUN_1002a7a7
+// @0x1002ad75..0x1002adfb) and sends it through pfnClientCmd.
 void CSgtcHandler_PackApply::actionPerformed( Panel *panel )
 {
 	if ( !m_pPanel || !gViewPort )
 		return;
 
-	// No pack table ported yet: send nothing rather than an empty loadout.
+	m_pPanel->FillPackSlots();
+
+	char szCmd[256];
+	int iLen = snprintf( szCmd, sizeof( szCmd ), "gond4h9wp" );
+	for ( int i = 0; i < SGTC_WPSEL_SLOTS && iLen > 0 && iLen < (int)sizeof( szCmd ) - 4; i++ )
+	{
+		iLen += snprintf( szCmd + iLen, sizeof( szCmd ) - iLen, " %d", m_pPanel->GetSlotValue( i ) );
+	}
+	szCmd[sizeof( szCmd ) - 1] = 0;
+
+	gEngfuncs.pfnFilteredClientCmd( szCmd );
 	gViewPort->HideTopMenu();
 }
 
@@ -1304,6 +1682,29 @@ static void SgtcPanels_CheckOwner( void )
 		s_pWeaponSelPanel = NULL;
 		s_pPackSelPanel = NULL;
 		s_pPanelOwner = gViewPort;
+	}
+}
+
+// ref FUN_10028323 / FUN_1002a7a7 prologue: `if (0 < DAT_100ddad8) { Reset(); DAT_100ddad8 = 0; }`
+// — the server asks for a selection reset (class/team change) with the last
+// byte of the Progress message. The port has no per-frame panel Update, so
+// the message handlers call this through SgtcWepSel_Refresh().
+static void SgtcWepSel_ApplyServerState( void )
+{
+	SgtcPanels_CheckOwner();
+
+	if ( !s_pWeaponSelPanel )
+		return;
+
+	if ( s_iWepResetFlag )
+	{
+		s_iWepResetFlag = 0;
+		s_pWeaponSelPanel->ApplyServerState();
+	}
+	else
+	{
+		// Costs/budget changed under a live panel: refresh the counters only.
+		s_pWeaponSelPanel->ApplyServerState();
 	}
 }
 
@@ -1359,7 +1760,7 @@ CMenuPanel *SgtcWeaponSel_ShowPanel( void )
 		s_pWeaponSelPanel->setVisible( false );
 	}
 
-	s_pWeaponSelPanel->Reset();
+	s_pWeaponSelPanel->ApplyServerState();	// ref Update: Reset() honours DAT_100ddad8
 	SgtcPanels_ShowMenu( s_pWeaponSelPanel, SGTC_MENU_WPSEL );
 	return s_pWeaponSelPanel;
 }

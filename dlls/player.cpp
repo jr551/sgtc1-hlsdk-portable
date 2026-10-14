@@ -1458,8 +1458,8 @@ void CBasePlayer::StartDeathCam( void )
 	m_bShieldWall = 0;		// ref +0x3e0
 	m_bShieldSpawned = 0;		// ref +0x4e4
 	m_flShieldLatch = 0.0f;		// ref +0x3f8
-	pev->health = 200.0f;		// ref pev+0x210 (rodata @0x1e76f0)
-	m_flMaxSpeedLatch = pev->health;	// ref +0xa7c = health
+	pev->maxspeed = 200.0f;		// ref pev+0x210 = MAXSPEED (rodata @0x1e76f0)
+	m_flMaxSpeedLatch = pev->maxspeed;	// ref +0xa7c = pev+0x210
 
 	// remove own effect_shield entities (ref owner field pev+0x198)
 	CBaseEntity *pShield = NULL;
@@ -1565,9 +1565,13 @@ void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
 	pev->movetype = MOVETYPE_NONE;
 	ClearBits( m_afPhysicsFlags, PFLAG_DUCKING );
 	ClearBits( pev->flags, FL_DUCKING );
-	pev->deadflag = DEAD_RESPAWNABLE;
+	// ref StartObserver @0x138c12: pev+0x160 (health) = 1.0f, pev+0x210
+	// (maxspeed) = 200.0f, +0xa7c = maxspeed, and NO deadflag write — the
+	// stock DEAD_RESPAWNABLE made IsAlive() false, which made PlayerThink
+	// send VGUIMenu(11) at connect and hide the briefing window.
 	pev->health = 1;
-	m_flMaxSpeedLatch = pev->health;	// ref +0xa7c = health
+	pev->maxspeed = 200.0f;
+	m_flMaxSpeedLatch = pev->maxspeed;	// ref +0xa7c = pev+0x210
 
 	// Clear out the status bar
 	m_fInitHUD = TRUE;

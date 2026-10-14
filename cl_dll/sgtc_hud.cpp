@@ -1962,6 +1962,11 @@ int CHudSgtc::MsgFunc_Armor( const char *pszName, int iSize, void *pbuf )
 	int sub = READ_BYTE();
 	int d = READ_BYTE();
 
+	// ref FUN_10073e85 @0x10073e85 (the "Armor" usermsg handler) reads a SHORT
+	// then a BYTE and stores the byte in DAT_100f225c — the flag the menu-12
+	// Update uses to gate the glstaff/usas slots (0 = both locked).
+	SgtcWepSel_SetArmorMode( sub );
+
 	if( sub == 0 )
 	{
 		m_flArmorBar = (float)a;
@@ -2010,6 +2015,19 @@ int CHudSgtc::MsgFunc_Progress( const char *pszName, int iSize, void *pbuf )
 		m_iBlipProgress = 0; // ref FUN_10076c5f: no DAT_100e1b1c / DAT_100e1b90 reset on Progress msg
 	if( m_iProgress == 100 )
 		m_iBlipProgress = 100;
+
+	// ref FUN_10073faa @0x10073faa (the "Progress" usermsg handler) also stores
+	// byte 2 in DAT_100ddad4 (menu-12 budget), the 28 slot bytes in
+	// DAT_100dd9e4 (per-slot state 0/1/2) and the trailing byte in
+	// DAT_100ddad8 (reset request). Our server sends m_iNukeCharge /
+	// m_iNukeBonus / m_iProgressTeam[28] / reset-flag in exactly that order
+	// (dlls/sgtc_player.cpp SGTC_SendProgressIfDirty).
+	{
+		unsigned char szStates[28];
+		for( int i = 0; i < 28; i++ )
+			szStates[i] = (unsigned char)m_iProgressTeam[i];
+		SgtcWepSel_SetProgress( m_iProgressIcon, szStates, m_iProgressEnd );
+	}
 	m_iFlags |= HUD_ACTIVE;
 	return 1;
 }

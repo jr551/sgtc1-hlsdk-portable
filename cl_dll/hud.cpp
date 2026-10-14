@@ -131,6 +131,21 @@ int __MsgFunc_Concuss( const char *pszName, int iSize, void *pbuf )
 	return gHUD.MsgFunc_Concuss( pszName, iSize, pbuf );
 }
 
+// ref client HideVGUI handler (client.dll HUD_Init @0x1005627b registers
+// "HideVGUI" -> FUN_100560e1): the server's HideVGUI message hides the
+// current VGUI menu chain (round restart / "hidevgui" command).
+int __MsgFunc_HideVGUI( const char *pszName, int iSize, void *pbuf )
+{
+	if( g_pSgtcViewport )
+		g_pSgtcViewport->HideVGUIMenu();
+#ifdef SGTC_REAL_VGUI
+	else if( gViewPort )
+		gViewPort->HideVGUIMenu();
+#endif
+
+	return 1;
+}
+
 int __MsgFunc_GameMode( const char *pszName, int iSize, void *pbuf )
 {
 	return gHUD.MsgFunc_GameMode( pszName, iSize, pbuf );
@@ -308,6 +323,7 @@ void CHud::Init( void )
 	HOOK_MESSAGE( ViewMode );
 	HOOK_MESSAGE( SetFOV );
 	HOOK_MESSAGE( Concuss );
+	HOOK_MESSAGE( HideVGUI );
 
 	// TFFree CommandMenu
 	HOOK_COMMAND( "+commandmenu", OpenCommandMenu );

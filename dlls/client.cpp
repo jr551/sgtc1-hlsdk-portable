@@ -511,6 +511,17 @@ void ClientCommand( edict_t *pEntity )
 	{
 		GetClassPtr( (CBasePlayer *)pev )->SelectItem( pcmd );
 	}
+	else if( FStrEq( pcmd, "spec_mode" ) || FStrEq( pcmd, "specmode" ) )	// new spectator mode
+	{
+		// The SGTC client forwards "spec_mode %i" (ref client.dll 0x100b69d4)
+		// whenever its main spectator mode differs from the server's — at
+		// connect and from the "spec_mode" client command. Stock HLSDK spelling
+		// "specmode" is kept for the engine's own pause-time send.
+		CBasePlayer *pPlayer = GetClassPtr( (CBasePlayer *)pev );
+
+		if( pPlayer->IsObserver() )
+			pPlayer->Observer_SetMode( atoi( CMD_ARGV( 1 ) ) );
+	}
 	else if( FStrEq( pcmd, "lastinv" ) )
 	{
 		// ref @0xcaa44 — alive and not observer.

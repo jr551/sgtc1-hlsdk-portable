@@ -1109,8 +1109,11 @@ void CHudSpectator::SetModes( int iNewMainMode, int iNewInsetMode )
 		if( !gEngfuncs.IsSpectateOnly() )
 		{
 			char cmdstring[256];
-			// forward command to server
-			safe_snprintf( cmdstring, sizeof( cmdstring ),"specmode %i", iNewMainMode );
+			// forward command to server — the ref client builds the exact
+			// string "spec_mode %i" (client.dll rodata @0x100b69d4, used by
+			// FUN_1005b139 @0x1005b1c1); the stock "specmode" spelling made
+			// the port print "Unknown command: specmode" at connect.
+			safe_snprintf( cmdstring, sizeof( cmdstring ),"spec_mode %i", iNewMainMode );
 			gEngfuncs.pfnServerCmd( cmdstring );
 			return;
 		}

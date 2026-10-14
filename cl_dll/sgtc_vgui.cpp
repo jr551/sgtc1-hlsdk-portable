@@ -156,6 +156,7 @@ void CSgtcViewport::paintBackground()
 
 void CSgtcViewport::ShowVGUIMenu( int menu )
 {
+
 	m_iCurrentMenu = menu;
 
 	// Ref ShowVGUIMenu @0x10047b39.
@@ -270,11 +271,14 @@ int CSgtcViewport::MsgFunc_TeamNames( const char *pszName, int iSize, void *pbuf
 			READ_STRING(), m_sTeamNames[teamNum], SGTC_MAX_TEAMNAME );
 	}
 
-	// ref FUN_1004910b tail (v1 @0x1004910b / 2.0 FUN_1004adbb): after the team
-	// strings the message always carries 28 progress-slot BYTEs → DAT_100e1a34
-	// (m_iProgressSlotX). Server pads zeros (ref InitHUD @0x190b54).
-	for ( int i = 0; i < SGTC_BLIP_SLOTS; i++ )
-		g_SgtcHud.m_iProgressSlotX[i] = READ_BYTE();
+	// ref FUN_1004910b tail @0x10049231: after the team strings the message
+	// always carries 28 cost BYTEs (READ_BYTE ×28) → DAT_100dd974, the weapon
+	// cost table the menu-12 panel reads. The shipped server pads them with
+	// zeros (ref InitHUD @0x190b54), so every cost is 0 in the orig too.
+	unsigned char szCosts[28];
+	for ( int i = 0; i < 28; i++ )
+		szCosts[i] = (unsigned char)READ_BYTE();
+	SgtcWepSel_SetCosts( szCosts );
 	return 1;
 }
 
