@@ -305,6 +305,15 @@ public:
 	int	m_iSgtcGondArgs[29];	// ref +0x9ac — gond4h9wp progress copy; NewRound
 								//  type-4 reset writes idx 0..0x1c (29 entries) so the ref
 								//  itself overruns a 28-slot tail — field widened to match
+	char	m_bSgtcPad3e3;		// ref +0x3e3 — DM/CP spawn clears it
+	char	m_bSgtcInWorld;		// ref +0x44b — set on spawn when !observer
+	int	m_iSgtcPrevClass;	// ref +0x500 — last spawned class (+0xa40 at resend)
+	int	m_iSgtcPrevPeTeam;	// ref +0x504 — last spawned pev->team (+0x1ac)
+	int	m_iSgtcSubmodelIdx;	// ref +0x440 — team body selector fed to ChangeSubmodel
+	float	m_flSgtcAttackEnd;	// ref +0xa28 — CP type-4 attack deadline (roundstart + mp_attackcountdown)
+	int	m_iSgtcPad4ac;		// ref +0x4ac — CP type-4 spawn clears it
+	int	m_iSgtcFlagsCa8;	// ref +0xca8 — spawn flag word (&= ~0xb)
+	void ChangeSubmodel( void );	// ref @0x153e88 — +0x440 body write + SubModel msg
 
 	void SetHudRoundTime( int roundtime, int mode );	// ref @0x125494 — MSG_ONE gmsgSetHudRoundTime
 	void ShowVGUIMenu( int menu );	// ref @0x125538 — MSG_ONE gmsgVGUIMenu

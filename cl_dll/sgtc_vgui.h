@@ -37,6 +37,8 @@
 #define SGTC_TEAM_UNAS    4
 #define SGTC_TEAM_AUTO    5
 #define SGTC_MAX_TEAMS    4
+// ref m_sTeamNames stride is 0x10 bytes (v1 this+i*0x40 uses 0x40 per team for
+// names+slots; 2.0 uses +0x10/entry) — 16 bytes per name, matching ref caps.
 #define SGTC_MAX_TEAMNAME 16
 
 class CSgtcViewport : public vgui::Panel

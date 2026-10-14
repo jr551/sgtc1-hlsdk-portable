@@ -293,8 +293,9 @@ void CHalfLifeTeamplay::ChangePlayerTeam( CBasePlayer *pPlayer, const char *pTea
 		WRITE_BYTE( clientIndex );
 		WRITE_SHORT( (int)pPlayer->pev->frags );
 		WRITE_SHORT( pPlayer->m_iDeaths );
-		WRITE_SHORT( 0 );
+		WRITE_SHORT( pPlayer->m_iSgtcPortraitShown );	// ref +0xa40 raw
 		WRITE_SHORT( g_pGameRules->GetTeamIndex( pPlayer->m_szTeamName ) + 1 );
+		WRITE_SHORT( (int)pPlayer->pev->team );	// ref pev+0x170
 	MESSAGE_END();
 }
 

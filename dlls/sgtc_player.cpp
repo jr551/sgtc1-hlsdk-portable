@@ -449,6 +449,18 @@ void CBasePlayer::SGTC_ToggleVis( void )
 		m_bShieldSprint = 0;
 }
 
+// ref @0x163e88 — CBasePlayer::ChangeSubmodel (real body; nm 00143e88 + thunk
+// 0x8e650). MSG_ONE gmsgSubModel: BYTE = m_iSgtcSubmodelIdx (ref +0x440),
+// written by PlayerSpawn (0/1/2 by pev->team) before the call.
+void CBasePlayer::ChangeSubmodel( void )
+{
+	if( !gmsgSubModel )
+		return;
+	MESSAGE_BEGIN( MSG_ONE, gmsgSubModel, NULL, pev );
+		WRITE_BYTE( m_iSgtcSubmodelIdx );
+	MESSAGE_END();
+}
+
 // ref @0x1336b8 — if shield sprint, snap pev+0x14c renderamt to 220.
 void CBasePlayer::SnagInvis( void )
 {

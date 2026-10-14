@@ -117,15 +117,14 @@ public:
 	void Goal( int iTeam );
 	void EndRound( void );
 	void NewRound( void );
-	void GlobalText( int iTeam, int iText );
-	void AddPortrait( CBasePlayer *pPlayer );
-	void StartPortrait( CBasePlayer *pPlayer );
-	void RedrawPortrait( CBasePlayer *pPlayer );
-	void UpdateClassCount( void );
+	virtual void GlobalText( int iTeam, int iText );
+	virtual void AddPortrait( CBasePlayer *pPlayer );		// ref DM vtable+0x110 (spawn tail)
+	virtual void StartPortrait( CBasePlayer *pPlayer );		// ref DM vtable+0x114 (spawn tail)
+	virtual void RedrawPortrait( CBasePlayer *pPlayer );
+	virtual void UpdateClassCount( void );
 	void Penalty( CBasePlayer *pVictim, entvars_t *pKillerEv );	// ref Penalty @0x18ace2 (PlayerKilled path)
 
 protected:
-	void SGTC_GiveTeamLoadout( CBasePlayer *pPlayer );
 	void SGTC_SendTeamNames( CBasePlayer *pPlayer );
 	edict_t *SGTC_FindTeamSpawn( const char *pszClassname );
 	void SGTC_NewRoundCommon( BOOL bCaptureMode );	// shared NewRound body (sgtc_round.cpp)
@@ -140,6 +139,9 @@ protected:
 	float m_flSgtcRoundEnd;		// ref +0x724: round end tick
 	int m_iSgtcRoundTicks;		// ref +0x73c: Goal guard + NewRound zero (restart counter)
 	int m_iSgtcFirstTicks;		// ref +0x750: NewRound writes -5 (0xfffffffb)
+	int m_iSgtcEmptyTeams;		// ref +0x758: 0 both/G/T=1/2/3 empty-teams state
+	int m_iSgtcAutoBalance;		// ref +0x768: 0 none, 1 ->T light, 2 ->G light
+	char m_bSgtcVoteEqual;		// ref +0x774: unanimous-vote flag
 	BOOL m_bDisableDeathMessages;	// ref this+0xc — armed around forced ChangePlayerTeam kill
 	BOOL m_bDisableDeathPenalty;	// ref this+0x10 — gates PlayerKilled stock path
 };
@@ -153,8 +155,14 @@ public:
 	void PlayerSpawn( CBasePlayer *pPlayer ) override;
 	void PlayerThink( CBasePlayer *pPlayer ) override;
 	void NewRound( void );
+	void InitHUD( CBasePlayer *pPlayer ) override;	// ref @0x1733f2
 	edict_t *GetPlayerSpawnSpot( CBasePlayer *pPlayer );
 	BOOL m_bSpawnsInversed;
+	int m_iSgtcCPSide;			// ref this+0x734 — type-4 50hp side selector
+	// NOTE: ref CP vtable re-points AddPortrait(0x17f72e)/StartPortrait(0x17f99c)/
+	// RedrawPortrait(0x17fc58)/UpdateClassCount(0x17f308)/GlobalText(0x17f244);
+	// those CP bodies are a separate slice (PlayerSpawn ports the tail calls so
+	// they dispatch correctly once ported).
 };
 
 // Unas / Invis modes: 27 + 27 methods in .so (B.4). Thin teamplay shells:

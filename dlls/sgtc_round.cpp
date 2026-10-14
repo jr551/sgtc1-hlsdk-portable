@@ -92,6 +92,11 @@ Vector sgtc_masterkey( 0, 0, 0 ); // BSS 0x2368c8
 float sgtc_lcaptain[2] = { 0.0f, 0.0f }; // BSS 0x236890/0x236894 (T,G captain ticks)
 int sgtc_LastState[5];         // BSS 0x236864
 int sgtc_LastStateI[5];        // BSS 0x23686c
+int sgtc_G_players = 0;        // BSS 0x21455c — alive-team-1 count (RecountTeams)
+int sgtc_T_players = 0;        // BSS 0x20c7d0 — alive-team-2 count
+int sgtc_G_players_last = 0;   // BSS 0x2147bc — previous focused-G count
+int sgtc_T_players_last = 0;   // BSS 0x21401c — previous focused-T count
+int sgtc_SendPL = 0;           // BSS — ref m_SendPL (CP InitHUD arms it)
 
 // ---------------------------------------------------------------------------
 // Ref cvar table (12-byte .data blobs: {const char *name, const char *string,
@@ -116,6 +121,9 @@ cvar_t sgtc_cvar_respawntime = { "mp_respawntime", "10", FCVAR_SERVER };
 cvar_t sgtc_cvar_diepoints = { "mp_diepoints", "2", FCVAR_SERVER };	// ref vicpoints @0x223524
 cvar_t sgtc_cvar_killpoints = { "mp_killpoints", "1", FCVAR_SERVER };	// ref killpoints @0x223538
 cvar_t sgtc_cvar_truezat = { "mp_truezat", "0", FCVAR_SERVER };	// ref truezat @0x2368d4
+cvar_t sgtc_cvar_wepselmode = { "mp_wepselmode", "2", FCVAR_SERVER };	// ref weaponsel @0x223484 — spawn menu mode (1->0xc, 2->0x3c)
+cvar_t sgtc_cvar_freeguns = { "mp_freeguns", "0", FCVAR_SERVER };		// ref freeguns @0x2238f8 — CP spawn grants all slots when >1
+cvar_t sgtc_cvar_attackcountdown = { "mp_attackcountdown", "30", FCVAR_SERVER };	// ref attackcountdown @0x22390c
 void SGTC_RegisterRulesCvars( void )
 {
 	CVAR_REGISTER( &sgtc_cvar_friendlyfire );
@@ -131,6 +139,9 @@ void SGTC_RegisterRulesCvars( void )
 	CVAR_REGISTER( &sgtc_cvar_diepoints );
 	CVAR_REGISTER( &sgtc_cvar_killpoints );
 	CVAR_REGISTER( &sgtc_cvar_truezat );
+	CVAR_REGISTER( &sgtc_cvar_wepselmode );
+	CVAR_REGISTER( &sgtc_cvar_freeguns );
+	CVAR_REGISTER( &sgtc_cvar_attackcountdown );
 }
 
 float sgtc_roundstart = 0.0f; // mirror of rules this+0x72c

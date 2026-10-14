@@ -222,7 +222,7 @@ void LinkUserMessages( void )
 	gmsgInitHUD = REG_USER_MSG( "InitHUD", 0 );		// called every time a new player joins the server
 	gmsgShowGameTitle = REG_USER_MSG( "GameTitle", 1 );
 	gmsgDeathMsg = REG_USER_MSG( "DeathMsg", -1 );
-	gmsgScoreInfo = REG_USER_MSG( "ScoreInfo", 9 );
+	gmsgScoreInfo = REG_USER_MSG( "ScoreInfo", 11 );	// ref 0xb — 6-field SGTC layout
 	gmsgTeamInfo = REG_USER_MSG( "TeamInfo", -1 );  // sets the name of a player's team
 	gmsgTeamScore = REG_USER_MSG( "TeamScore", -1 );  // sets the score of a team on the scoreboard
 	gmsgGameMode = REG_USER_MSG( "GameMode", 1 );
@@ -1767,8 +1767,9 @@ void CBasePlayer::AddPoints( int score, BOOL bAllowNegativeScore )
 		WRITE_BYTE( ENTINDEX( edict() ) );
 		WRITE_SHORT( (int)pev->frags );
 		WRITE_SHORT( m_iDeaths );
-		WRITE_SHORT( 0 );
+		WRITE_SHORT( m_iSgtcPortraitShown );	// ref +0xa40 raw (no latch check)
 		WRITE_SHORT( g_pGameRules->GetTeamIndex( m_szTeamName ) + 1 );
+		WRITE_SHORT( (int)pev->team );	// ref pev+0x170
 	MESSAGE_END();
 }
 

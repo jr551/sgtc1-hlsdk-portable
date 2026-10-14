@@ -25,6 +25,7 @@
 #include "parsemsg.h"
 #include "vgui_int.h"
 #include "vgui_TeamFortressViewport.h"
+#include "sgtc_vgui.h"
 
 #include "demo.h"
 #include "demo_api.h"
@@ -172,6 +173,8 @@ void __CmdFunc_ForceCloseCommandMenu( void )
 // TFFree Command Menu Message Handlers
 int __MsgFunc_ValClass( const char *pszName, int iSize, void *pbuf )
 {
+	if (g_pSgtcViewport)
+		return g_pSgtcViewport->MsgFunc_ValClass( pszName, iSize, pbuf );
 	if (gViewPort)
 			return gViewPort->MsgFunc_ValClass( pszName, iSize, pbuf );
 	return 0;
@@ -179,6 +182,10 @@ int __MsgFunc_ValClass( const char *pszName, int iSize, void *pbuf )
 
 int __MsgFunc_TeamNames( const char *pszName, int iSize, void *pbuf )
 {
+	// ref client TeamNames @0x1004910b — the SGTC viewport owns it (reads
+	// the 28-byte progress tail); stock viewport never consumes that.
+	if (g_pSgtcViewport)
+		return g_pSgtcViewport->MsgFunc_TeamNames( pszName, iSize, pbuf );
 	if (gViewPort)
 		return gViewPort->MsgFunc_TeamNames( pszName, iSize, pbuf );
 	return 0;
@@ -200,6 +207,8 @@ int __MsgFunc_Detpack( const char *pszName, int iSize, void *pbuf )
 
 int __MsgFunc_VGUIMenu( const char *pszName, int iSize, void *pbuf )
 {
+	if (g_pSgtcViewport)
+		return g_pSgtcViewport->MsgFunc_VGUIMenu( pszName, iSize, pbuf );
 	if (gViewPort)
 		return gViewPort->MsgFunc_VGUIMenu( pszName, iSize, pbuf );
 	return 0;

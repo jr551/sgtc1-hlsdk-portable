@@ -32,6 +32,7 @@
 #include "sgtc_protocol.h"
 #include "sgtc_hud.h"
 #include "sgtc_env.h"
+#include "sgtc_vgui.h"
 #include "in_defs.h"	// YAW for EV_EjectBrass
 
 #include <string.h>
@@ -130,6 +131,7 @@ SGTC_MSG_LIST
 
 void SGTC_ClientHUD_Init( void )
 {
+	SgtcVgui_AttachToRoot();
 	g_SgtcHud.Init();
 	g_ClientEnv.Init();
 	SGTC_ClientProtocol_InitMessages();

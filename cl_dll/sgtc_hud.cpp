@@ -4,6 +4,7 @@
 #include "parsemsg.h"
 #include "ammohistory.h"
 #include "sgtc_hud.h"
+#include "sgtc_vgui.h"
 
 // defined in ammo.cpp — hud.txt-style slot lookup inside a client_sprite_t list.
 client_sprite_t *GetSpriteList( client_sprite_t *pList, const char *psz, int iRes, int iCount );
@@ -2197,6 +2198,10 @@ int CHudSgtc::MsgFunc_NewRnd( const char *pszName, int iSize, void *pbuf )
 	BEGIN_READ( pbuf, iSize );
 	m_fZatTouchActive = 0;
 	Reset();
+	// ref NewRnd also calls the viewport's HideVGUIMenu vtable slot via
+	// FUN_1004954d(DAT_100e78bc) — drop any open VGUI menu on round start.
+	if( g_pSgtcViewport )
+		g_pSgtcViewport->HideVGUIMenu();
 	return 1;
 }
 

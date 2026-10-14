@@ -34,6 +34,7 @@ extern DLL_GLOBAL CGameRules *g_pGameRules;
 extern DLL_GLOBAL BOOL	g_fGameOver;
 extern int gmsgDeathMsg;	// client dll messages
 extern int gmsgScoreInfo;
+extern int gmsgSpectator;	// sgtc_rules.cpp — ref InitHUD fans it out
 extern int gmsgMOTD;
 extern int gmsgServerName;
 
@@ -386,15 +387,17 @@ void CHalfLifeMultiplay::InitHUD( CBasePlayer *pl )
 
 	UpdateGameMode( pl );
 
-	// sending just one score makes the hud scoreboard active;  otherwise
-	// it is just disabled for single play
-	//fix a bug in the information about the player's score when he left the server, so that his score would not be transferred to another player(seems to work)
-	MESSAGE_BEGIN( MSG_ALL, gmsgScoreInfo );
+	// ref CHalfLifeMultiplay::InitHUD @0x12a364: joiner ScoreInfo is MSG_ONE
+	// to the joiner with 6 SHORTs (joiner entindex, 0,0,0,0,0); then per-player
+	// fan-out MSG_ONE ScoreInfo + MSG_ONE Spectator. port sends 5-field and
+	// has no Spectator row.
+	MESSAGE_BEGIN( MSG_ONE, gmsgScoreInfo, NULL, pl->edict() );
 		WRITE_BYTE( ENTINDEX(pl->edict()) );
-		WRITE_SHORT( (int)pl->pev->frags );
-		WRITE_SHORT( pl->m_iDeaths );
 		WRITE_SHORT( 0 );
-		WRITE_SHORT( GetTeamIndex( pl->m_szTeamName ) + 1 );
+		WRITE_SHORT( 0 );
+		WRITE_SHORT( 0 );
+		WRITE_SHORT( 0 );
+		WRITE_SHORT( 0 );
 	MESSAGE_END();
 
 	SendMOTDToClient( pl->edict() );
@@ -402,7 +405,6 @@ void CHalfLifeMultiplay::InitHUD( CBasePlayer *pl )
 	// loop through all active players and send their score info to the new client
 	for( int i = 1; i <= gpGlobals->maxClients; i++ )
 	{
-		// FIXME:  Probably don't need to cast this just to read m_iDeaths
 		CBasePlayer *plr = (CBasePlayer *)UTIL_PlayerByIndex( i );
 
 		if( plr )
@@ -411,8 +413,14 @@ void CHalfLifeMultiplay::InitHUD( CBasePlayer *pl )
 				WRITE_BYTE( i );	// client number
 				WRITE_SHORT( (int)plr->pev->frags );
 				WRITE_SHORT( plr->m_iDeaths );
-				WRITE_SHORT( 0 );
+				WRITE_SHORT( plr->m_bSnagInvisLatch == 1 ? 6 : plr->m_iSgtcPortraitShown );	// ref +0x4de?6:+0xa40
 				WRITE_SHORT( GetTeamIndex( plr->m_szTeamName ) + 1 );
+				WRITE_SHORT( (int)plr->pev->team );
+			MESSAGE_END();
+			// ref: per-player Spectator state
+			MESSAGE_BEGIN( MSG_ONE, gmsgSpectator, NULL, pl->edict() );
+				WRITE_BYTE( i );
+				WRITE_BYTE( plr->pev->iuser1 ? 1 : 0 );
 			MESSAGE_END();
 		}
 	}
@@ -607,16 +615,9 @@ void CHalfLifeMultiplay::PlayerKilled( CBasePlayer *pVictim, entvars_t *pKiller,
 		pKiller->frags -= 1;
 	}
 
-	// update the scores
-	// killed scores
-	MESSAGE_BEGIN( MSG_ALL, gmsgScoreInfo );
-		WRITE_BYTE( ENTINDEX(pVictim->edict()) );
-		WRITE_SHORT( (int)pVictim->pev->frags );
-		WRITE_SHORT( pVictim->m_iDeaths );
-		WRITE_SHORT( 0 );
-		WRITE_SHORT( GetTeamIndex( pVictim->m_szTeamName ) + 1 );
-	MESSAGE_END();
-
+	// update the scores — ref CHalfLifeMultiplay::PlayerKilled @0x127d14:
+	// killer ScoreInfo FIRST (6 fields, last = pev->team), then victim
+	// ScoreInfo (6 fields, last field literal 1), then decal-time.
 	// killers score, if it's a player
 	CBaseEntity *ep = CBaseEntity::Instance( pKiller );
 	if( ep && ep->Classify() == CLASS_PLAYER )
@@ -627,13 +628,24 @@ void CHalfLifeMultiplay::PlayerKilled( CBasePlayer *pVictim, entvars_t *pKiller,
 			WRITE_BYTE( ENTINDEX( PK->edict() ) );
 			WRITE_SHORT( (int)PK->pev->frags );
 			WRITE_SHORT( PK->m_iDeaths );
-			WRITE_SHORT( 0 );
+			WRITE_SHORT( PK->m_bSnagInvisLatch == 1 ? 6 : PK->m_iSgtcPortraitShown );	// ref +0x4de?6:+0xa40
 			WRITE_SHORT( GetTeamIndex( PK->m_szTeamName ) + 1 );
+			WRITE_SHORT( (int)PK->pev->team );	// ref pev+0x170
 		MESSAGE_END();
 
 		// let the killer paint another decal as soon as he'd like.
-		PK->m_flNextDecalTime = gpGlobals->time;
+		PK->m_flNextDecalTime = gpGlobals->time;	// ref *(killer+0xe04)
 	}
+
+	// killed scores — ref writes this second, last field literal 1
+	MESSAGE_BEGIN( MSG_ALL, gmsgScoreInfo );
+		WRITE_BYTE( ENTINDEX(pVictim->edict()) );
+		WRITE_SHORT( (int)pVictim->pev->frags );
+		WRITE_SHORT( pVictim->m_iDeaths );
+		WRITE_SHORT( pVictim->m_bSnagInvisLatch == 1 ? 6 : pVictim->m_iSgtcPortraitShown );	// ref +0x4de?6:+0xa40
+		WRITE_SHORT( GetTeamIndex( pVictim->m_szTeamName ) + 1 );
+		WRITE_SHORT( 1 );	// ref literal 1
+	MESSAGE_END();
 }
 
 //=========================================================

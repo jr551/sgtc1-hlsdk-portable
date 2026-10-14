@@ -49,6 +49,19 @@ public:
 	const char *SetDefaultPlayerTeam( CBasePlayer *pPlayer );
 	virtual void ChangePlayerTeam( CBasePlayer *pPlayer, const char *pTeamName, BOOL bKill, BOOL bGib );
 
+protected:
+	// ref CStargateTeamDM ctor/recount reach this+0x14/+0x18 directly; expose
+	// through helpers so the private layout stays untouched.
+	void SGTC_SetTeamList( const char *pList )
+	{
+		strncpy( m_szTeamList, pList ? pList : "", TEAMPLAY_TEAMLISTLENGTH - 1 );
+		m_szTeamList[TEAMPLAY_TEAMLISTLENGTH - 1] = '\0';
+		m_teamLimit = ( m_szTeamList[0] != 0 );
+	}
+	const char *SGTC_GetTeamList( void ) const { return m_szTeamList; }
+	BOOL SGTC_TeamLimit( void ) const { return m_teamLimit; }
+	void SGTC_SetTeamLimit( BOOL v ) { m_teamLimit = v; }
+
 private:
 	void RecountTeams( bool bResendInfo = FALSE );
 	const char *TeamWithFewestPlayers( void );

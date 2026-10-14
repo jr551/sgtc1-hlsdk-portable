@@ -201,7 +201,22 @@ extern int gmsgTeamNames;
 extern int gmsgScoreInfo;
 extern int gmsgDeathMsg;
 extern int sgtc_teamed;	// sgtc_round.cpp (ref BSS teamed @0x23658c)
+extern int sgtc_GameModeSet;			// sgtc_round.cpp (ref nm 0x1e0ad8)
+extern float sgtc_gamemodex;			// sgtc_round.cpp (mp_gamemode numeric mirror)
+extern int sgtc_G_players;				// sgtc_round.cpp (ref G_players BSS 0x21455c)
+extern int sgtc_T_players;				// sgtc_round.cpp (ref T_players BSS 0x20c7d0)
+extern int sgtc_G_players_focused;		// sgtc_round.cpp (ref BSS 0x2368a8)
+extern int sgtc_T_players_focused;		// sgtc_round.cpp (ref BSS 0x2368a0)
+extern int sgtc_G_players_last;			// sgtc_round.cpp (ref BSS 0x2147bc)
+extern int sgtc_T_players_last;			// sgtc_round.cpp (ref BSS 0x21401c)
+extern int sgtc_SendPL;					// sgtc_round.cpp (ref m_SendPL)
 extern int sgtc_type;	// sgtc_token.cpp (ref BSS type @0x236588)
+extern float sgtc_roundstart;	// sgtc_round.cpp (rules this+0x72c mirror)
+extern cvar_t sgtc_cvar_wepselmode;		// sgtc_round.cpp (ref weaponsel @0x223484)
+extern cvar_t sgtc_cvar_freeguns;		// sgtc_round.cpp (ref freeguns @0x2238f8)
+extern cvar_t sgtc_cvar_attackcountdown;	// sgtc_round.cpp (ref @0x22390c)
+extern cvar_t sgtc_cvar_superweapons;	// sgtc_round.cpp (ref superguns @0x2234d4)
+extern void SetWeaponAllow( CBasePlayer *pPlayer );	// ref @0x17a26c — reads +0x93c, sends gmsgProgress variants
 extern float sgtc_endtround;	// sgtc_round.cpp (ref BSS endtround @0x2468b8, goal+6s deadline)
 
 // Team spawn classname tables (rodata 0x1d7997 block ordering).
@@ -224,8 +239,12 @@ static const char *const s_SGTCPortraits[] =
 // ===========================================================================
 CStargateTeamDM::CStargateTeamDM( void )
 {
-	// .so ctor: strncpy(teamlist, "Torri;Goa'uld"), overridden by the
-	// mp_teamlist cvar when set (mirrors CHalfLifeTeamplay::CHalfLifeTeamplay).
+	// ref ctor @0x188824: base CHalfLifeTeamplay ctor already read mp_teamlist
+	// into m_szTeamList ("hgrunt;scientist" from game.cfg); the .so ctor then
+	// OVERWRITES this+0x18 (m_szTeamList) with "Torri;Goa'uld", so mp_teamlist
+	// never reaches the wire. RecountTeams() strtoks m_szTeamList into the
+	// global team_names table (mirrored here as m_szSGTCTeams).
+	SGTC_SetTeamList( "Torri;Goa'uld" );	// ref ctor this+0x18
 	strncpy( m_szSGTCTeams[0], "Torri", SGTC_TEAMNAME_LEN );
 	strncpy( m_szSGTCTeams[1], "Goa'uld", SGTC_TEAMNAME_LEN );
 	m_iSGTCTeamCount = SGTC_MAX_SGTC_TEAMS;
@@ -236,25 +255,23 @@ CStargateTeamDM::CStargateTeamDM( void )
 	m_iSgtcModeVote = -1;	// ref +0x770 pending mode vote (-1 none)
 	g_iSgtcMapType = 0;		// ref DM ctor sets MapType=0 (@0x188600)
 
-	const char *list = CVAR_GET_STRING( "mp_teamlist" );
-	if( list && *list )
+	// ref: INDEXENT(0)->targetname (+0x22c) overrides the team list when the
+	// mp_teamoverride cvar is nonzero and the name is non-empty.
+	edict_t *pWorld = INDEXENT( 0 );
+	if( pWorld && pWorld->v.targetname && CVAR_GET_FLOAT( "mp_teamoverride" ) != 0 )
 	{
-		char buf[64];
-		strncpy( buf, list, sizeof( buf ) - 1 );
-		buf[sizeof( buf ) - 1] = '\0';
-		char *semi = strchr( buf, ';' );
-		if( semi )
+		const char *tn = STRING( pWorld->v.targetname );
+		if( tn && *tn )
 		{
-			*semi = '\0';
-			strncpy( m_szSGTCTeams[0], buf, SGTC_TEAMNAME_LEN );
-			strncpy( m_szSGTCTeams[1], semi + 1, SGTC_TEAMNAME_LEN );
-		}
-		else
-		{
-			strncpy( m_szSGTCTeams[0], buf, SGTC_TEAMNAME_LEN );
+			SGTC_SetTeamList( tn );
 		}
 	}
+	// ref this+0x14 already set inside SGTC_SetTeamList (list[0]!=0).
 	RecountTeams( FALSE );
+
+	// ref: roundforce._value > 0 -> NewRound() right away.
+	if( CVAR_GET_FLOAT( "mp_roundforce" ) > 0 )
+		NewRound();
 }
 
 int CStargateTeamDM::GetTeamIndex( const char *pTeamName )
@@ -351,14 +368,155 @@ const char *CStargateTeamDM::TeamWithFewestPlayers( void )
 
 void CStargateTeamDM::RecountTeams( BOOL bResendInfo )
 {
-	// Fixed 2-team table: nothing to recount beyond optional rebroadcast.
-	if( !bResendInfo )
-		return;
-	MESSAGE_BEGIN( MSG_ALL, gmsgTeamNames );
-		WRITE_BYTE( m_iSGTCTeamCount );
-		for( int i = 0; i < m_iSGTCTeamCount; i++ )
-			WRITE_STRING( m_szSGTCTeams[i] );
-	MESSAGE_END();
+	// ref @0x18df82 — full recount engine: rebuild team_names from
+	// m_szTeamList, count alive/focused players, tally mode votes,
+	// autobalance, then optionally re-broadcast gmsgTeamInfo.
+	m_iSGTCTeamCount = 0;
+	char listBuf[512];
+	strncpy( listBuf, SGTC_GetTeamList(), sizeof( listBuf ) - 1 );
+	listBuf[sizeof( listBuf ) - 1] = '\0';
+	char *tok = strtok( listBuf, ";" );
+	while( tok && *tok )
+	{
+		if( GetTeamIndex( tok ) < 0 && m_iSGTCTeamCount < SGTC_MAX_SGTC_TEAMS )
+		{
+			strncpy( m_szSGTCTeams[m_iSGTCTeamCount], tok, SGTC_TEAMNAME_LEN - 1 );
+			m_szSGTCTeams[m_iSGTCTeamCount][SGTC_TEAMNAME_LEN - 1] = '\0';
+			m_iSGTCTeamCount++;
+		}
+		tok = strtok( NULL, ";" );
+	}
+	if( m_iSGTCTeamCount < 2 )
+	{
+		m_iSGTCTeamCount = 0;
+		SGTC_SetTeamLimit( FALSE );	// ref this+0x14
+	}
+
+	// Vote tallies (per-player +0x90c in 1..5 -> slot idx-1).
+	int votes[5] = { 0, 0, 0, 0, 0 };
+	int voteWinners[5] = { 0, 0, 0, 0, 0 };
+	int gCount = 0, tCount = 0, voters = 0, aliveNonObs = 0;
+	for( int i = 1; i <= gpGlobals->maxClients; i++ )
+	{
+		CBasePlayer *plr = (CBasePlayer *)UTIL_PlayerByIndex( i );
+		if( !plr )
+			continue;
+		// ref: alive && !observer && pev->team >= 1 && !m_bSgtcBadGuy
+		if( plr->IsAlive() && !plr->IsObserver() &&
+			(int)plr->pev->team >= 1 && !plr->m_bSgtcBadGuy )
+		{
+			int team = (int)plr->pev->team;
+			if( team == 1 ) gCount++;
+			if( team == 2 ) tCount++;
+			if( plr->m_iBombKeyTimer > 0 && plr->m_iBombKeyTimer < 6 )
+			{
+				voters++;
+				votes[plr->m_iBombKeyTimer - 1]++;
+			}
+		}
+		if( !plr->IsObserver() && (int)plr->pev->team > 0 && !plr->m_bSgtcBadGuy )
+			aliveNonObs++;
+	}
+
+	// ref: winner = slot with max tally; ties collect into voteWinners.
+	int best = -1, bestTally = 0, ties = 0;
+	for( int s = 0; s < 5; s++ )
+	{
+		if( votes[s] == bestTally && bestTally > 0 )
+		{
+			ties++;
+			voteWinners[ties] = s;
+		}
+		if( bestTally < votes[s] )
+		{
+			bestTally = votes[s];
+			best = s;
+			voteWinners[0] = s;
+			ties = 0;
+		}
+	}
+	if( best < 0 )
+		m_iSgtcModeVote = (int)sgtc_gamemodex;	// ref: ROUND(gamemodex)
+	else if( ties < 1 )
+		m_iSgtcModeVote = best;
+	else
+		m_iSgtcModeVote = voteWinners[RANDOM_LONG( 0, ties )];
+	if( m_iSgtcModeVote == best && bestTally == aliveNonObs && voters > 0 &&
+		m_iSgtcModeVote != sgtc_GameModeSet )
+		m_bSgtcVoteEqual = 1;					// ref this+0x774
+	if( m_iSgtcModeVote == sgtc_GameModeSet )
+		m_iSgtcModeVote = -1;
+
+	sgtc_G_players = gCount;	// ref G_players
+	sgtc_T_players = tCount;	// ref T_players
+
+	// ref this+0x758 empty-teams state: 1=G empty, 2=T empty, 3=both, 0 populated.
+	int empty = ( gCount < 1 ) ? 1 : 0;
+	if( tCount < 1 ) empty = 2;
+	if( gCount < 1 && tCount < 1 ) empty = 3;
+	if( gCount > 0 && tCount > 0 ) empty = 0;
+	int playerEnts = 0;
+	CBaseEntity *scan = NULL;
+	while( ( scan = UTIL_FindEntityByClassname( scan, "player" ) ) != NULL )
+		playerEnts++;
+	if( playerEnts < 1 ) empty = 0;
+	m_iSgtcEmptyTeams = empty;
+
+	// focused counts (m_iSgtcActiveTeam +0x430, not bad-guy).
+	sgtc_T_players_focused = 0;
+	sgtc_G_players_focused = 0;
+	for( int i = 1; i <= gpGlobals->maxClients; i++ )
+	{
+		CBasePlayer *plr = (CBasePlayer *)UTIL_PlayerByIndex( i );
+		if( plr && plr->m_bSgtcBadGuy != 1 )
+		{
+			if( plr->m_iSgtcActiveTeam == 1 ) sgtc_G_players_focused++;
+			if( plr->m_iSgtcActiveTeam == 2 ) sgtc_T_players_focused++;
+		}
+	}
+
+	// ref this+0x768 autobalance tri-state (dead while unregistered mp_autobalance==0).
+	float autoBal = CVAR_GET_FLOAT( "mp_autobalance" );
+	m_iSgtcAutoBalance = 0;
+	if( autoBal > 0.0f )
+	{
+		if( sgtc_T_players_focused < sgtc_G_players_focused &&
+			autoBal < (float)( sgtc_G_players_focused - sgtc_T_players_focused ) )
+			m_iSgtcAutoBalance = 1;
+		if( sgtc_G_players_focused < sgtc_T_players_focused &&
+			autoBal < (float)( sgtc_T_players_focused - sgtc_G_players_focused ) )
+			m_iSgtcAutoBalance = 2;
+	}
+
+	for( int i = 1; i <= gpGlobals->maxClients; i++ )
+	{
+		CBasePlayer *plr = (CBasePlayer *)UTIL_PlayerByIndex( i );
+		if( !plr )
+			continue;
+		// ref: net clients get +0x926 latch cleared only when a team GREW.
+		if( plr->IsNetClient() &&
+			!( sgtc_T_players_focused <= sgtc_T_players_last &&
+			   sgtc_G_players_focused <= sgtc_G_players_last ) )
+			plr->m_bSgtcPortraitLatch = 0;
+
+		const char *teamName = plr->TeamID();
+		int idx = GetTeamIndex( teamName );
+		if( idx < 0 && !SGTC_TeamLimit() && m_iSGTCTeamCount < SGTC_MAX_SGTC_TEAMS )
+		{
+			strncpy( m_szSGTCTeams[m_iSGTCTeamCount], teamName, SGTC_TEAMNAME_LEN - 1 );
+			m_szSGTCTeams[m_iSGTCTeamCount][SGTC_TEAMNAME_LEN - 1] = '\0';
+			m_iSGTCTeamCount++;
+		}
+		if( bResendInfo && IsValidTeam( teamName ) )
+		{
+			MESSAGE_BEGIN( MSG_ALL, gmsgTeamInfo );
+				WRITE_BYTE( plr->entindex() );
+				WRITE_STRING( teamName );
+			MESSAGE_END();
+		}
+	}
+	sgtc_T_players_last = sgtc_T_players_focused;
+	sgtc_G_players_last = sgtc_G_players_focused;
 }
 
 const char *CStargateTeamDM::SetDefaultPlayerTeam( CBasePlayer *pPlayer )
@@ -418,20 +576,94 @@ void CStargateTeamDM::SGTC_SendTeamNames( CBasePlayer *pPlayer )
 		WRITE_BYTE( m_iSGTCTeamCount );
 		for( int i = 0; i < m_iSGTCTeamCount; i++ )
 			WRITE_STRING( m_szSGTCTeams[i] );
+		for( int z = 0; z < 28; z++ )
+			WRITE_BYTE( 0 );	// ref: TeamNames carries a 28-byte pad tail
 	MESSAGE_END();
 }
 
 void CStargateTeamDM::InitHUD( CBasePlayer *pPlayer )
 {
-	SetDefaultPlayerTeam( pPlayer );
+	// ref @0x190b54 — zero the two 5-slot tables, clear portrait sel, team +
+	// team-name, stock Multiplay InitHUD, then MSG_ONE TeamNames with 28
+	// trailing zero bytes, RecountTeams(0), ShowVGUIMenu(11),
+	// SetHudRoundTime(0,0), per-player TeamInfo/ScoreInfo to the joiner.
+	static int s_SgtcHudInitA[5];	// ref this+0x438/+0xa44-adjacent tables
+	static int s_SgtcHudInitB[5];
+	for( int t = 0; t < 5; t++ ) { s_SgtcHudInitA[t] = 0; s_SgtcHudInitB[t] = 0; }
+	pPlayer->m_iSgtcPortraitSel = 0;	// ref +0xa44
+	pPlayer->m_iSgtcTeam = 0;			// ref +0x438
+	pPlayer->m_szTeamName[0] = '\0';	// ref +0xe08 strncpy
 	CHalfLifeMultiplay::InitHUD( pPlayer );
-	SGTC_SendTeamNames( pPlayer );
-	RecountTeams( TRUE );
-	StartPortrait( pPlayer );
 
-	char text[128];
-	sprintf( text, "* you are on team '%s'\n", pPlayer->m_szTeamName );
-	UTIL_SayText( text, pPlayer );
+	// ref: TeamNames = BYTE num_teams + STRING names + 28 zero bytes.
+	MESSAGE_BEGIN( MSG_ONE, gmsgTeamNames, NULL, pPlayer->edict() );
+		WRITE_BYTE( m_iSGTCTeamCount );
+		for( int i = 0; i < m_iSGTCTeamCount; i++ )
+			WRITE_STRING( m_szSGTCTeams[i] );
+		for( int z = 0; z < 28; z++ )
+			WRITE_BYTE( 0 );
+	MESSAGE_END();
+
+	RecountTeams( FALSE );
+	pPlayer->ShowVGUIMenu( 11 );	// ref DM InitHUD menu id
+	pPlayer->SetHudRoundTime( 0, 0 );
+	pPlayer->m_flSgtcMenuDelay = gpGlobals->time + 3.0f;	// ref rodata +3.0
+
+	for( int i = 1; i <= gpGlobals->maxClients; i++ )
+	{
+		CBaseEntity *plr = UTIL_PlayerByIndex( i );
+		if( !plr || !IsValidTeam( plr->TeamID() ) )
+			continue;
+		MESSAGE_BEGIN( MSG_ONE, gmsgTeamInfo, NULL, pPlayer->edict() );
+			WRITE_BYTE( plr->entindex() );
+			WRITE_STRING( plr->TeamID() );
+		MESSAGE_END();
+		// ref gmsgScoreInfo (InitHUD variant): frags/deaths sent as 0.
+		CBasePlayer *pPlr = (CBasePlayer *)plr;
+		MESSAGE_BEGIN( MSG_ONE, gmsgScoreInfo, NULL, pPlayer->edict() );
+			WRITE_BYTE( plr->entindex() );
+			WRITE_SHORT( 0 );
+			WRITE_SHORT( 0 );
+			WRITE_SHORT( pPlr->m_bSnagInvisLatch == 1 ? 6 : pPlr->m_iSgtcPortraitShown );
+			WRITE_SHORT( GetTeamIndex( plr->TeamID() ) + 1 );
+			WRITE_SHORT( (int)plr->pev->team );
+		MESSAGE_END();
+		// ref AddHudPortrait(param6=1): MSG_ONE to the JOINER carrying the
+		// subject player's portrait (entindex + team name).
+		MESSAGE_BEGIN( MSG_ONE, gmsgAddPortrait, NULL, pPlayer->edict() );
+			WRITE_BYTE( plr->entindex() );
+			WRITE_STRING( plr->TeamID() );
+		MESSAGE_END();
+	}
+	if( sgtc_G_players_focused + sgtc_T_players_focused < 1 )
+		pPlayer->StartDeathCam();
+}
+
+void CStargateTeamCP::InitHUD( CBasePlayer *pPlayer )
+{
+	// ref @0x1733f2 — DM InitHUD variant minus ShowVGUIMenu: clears +0x3e3,
+	// portrait-shown=1, portrait-sel/team/env-stage=0, empty team-name, stock
+	// Multiplay InitHUD, MSG_ONE TeamNames + 28 pad bytes, RecountTeams(0),
+	// SetHudRoundTime(0,0), per-player TeamInfo, self ScoreInfo, portrait
+	// fan-out, StartDeathCam + mode-check when unfocused, menu delay +3s.
+	pPlayer->m_bSgtcPad3e3 = 0;			// ref +0x3e3
+	pPlayer->m_iSgtcPortraitShown = 1;	// ref +0xa40
+	pPlayer->m_iSgtcPortraitSel = 0;	// ref +0xa44
+	pPlayer->m_iSgtcTeam = 0;			// ref +0x438
+	pPlayer->m_iSgtcEnvStage = 0;		// ref +0xc90
+	pPlayer->m_szTeamName[0] = '\0';	// ref +0xe08 strncpy
+	CHalfLifeMultiplay::InitHUD( pPlayer );
+
+	MESSAGE_BEGIN( MSG_ONE, gmsgTeamNames, NULL, pPlayer->edict() );
+		WRITE_BYTE( m_iSGTCTeamCount );
+		for( int i = 0; i < m_iSGTCTeamCount; i++ )
+			WRITE_STRING( m_szSGTCTeams[i] );
+		for( int z = 0; z < 28; z++ )
+			WRITE_BYTE( 0 );
+	MESSAGE_END();
+
+	RecountTeams( FALSE );
+	pPlayer->SetHudRoundTime( 0, 0 );
 
 	for( int i = 1; i <= gpGlobals->maxClients; i++ )
 	{
@@ -444,6 +676,40 @@ void CStargateTeamDM::InitHUD( CBasePlayer *pPlayer )
 			MESSAGE_END();
 		}
 	}
+
+	// ref: ScoreInfo for the JOINER only (self row, zeroed frags/deaths).
+	MESSAGE_BEGIN( MSG_ONE, gmsgScoreInfo, NULL, pPlayer->edict() );
+		WRITE_BYTE( pPlayer->entindex() );
+		WRITE_SHORT( 0 );
+		WRITE_SHORT( 0 );
+		WRITE_SHORT( pPlayer->m_iSgtcPortraitShown );
+		WRITE_SHORT( GetTeamIndex( pPlayer->m_szTeamName ) + 1 );
+		WRITE_SHORT( (int)pPlayer->pev->team );
+	MESSAGE_END();
+
+	// ref AddHudPortrait(param6=1): MSG_ONE to the JOINER carrying each
+	// valid team player's portrait (entindex + team name) — same as DM.
+	for( int i = 1; i <= gpGlobals->maxClients; i++ )
+	{
+		CBaseEntity *plr = UTIL_PlayerByIndex( i );
+		if( plr && IsValidTeam( plr->TeamID() ) )
+		{
+			MESSAGE_BEGIN( MSG_ONE, gmsgAddPortrait, NULL, pPlayer->edict() );
+				WRITE_BYTE( plr->entindex() );
+				WRITE_STRING( plr->TeamID() );
+			MESSAGE_END();
+		}
+	}
+
+	pPlayer->StartDeathCam();
+	// ref: if( T_players_focused + G_players_focused < 1 ) calls gamerules
+	// vtable+0x38 (mode-check); port has no mapped equivalent and the gate
+	// only fires before any client joins, so it is inert in play.
+	if( sgtc_T_players_focused + sgtc_G_players_focused < 1 )
+	{
+	}
+	pPlayer->m_flSgtcMenuDelay = gpGlobals->time + 3.0f;	// ref +0x4b0 = now+3.0
+	sgtc_SendPL = 1;	// ref m_SendPL
 }
 
 void CStargateTeamDM::UpdateGameMode( CBasePlayer *pPlayer )
@@ -456,22 +722,57 @@ void CStargateTeamDM::UpdateGameMode( CBasePlayer *pPlayer )
 	MESSAGE_END();
 }
 
-void CStargateTeamDM::SGTC_GiveTeamLoadout( CBasePlayer *pPlayer )
+// ---------------------------------------------------------------------------
+// SetWeaponAllow — ref @0x18a26c (nm 0x17a26c). Zeroes the 28-entry
+// Progress-allow table (CBasePlayer m_iProgressTeam, ref +0x93c) for the
+// weapons the player's pev->team/class (+0xa40) may NOT pick up; other teams
+// keep every slot at 1. Slot i lives at +0x93c + i*4. Indexes below are
+// (ref 0x9NN - 0x93c) / 4. Copy verbatim from
+// rea_dump/SetWeaponAllow.c, including the team==2 case-5 fallthrough.
+// ---------------------------------------------------------------------------
+void SetWeaponAllow( CBasePlayer *pPlayer )
 {
-	// Team melee + zat from DM PlayerSpawn strings (couteau/coujaf/lance/zat).
-	int team = GetTeamIndex( pPlayer->m_szTeamName );
-	pPlayer->GiveNamedItem( "weapon_couteau" );
-	if( team == SGTC_TEAM_GOAULD - 1 )
+	int team = (int)pPlayer->pev->team;
+	int cls = pPlayer->m_iSgtcPortraitShown;
+	static const int g_wa_team2[5][17] = {
+		{ 0,2,7,9,0xb,0xc,0xd,0x11,0x12,0x13,0x14,0x15,0x1b,-1 },
+		{ 0,1,2,5,7,8,9,0xb,0xc,0xd,0x10,0x11,0x12,0x13,0x14,0x15,-1 },
+		{ 0,1,2,7,9,8,0xb,0xc,0xd,0xe,0x10,0x11,0x12,0x13,0x14,0x15,0x1b },
+		{ 2,5,6,9,0xc,0xd,0x11,0x12,0x13,0x15,0x18,0x1a,0x1b,-1 },
+		{ 0,2,9,0xa,0xb,0xc,0xd,0xe,0x10,0x11,0x12,0x13,0x14,0x15,0x18,0x1a,0x1b },
+	};
+	static const int g_wa_team1[5][21] = {
+		{ 0,1,3,4,5,6,7,8,0xb,0xc,0xf,0x10,0x13,0x14,0x17,0x18,0x19,0x1a,-1 },
+		{ 0,1,3,4,5,6,7,8,9,0xc,0xf,0x10,0x11,0x12,0x13,0x14,0x17,0x18,0x19,0x1a,0x1b },
+		{ 0,1,2,3,4,5,6,7,8,9,0xb,0xd,0xf,0x10,0x11,0x13,0x14,0x15,0x17,0x18,0x19 },
+		{ 1,3,4,5,6,7,8,9,0xc,0xd,0xf,0x10,0x11,0x14,0x17,0x18,0x19,0x1a,-1 },
+		{ 0,1,3,4,5,6,7,8,9,0xa,0xb,0xd,0xf,0x10,0x12,0x13,0x14,0x15,0x17,0x18,0x19 },
+	};
+	if( team == 2 && cls >= 1 && cls <= 5 )
 	{
-		pPlayer->GiveNamedItem( "weapon_lance" );
-		SET_MODEL( ENT( pPlayer->pev ), "models/player/goauld3/goauld3.mdl" );
+		const int *t = g_wa_team2[cls - 1];
+		for( int k = 0; k < 17; k++ )
+		{
+			if( t[k] < 0 )
+				break;		// sentinel; ref team==2 cases are terminated with break
+			pPlayer->m_iProgressTeam[t[k]] = 0;
+		}
 	}
-	else
+	if( team == 1 && cls >= 1 && cls <= 5 )
 	{
-		pPlayer->GiveNamedItem( "weapon_coujaf" );
-		SET_MODEL( ENT( pPlayer->pev ), "models/player/commander/commander.mdl" );
+		const int *t = g_wa_team1[cls - 1];
+		for( int k = 0; k < 21; k++ )
+		{
+			if( t[k] < 0 )
+				break;
+			pPlayer->m_iProgressTeam[t[k]] = 0;
+		}
 	}
-	pPlayer->GiveNamedItem( "weapon_zat" );
+	if( team == 0 )
+	{
+		for( int i = 0; i < 28; i++ )	// ref 0x1c entries
+			pPlayer->m_iProgressTeam[i] = 0;
+	}
 }
 
 edict_t *CStargateTeamDM::SGTC_FindTeamSpawn( const char *pszClassname )
@@ -512,11 +813,286 @@ edict_t *CStargateTeamDM::GetPlayerSpawnSpot( CBasePlayer *pPlayer )
 	return spot;
 }
 
+// ---------------------------------------------------------------------------
+// Class model/stat tables — ref DM::PlayerSpawn @0x18e7e2 Goa'uld/Torri
+// switches on +0xa40 (m_iSgtcPortraitShown). Class 4 cloak: Goa'uld always,
+// Torri only for tealc. Model key is written via pfnSetClientKeyValue.
+// ---------------------------------------------------------------------------
+struct SGTCSClassDef
+{
+	const char *model;
+	float maxspeed;		// pev+0x210
+	int snagArmorCap;	// +0x908 — armor HUD scale cap
+	float armorvalue;	// pev+0x1bc
+	int cloak;		// +0x448 cloak tick arm
+};
+static const SGTCSClassDef s_SgtcGoauldClass[6] =
+{
+	{ NULL, 0.0f, 0, 0.0f, 0 },				// class 0: no override
+	{ "systemlord",  250.0f, 35,  35.0f, 1 },	// ref +0x908=0x23, armor 0x420c0000
+	{ "anubis",      250.0f, 80,  80.0f, 1 },	// +0x908=0x50, armor 0x42a00000
+	{ "goauld3",     325.0f, 40,  40.0f, 1 },	// +0x908=0x28, armor 0x42200000
+	{ "snakegoauld", 275.0f, 80,  80.0f, 1 },	// maxspeed 0x43898000
+	{ "horus",       325.0f, 30,  30.0f, 1 },	// +0x908=0x1e, armor 0x41f00000
+};
+static const SGTCSClassDef s_SgtcTorriClass[6] =
+{
+	{ NULL, 0.0f, 0, 0.0f, 0 },
+	{ "oneill",      250.0f, 70,  70.0f, 0 },	// +0x908=0x46, armor 0x428c0000
+	{ "carter",      275.0f, 40,  40.0f, 0 },
+	{ "jackson",     225.0f, 70,  70.0f, 0 },	// maxspeed 0x43610000
+	{ "tealc",       275.0f, 25,  25.0f, 1 },	// +0x908=0x19, cloak on
+	{ "commander",   250.0f, 40,  40.0f, 0 },
+};
+// CP table differs from DM only in snakegoauld speed: 270.0f (0x43870000).
+static const SGTCSClassDef s_SgtcCPGoauldClass[6] =
+{
+	{ NULL, 0.0f, 0, 0.0f, 0 },
+	{ "systemlord",  250.0f, 35,  35.0f, 1 },
+	{ "anubis",      250.0f, 80,  80.0f, 1 },
+	{ "goauld3",     325.0f, 40,  40.0f, 1 },
+	{ "snakegoauld", 270.0f, 80,  80.0f, 1 },
+	{ "horus",       325.0f, 30,  30.0f, 1 },
+};
+
+// Weapon-grant table — ref WPLIST (nm 0x220c40) == WPLISTB (nm 0x220a60):
+// identical 28 entries; CP spawn uses WPLISTB, DM spawn WPLIST, both the same
+// names. Distinct from the NULL-headed gond4h9wp menu table in sgtc_player.cpp.
+static const char * const s_SgtcSpawnWeapons[28] =
+{
+	"weapon_glstaff",	"weapon_usas",		"weapon_batsup",
+	"weapon_m92s",		"weapon_mp5",		"weapon_psg1",
+	"weapon_p90",		"weapon_spas",		"weapon_m16",
+	"weapon_main",		"weapon_zat",		"weapon_lance",
+	"weapon_reetou",	"weapon_zatarc",	"weapon_tacgun",
+	"weapon_handgrenade","weapon_mine",		"weapon_invis",
+	"weapon_invis",		"weapon_gacgoa",	"weapon_c4",
+	"weapon_larve",		"weapon_medic",		"weapon_smokegrenade",
+	"weapon_nervegrenade","weapon_narcogrenade","weapon_mustardgrenade",
+	"weapon_goaregen"
+};
+
 void CStargateTeamDM::PlayerSpawn( CBasePlayer *pPlayer )
 {
+	// ref CStargateTeamDM::PlayerSpawn @0x18e7e2 (rea_dump/CStargateTeamDM__PlayerSpawn.c).
+	// Engfuncs-mirror DAT_00238fd4 = enginefuncs[117] = pfnGetPlayerWONId
+	// (returns -1 for an unfound edict — the "+0x914 locked" sentinel).
+	pPlayer->m_iSgtcSpecMode = (int)g_engfuncs.pfnGetPlayerWONId( pPlayer->edict() );
+	pPlayer->m_bSgtcPad3e3 = 0;					// ref +0x3e3 = 0
+	pPlayer->m_iSgtcFlagsCa8 &= ~0xB;				// ref +0xca8 &= 0xfffffff4
 	pPlayer->StopObserver();
 	CHalfLifeMultiplay::PlayerSpawn( pPlayer );
-	SGTC_GiveTeamLoadout( pPlayer );
+	if( sgtc_GameModeSet != 3 )
+	{
+		pPlayer->m_bSnagInvisFlag = 0;			// ref +0x4df = 0
+		pPlayer->m_bSnagInvisLatch = pPlayer->m_bSnagInvisFlag;	// +0x4de = +0x4df
+	}
+	pPlayer->m_bNukeViewSnap = 0;					// ref +0x463 = 0
+
+	if( !strncmp( pPlayer->m_szTeamName, "Goa'uld", 7 ) )	// ref DAT_001ebb90, 7-char
+	{
+		pPlayer->pev->team = 1;					// ref pev+0x1ac = 1
+		pPlayer->m_bSgtcCloakTick = 0;			// ref +0x448 = 0
+		if( pPlayer->m_bSgtcSuperman != 1 )		// ref +0x924 != 1
+		{
+			int cls = pPlayer->m_iSgtcPortraitShown;	// ref +0xa40
+			if( cls >= 1 && cls <= 5 )
+			{
+				const SGTCSClassDef &d = s_SgtcGoauldClass[cls];
+				g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(),
+					g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model", d.model );
+				pPlayer->pev->maxspeed = d.maxspeed;
+				pPlayer->m_iSnagArmorCap = d.snagArmorCap;
+				pPlayer->pev->armorvalue = d.armorvalue;
+				pPlayer->m_bSgtcCloakTick = (char)d.cloak;
+			}
+		}
+	}
+	else if( !strncmp( pPlayer->m_szTeamName, "Torri", 5 ) )	// ref "Torri", 5-char
+	{
+		pPlayer->pev->team = 2;					// ref pev+0x1ac = 2
+		pPlayer->m_bSgtcCloakTick = 0;
+		if( pPlayer->m_bSgtcSuperman != 1 )
+		{
+			int cls = pPlayer->m_iSgtcPortraitShown;
+			if( cls >= 1 && cls <= 5 )
+			{
+				const SGTCSClassDef &d = s_SgtcTorriClass[cls];
+				g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(),
+					g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model", d.model );
+				pPlayer->pev->maxspeed = d.maxspeed;
+				pPlayer->m_iSnagArmorCap = d.snagArmorCap;
+				pPlayer->pev->armorvalue = d.armorvalue;
+				pPlayer->m_bSgtcCloakTick = (char)d.cloak;
+			}
+		}
+	}
+
+	for( int i = 0; i < 28; i++ )				// ref +0x93c[0x1c] = 1
+		pPlayer->m_iProgressTeam[i] = 1;
+	SetWeaponAllow( pPlayer );					// ref @0x17a26c
+
+	if( pPlayer->m_iSgtcPrevClass != pPlayer->m_iSgtcPortraitShown ||
+		pPlayer->m_iSgtcPrevPeTeam != (int)pPlayer->pev->team )
+	{
+		// Class/team changed: resend Progress, unlock menu, wipe grant copy.
+		MESSAGE_BEGIN( MSG_ONE, gmsgProgress, NULL, pPlayer->pev );
+			WRITE_BYTE( 0 );
+			WRITE_BYTE( pPlayer->m_iNukeBonus );			// ref +0x934
+			for( int i = 0; i < 28; i++ )
+				WRITE_BYTE( pPlayer->m_iProgressTeam[i] );
+			WRITE_BYTE( 1 );
+		MESSAGE_END();
+		pPlayer->m_bSgtcMenuLock = 0;				// ref +0x4e5
+		for( int i = 0; i < 28; i++ )
+			pPlayer->m_iSgtcGondArgs[i] = 0;		// ref +0x9ac[i] = 0
+	}
+
+	BOOL bHadLoadout = FALSE;					// ref local_29
+	pPlayer->m_bSgtcMenuLockLatch = 0;			// ref +0x4e7
+	pPlayer->m_iSgtcGondState = 0;				// ref +0x4f4
+
+	// ref grant gate: vcall+0x94 (IsAlive) && !IsObserver && +0x4de == 0.
+	if( pPlayer->IsAlive() && !pPlayer->IsObserver() && !pPlayer->m_bSnagInvisLatch )
+	{
+		for( int i = 0; i < 28; i++ )
+		{
+			if( pPlayer->m_iSgtcGondArgs[i] == 1 )	// ref +0x9ac[i] == 1
+			{
+				pPlayer->m_bSgtcMenuLockLatch = 1;	// ref +0x4e7 = 1
+				bHadLoadout = TRUE;
+				if( i == 0x11 || i == 0x12 )
+				{
+					// ref +0x4f4 shield-slot state machine (identical 4-step
+					// merge as GiveFromMenu).
+					if( pPlayer->m_iSgtcGondState == 0 && i == 0x11 )
+						pPlayer->m_iSgtcGondState = 1;
+					if( pPlayer->m_iSgtcGondState == 1 && i == 0x12 )
+						pPlayer->m_iSgtcGondState = 3;
+					if( pPlayer->m_iSgtcGondState == 0 && i == 0x12 )
+						pPlayer->m_iSgtcGondState = 2;
+					if( pPlayer->m_iSgtcGondState == 2 && i == 0x11 )
+						pPlayer->m_iSgtcGondState = 3;
+				}
+				else
+					pPlayer->GiveNamedItem( s_SgtcSpawnWeapons[i] );
+			}
+		}
+		// ref: armed shield state + !(pev->weapons bit 9) grants WPLIST[26].
+		if( pPlayer->m_iSgtcGondState != 0 &&
+			( ( pPlayer->pev->weapons >> 9 ) & 1 ) != 1 )
+			pPlayer->GiveNamedItem( s_SgtcSpawnWeapons[0x1a] );	// WPLIST._68_4_
+		if( pPlayer->pev->team == 1 )
+			pPlayer->GiveNamedItem( "weapon_coujaf" );	// Goa'uld melee
+		else
+			pPlayer->GiveNamedItem( "weapon_couteau" );	// Torri melee
+	}
+
+	MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pPlayer->pev );
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( 4 );
+		WRITE_BYTE( 0 );
+	MESSAGE_END();
+
+	if( pPlayer->m_bSnagInvisLatch )				// ref +0x4de != 0
+	{
+		// Invis-class override: hidden model, 430 speed, 180 cap/armor.
+		g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(),
+			g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model", "invis" );	// DAT_001ebc6c
+		pPlayer->pev->maxspeed = 430.0f;			// 0x43d70000
+		pPlayer->m_iSnagArmorCap = 0xb4;			// +0x908 = 180
+		pPlayer->pev->armorvalue = 180.0f;			// 0x43340000
+		pPlayer->m_iNukeBonus = 0;					// +0x934 = 0
+		pPlayer->m_bSgtcCloakTick = 1;
+		pPlayer->GiveNamedItem( "weapon_coujaf" );
+		pPlayer->GiveNamedItem( "weapon_lance" );
+		pPlayer->GiveNamedItem( "weapon_zat" );
+		MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pPlayer->pev );
+			WRITE_BYTE( 0 );
+			WRITE_BYTE( 0 );
+			WRITE_BYTE( 5 );
+			WRITE_BYTE( 0 );
+		MESSAGE_END();
+	}
+
+	// ref: pev->flags bit14 == FL_DUCKING selects the ducked hull.
+	if( ( ( pPlayer->pev->flags >> 14 ) & 1 ) == 0 )
+		UTIL_SetSize( pPlayer->pev, Vector( -16, -16, -36 ), Vector( 16, 16, 36 ) );
+	else
+		UTIL_SetSize( pPlayer->pev, Vector( -16, -16, -20 ), Vector( 16, 16, 20 ) );
+	pPlayer->pev->view_ofs = Vector( 0, 0, 28 );	// ref pev+0x174
+
+	pPlayer->m_iSgtcPrevClass = pPlayer->m_iSgtcPortraitShown;	// +0x500 = +0xa40
+	pPlayer->m_iSgtcPrevPeTeam = (int)pPlayer->pev->team;		// +0x504 = pev->team
+
+	if( pPlayer->m_bSgtcPePreset )					// ref +0x465 PE preset
+	{
+		pPlayer->pev->maxspeed = 400.0f;			// 0x43c80000
+		pPlayer->pev->armorvalue = 100.0f;			// 0x42c80000
+		pPlayer->pev->renderfx = 0x13;				// pev+0x15c
+		pPlayer->pev->renderamt = 2.0f;				// pev+0x14c = 0x40000000
+		pPlayer->pev->rendercolor = Vector( 255.0f, 0.0f, 0.0f );	// pev+0x150/+0x154/+0x158
+	}
+
+	int clientIndex = pPlayer->entindex();
+	if( pPlayer->pev->team == 1 )
+		pPlayer->m_iSgtcSubmodelIdx = 0;			// ref +0x440
+	else if( pPlayer->pev->team == 2 )
+		pPlayer->m_iSgtcSubmodelIdx = 1;
+	else
+		pPlayer->m_iSgtcSubmodelIdx = 2;
+	pPlayer->ChangeSubmodel();						// ref @0x153e88
+
+	// ref: vcall+0x94 (IsAlive) && StopObserver — verbatim dispatch.
+	if( pPlayer->IsAlive() )
+		pPlayer->StopObserver();
+	if( !pPlayer->IsObserver() )
+	{
+		pPlayer->pev->renderamt = 255.0f;			// pev+0x14c = 0x437f0000
+		pPlayer->pev->renderfx = 0;				// pev+0x15c
+		pPlayer->pev->rendermode = 0;				// pev+0x148
+		pPlayer->m_bSgtcInWorld = 1;				// ref +0x44b
+	}
+	if( pPlayer->IsObserver() )
+		pPlayer->pev->team = 0;						// ref pev+0x1ac = 0
+
+	MESSAGE_BEGIN( MSG_ONE, gmsgTicketMode, NULL, pPlayer->pev );
+		WRITE_BYTE( sgtc_GameModeSet > 0 ? 1 : 0 );	// ref (0 < GameModeSet)
+	MESSAGE_END();
+
+	MESSAGE_BEGIN( MSG_ALL, gmsgScoreInfo );
+		WRITE_BYTE( clientIndex );
+		WRITE_SHORT( (int)pPlayer->pev->frags );	// ref pev+0x164
+		WRITE_SHORT( pPlayer->m_iDeaths );			// ref +0xdf0
+		WRITE_SHORT( pPlayer->m_bSnagInvisLatch == 1 ? 6 : pPlayer->m_iSgtcPortraitShown );
+		WRITE_SHORT( g_pGameRules->GetTeamIndex( pPlayer->m_szTeamName ) + 1 );
+		WRITE_SHORT( 0 );
+	MESSAGE_END();
+
+	MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pPlayer->pev );
+		WRITE_BYTE( (int)( pPlayer->pev->armorvalue * 100.0f /
+			(float)pPlayer->m_iSnagArmorCap ) );	// ref ROUND(armor*100/cap)
+		WRITE_BYTE( (int)sgtc_cvar_superweapons.value );	// ref ROUND(superguns+0xc)
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( 0 );
+	MESSAGE_END();
+
+	pPlayer->SendAboutMe( (int)pPlayer->pev->team,
+		STRING( pPlayer->pev->netname ), clientIndex );	// ref @0x1262b8
+	RecountTeams( FALSE );
+
+	if( !bHadLoadout && pPlayer->m_bSnagInvisLatch != 1 )
+	{
+		if( sgtc_cvar_wepselmode.value == 1.0f )		// ref weaponsel == 1.0
+			pPlayer->ShowVGUIMenu( 0xc );
+		else if( sgtc_cvar_wepselmode.value == 2.0f )	// ref weaponsel == 2.0
+			pPlayer->ShowVGUIMenu( 0x3c );
+	}
+	pPlayer->m_bSgtcLatchA9c = 0;					// ref +0xa9c = 0
+	AddPortrait( pPlayer );							// ref vtable+0x110
+	if( pPlayer->IsAlive() && !pPlayer->IsObserver() )
+		StartPortrait( pPlayer );					// ref vtable+0x114
 }
 
 
@@ -777,13 +1353,233 @@ edict_t *CStargateTeamCP::GetPlayerSpawnSpot( CBasePlayer *pPlayer )
 
 void CStargateTeamCP::PlayerSpawn( CBasePlayer *pPlayer )
 {
-	CStargateTeamDM::PlayerSpawn( pPlayer );
-	// ref CP PlayerSpawn @0x171586 — default cloak tick off until loadout arms it.
-	pPlayer->m_bSgtcCloakTick = 0;
-	// CTP capture HUD mode: TicketMode on.
-	MESSAGE_BEGIN( MSG_ONE, gmsgTicketMode, NULL, pPlayer->edict() );
-		WRITE_BYTE( 1 );
+	// ref CStargateTeamCP::PlayerSpawn @0x1814a6
+	// (rea_dump/CStargateTeamCP__PlayerSpawn.c). This is a DM-shaped spawn
+	// with CP deltas: no GameModeSet!=3 invis-latch clear, +0x463 = 0 kept,
+	// snakegoauld 270.0f, type/teamed 50hp tails, freeguns override, solid
+	// gate on the melee give, type-4 +0x4ac clear, TicketMode byte from type,
+	// ScoreInfo without the invis==6 override, tail order
+	// SendAboutMe -> AddPortrait -> RecountTeams, no +0xa9c latch clear,
+	// type-4 attack deadline.
+	pPlayer->m_iSgtcSpecMode = (int)g_engfuncs.pfnGetPlayerWONId( pPlayer->edict() );
+	pPlayer->m_bSgtcPad3e3 = 0;					// ref +0x3e3 = 0
+	pPlayer->m_iSgtcFlagsCa8 &= ~0xB;				// ref +0xca8 &= 0xfffffff4
+	pPlayer->StopObserver();
+	CHalfLifeMultiplay::PlayerSpawn( pPlayer );
+	pPlayer->m_bNukeViewSnap = 0;					// ref +0x463 = 0
+
+	if( !strncmp( pPlayer->m_szTeamName, "Goa'uld", 7 ) )	// ref DAT_001eb14c, 7-char
+	{
+		pPlayer->pev->team = 1;
+		pPlayer->m_bSgtcCloakTick = 0;
+		if( pPlayer->m_bSgtcSuperman != 1 )		// ref +0x924 != 1
+		{
+			int cls = pPlayer->m_iSgtcPortraitShown;
+			if( cls >= 1 && cls <= 5 )
+			{
+				const SGTCSClassDef &d = s_SgtcCPGoauldClass[cls];
+				g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(),
+					g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model", d.model );
+				pPlayer->pev->maxspeed = d.maxspeed;
+				pPlayer->m_iSnagArmorCap = d.snagArmorCap;
+				pPlayer->pev->armorvalue = d.armorvalue;
+				pPlayer->m_bSgtcCloakTick = (char)d.cloak;
+			}
+		}
+		if( ( sgtc_type == 2 && sgtc_teamed == 2 ) ||
+			( sgtc_type == 4 && m_iSgtcCPSide == 0 ) )
+		{
+			// ref: this side plays the weakened "50hp" shell.
+			pPlayer->pev->armorvalue = 0;
+			pPlayer->pev->health = 50.0f;		// pev+0x160 = 0x42480000
+			pPlayer->pev->max_health = 50.0f;	// pev+0x1b0
+		}
+		else
+		{
+			pPlayer->m_bSgtcCloakTick = 0;		// ref +0x448 = 0
+			pPlayer->m_iSnagArmorCap = 100;		// ref +0x908 = 100
+			pPlayer->pev->armorvalue = 100.0f;	// 0x42c80000
+			pPlayer->m_iNukeBonus = 200;		// ref +0x934 = 200
+		}
+	}
+	else if( !strncmp( pPlayer->m_szTeamName, "Torri", 5 ) )
+	{
+		pPlayer->pev->team = 2;
+		pPlayer->m_bSgtcCloakTick = 0;
+		if( pPlayer->m_bSgtcSuperman != 1 )
+		{
+			int cls = pPlayer->m_iSgtcPortraitShown;
+			if( cls >= 1 && cls <= 5 )
+			{
+				const SGTCSClassDef &d = s_SgtcTorriClass[cls];
+				g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(),
+					g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model", d.model );
+				pPlayer->pev->maxspeed = d.maxspeed;
+				pPlayer->m_iSnagArmorCap = d.snagArmorCap;
+				pPlayer->pev->armorvalue = d.armorvalue;
+				pPlayer->m_bSgtcCloakTick = (char)d.cloak;
+			}
+		}
+		if( ( sgtc_type == 2 && sgtc_teamed == 1 ) ||
+			( sgtc_type == 4 && m_iSgtcCPSide != 0 ) )
+		{
+			pPlayer->pev->armorvalue = 0;
+			pPlayer->pev->health = 50.0f;
+			pPlayer->pev->max_health = 50.0f;
+		}
+		else
+		{
+			pPlayer->m_bSgtcCloakTick = 0;
+			pPlayer->m_iSnagArmorCap = 100;
+			pPlayer->pev->armorvalue = 100.0f;
+			pPlayer->m_iNukeBonus = 200;
+		}
+	}
+
+	for( int i = 0; i < 28; i++ )				// ref +0x93c[0x1c] = 1
+		pPlayer->m_iProgressTeam[i] = 1;
+	SetWeaponAllow( pPlayer );
+
+	if( pPlayer->m_iSgtcPrevClass != pPlayer->m_iSgtcPortraitShown ||
+		pPlayer->m_iSgtcPrevPeTeam != (int)pPlayer->pev->team )
+	{
+		MESSAGE_BEGIN( MSG_ONE, gmsgProgress, NULL, pPlayer->pev );
+			WRITE_BYTE( 0 );
+			WRITE_BYTE( pPlayer->m_iNukeBonus );
+			for( int i = 0; i < 28; i++ )
+				WRITE_BYTE( pPlayer->m_iProgressTeam[i] );
+			WRITE_BYTE( 1 );
+		MESSAGE_END();
+		pPlayer->m_bSgtcMenuLock = 0;			// ref +0x4e5
+		for( int i = 0; i < 28; i++ )
+			pPlayer->m_iSgtcGondArgs[i] = 0;	// ref +0x9ac[i] = 0
+	}
+
+	BOOL bHadLoadout = FALSE;					// ref bVar8
+	pPlayer->m_iSgtcGondState = 0;				// ref +0x4f4
+	// ref CP grant gate: vcall+0x94 (IsAlive) && !IsObserver — NO +0x4de check.
+	// Grants fire on ANY nonzero +0x9ac[i] when freeguns > 1.
+	if( pPlayer->IsAlive() && !pPlayer->IsObserver() )
+	{
+		for( int i = 0; i < 28; i++ )
+		{
+			if( pPlayer->m_iSgtcGondArgs[i] != 0 ||
+				sgtc_cvar_freeguns.value > 1.0f )
+			{
+				bHadLoadout = TRUE;
+				if( i == 0x11 || i == 0x12 )
+				{
+					if( pPlayer->m_iSgtcGondState == 0 && i == 0x11 )
+						pPlayer->m_iSgtcGondState = 1;
+					if( pPlayer->m_iSgtcGondState == 1 && i == 0x12 )
+						pPlayer->m_iSgtcGondState = 3;
+					if( pPlayer->m_iSgtcGondState == 0 && i == 0x12 )
+						pPlayer->m_iSgtcGondState = 2;
+					if( pPlayer->m_iSgtcGondState == 2 && i == 0x11 )
+						pPlayer->m_iSgtcGondState = 3;
+				}
+				else
+					pPlayer->GiveNamedItem( s_SgtcSpawnWeapons[i] );	// ref WPLISTB[i]
+			}
+		}
+		// ref: armed shield state + !(pev->weapons bit 9) grants WPLISTB[26].
+		if( pPlayer->m_iSgtcGondState != 0 &&
+			( ( pPlayer->pev->weapons >> 9 ) & 1 ) != 1 )
+			pPlayer->GiveNamedItem( s_SgtcSpawnWeapons[0x1a] );
+		// ref: melee only when solid && !observer.
+		if( !pPlayer->IsObserver() && pPlayer->pev->solid != 0 )
+		{
+			if( pPlayer->pev->team == 1 )
+				pPlayer->GiveNamedItem( "weapon_coujaf" );
+			else
+				pPlayer->GiveNamedItem( "weapon_couteau" );
+		}
+	}
+
+	if( sgtc_type == 4 )
+	{
+		pPlayer->m_iSgtcPad4ac = 0;				// ref +0x4ac = 0
+		m_iSgtcCPSide = 0;					// ref +0x734 = 0
+	}
+	pPlayer->m_iSgtcPrevClass = pPlayer->m_iSgtcPortraitShown;
+	pPlayer->m_iSgtcPrevPeTeam = (int)pPlayer->pev->team;
+
+	int clientIndex = pPlayer->entindex();
+	if( pPlayer->pev->team == 1 )
+		pPlayer->m_iSgtcSubmodelIdx = 0;
+	else if( pPlayer->pev->team == 2 )
+		pPlayer->m_iSgtcSubmodelIdx = 1;
+	else
+		pPlayer->m_iSgtcSubmodelIdx = 2;
+	pPlayer->ChangeSubmodel();
+
+	if( pPlayer->IsAlive() )
+		pPlayer->StopObserver();			// ref vcall+0x94 != 0 -> StopObserver
+	if( !pPlayer->IsObserver() )
+	{
+		pPlayer->pev->renderamt = 255.0f;
+		pPlayer->pev->renderfx = 0;
+		pPlayer->pev->rendermode = 0;
+		pPlayer->m_bSgtcInWorld = 1;		// ref +0x44b
+	}
+	if( pPlayer->IsObserver() )
+		pPlayer->pev->team = 0;
+
+	MESSAGE_BEGIN( MSG_ONE, gmsgTicketMode, NULL, pPlayer->pev );
+		WRITE_BYTE( ( sgtc_type < 2 || sgtc_type == 4 ) ? 1 : 0 );	// ref (type<2 || type==4)
 	MESSAGE_END();
+
+	MESSAGE_BEGIN( MSG_ALL, gmsgScoreInfo );
+		WRITE_BYTE( clientIndex );
+		WRITE_SHORT( (int)pPlayer->pev->frags );
+		WRITE_SHORT( pPlayer->m_iDeaths );
+		WRITE_SHORT( pPlayer->m_iSgtcPortraitShown );	// ref: no invis==6 override in CP
+		WRITE_SHORT( g_pGameRules->GetTeamIndex( pPlayer->m_szTeamName ) + 1 );
+		WRITE_SHORT( 0 );
+	MESSAGE_END();
+
+	MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pPlayer->pev );
+		WRITE_BYTE( (int)( pPlayer->pev->armorvalue * 100.0f /
+			(float)pPlayer->m_iSnagArmorCap ) );
+		WRITE_BYTE( (int)sgtc_cvar_superweapons.value );
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( 0 );
+	MESSAGE_END();
+
+	pPlayer->SendAboutMe( (int)pPlayer->pev->team,
+		STRING( pPlayer->pev->netname ), clientIndex );
+	AddPortrait( pPlayer );					// ref vtable+0x110 — CP override
+	RecountTeams( FALSE );
+
+	if( !bHadLoadout )
+	{
+		if( sgtc_cvar_wepselmode.value == 1.0f )
+			pPlayer->ShowVGUIMenu( 0xc );
+		else if( sgtc_cvar_wepselmode.value == 2.0f )
+			pPlayer->ShowVGUIMenu( 0x3c );
+	}
+	// NOTE: ref CP has no +0xa9c (m_bSgtcLatchA9c) clear here.
+	if( pPlayer->IsAlive() && !pPlayer->IsObserver() )
+		StartPortrait( pPlayer );			// ref vtable+0x114 — CP override
+
+	if( sgtc_type == 4 )
+	{
+		// ref: the non-side team arms its attack deadline.
+		if( m_iSgtcCPSide == 0 )
+		{
+			if( pPlayer->pev->team == 1 )
+				pPlayer->m_flSgtcAttackEnd = sgtc_cvar_attackcountdown.value + sgtc_roundstart;
+			else
+				pPlayer->m_flSgtcAttackEnd = 0.0f;
+		}
+		else
+		{
+			if( pPlayer->pev->team == 2 )
+				pPlayer->m_flSgtcAttackEnd = sgtc_cvar_attackcountdown.value + sgtc_roundstart;
+			else
+				pPlayer->m_flSgtcAttackEnd = 0.0f;
+		}
+	}
 }
 
 // ===========================================================================
@@ -946,6 +1742,8 @@ void CStargateUnas::SGTC_SendTeamNames( CBasePlayer *pPlayer )
 		WRITE_BYTE( m_iSGTCTeamCount );
 		for( int i = 0; i < m_iSGTCTeamCount; i++ )
 			WRITE_STRING( m_szSGTCTeams[i] );
+		for( int z = 0; z < 28; z++ )
+			WRITE_BYTE( 0 );	// ref: TeamNames carries a 28-byte pad tail
 	MESSAGE_END();
 }
 
@@ -969,24 +1767,24 @@ edict_t *CStargateUnas::SGTC_FindTeamSpawn( const char *pszClassname )
 
 void CStargateUnas::PlayerSpawn( CBasePlayer *pPlayer )
 {
-	// ref @0x19924c: base spawn; "Unas" team branch gives lance + invis, says
-	// "Vous etes le Unas, bonne boucherie :-)", pev->health/max_health/maxspeed
-	// = 250, m_iBloodColor = 247 (BLOOD_COLOR_RED), GiveAmmo( 9mm, 100, 48 ).
-	// "Torri" branch: 9mmhandgun/9mmAR/main/lance/zat/flashbang, 9mm 100/48,
-	// ARgrenades 100/4, health/max_health/maxspeed = 100, m_iBloodColor = 195
-	// (BLOOD_COLOR_YELLOW), "Vous etes un Marine, bonne chance...\n".
+	// ref @0x19924c spot-check (rea_dump/CStargateUnas__PlayerSpawn.c):
+	// "Unas" branch — health/max_health 250.0f, lance+invis, +0x3b0 = 0xc3
+	// (BLOOD_COLOR_YELLOW), "Vous etes le Unas, bonne boucherie :-)\n"; NO
+	// maxspeed write. "Marine" branch (stricmp, not blanket else) —
+	// 9mmhandgun/9mmAR/main/lance/zat/flashbang, GiveAmmo(100,"9mm",48),
+	// GiveAmmo(2,"ARgrenades",10), health/max_health 100.0f, +0x3b0 = 0xf7
+	// (BLOOD_COLOR_RED), "Vous etes un Marine, bonne chance...\n".
 	CHalfLifeMultiplay::PlayerSpawn( pPlayer );
 	if( !stricmp( pPlayer->m_szTeamName, "Unas" ) )
 	{
-		pPlayer->GiveNamedItem( "weapon_lance" );
-		pPlayer->GiveNamedItem( "weapon_invis" );
-		UTIL_SayText( "Vous etes le Unas, bonne boucherie :-)\n", pPlayer );
 		pPlayer->pev->health = 250.0f;		// ref pev+0x160 = 0x437a0000
 		pPlayer->pev->max_health = 250.0f;	// ref pev+0x1b0
-		pPlayer->pev->maxspeed = 250.0f;	// ref pev+0x210
-		pPlayer->m_iBloodColor = BLOOD_COLOR_RED;	// ref +0x3b0 = 247
+		pPlayer->GiveNamedItem( "weapon_lance" );
+		pPlayer->GiveNamedItem( "weapon_invis" );
+		pPlayer->m_iBloodColor = BLOOD_COLOR_YELLOW;	// ref +0x3b0 = 0xc3
+		UTIL_SayText( "Vous etes le Unas, bonne boucherie :-)\n", pPlayer );
 	}
-	else
+	else if( !stricmp( pPlayer->m_szTeamName, "Marine" ) )	// ref "Marine", 6-char
 	{
 		pPlayer->GiveNamedItem( "weapon_9mmhandgun" );
 		pPlayer->GiveNamedItem( "weapon_9mmAR" );
@@ -994,13 +1792,12 @@ void CStargateUnas::PlayerSpawn( CBasePlayer *pPlayer )
 		pPlayer->GiveNamedItem( "weapon_lance" );
 		pPlayer->GiveNamedItem( "weapon_zat" );
 		pPlayer->GiveNamedItem( "weapon_flashbang" );
-		pPlayer->GiveAmmo( 100, "9mm", 48 );
-		pPlayer->GiveAmmo( 100, "ARgrenades", 4 );
-		UTIL_SayText( "Vous etes un Marine, bonne chance...\n", pPlayer );
+		pPlayer->GiveAmmo( 100, "9mm", 48 );		// ref vcall+0x6c (100, "9mm", 0x30)
+		pPlayer->GiveAmmo( 2, "ARgrenades", 10 );	// ref vcall+0x6c (2, "ARgrenades", 10)
 		pPlayer->pev->health = 100.0f;		// ref pev+0x160 = 0x42c80000
 		pPlayer->pev->max_health = 100.0f;	// ref pev+0x1b0
-		pPlayer->pev->maxspeed = 100.0f;	// ref pev+0x210
-		pPlayer->m_iBloodColor = BLOOD_COLOR_YELLOW;	// ref +0x3b0 = 195
+		pPlayer->m_iBloodColor = BLOOD_COLOR_RED;	// ref +0x3b0 = 0xf7
+		UTIL_SayText( "Vous etes un Marine, bonne chance...\n", pPlayer );
 	}
 }
 
@@ -1113,34 +1910,36 @@ CStargateInvis::CStargateInvis( void )
 
 void CStargateInvis::PlayerSpawn( CBasePlayer *pPlayer )
 {
-	// ref @0x17c44e: team "Torri" -> DM-like loadout (m92s/zat/flashbang,
-	// 9mm 68/48) + maxspeed 250; team "Invisible" -> give invis lance + ToggleVis
-	// when the invis latch is armed; both then zero +0x4de and ToggleVis the
-	// latch again.
+	// ref @0x17c44e spot-check (rea_dump/CStargateInvis__PlayerSpawn.c):
+	// "Invisible" branch (checked FIRST) — maxspeed 1000.0f (0x447a0000);
+	// ToggleVis only when +0x4e9 != 1; "Vous etes invisible... :-)\n".
+	// "Torri" branch — ToggleVis when +0x4e9 != 0; maxspeed 400.0f
+	// (0x43c80000); 9mmhandgun/m92s/handgrenade/flashbang/lance/zat;
+	// GiveAmmo(68,"9mm",48) + GiveAmmo(2,"Hand Grenade",3);
+	// "Trouvez l invisible...\n". NO trailing +0x4de=0/extra ToggleVis.
 	CHalfLifeMultiplay::PlayerSpawn( pPlayer );
-	if( !stricmp( pPlayer->m_szTeamName, "Torri" ) )
+	if( !stricmp( pPlayer->m_szTeamName, "Invisible" ) )
 	{
+		pPlayer->pev->maxspeed = 1000.0f;	// ref pev+0x210 = 0x447a0000
+		if( pPlayer->m_bShieldSprint != 1 )	// ref +0x4e9 != 1
+			pPlayer->SGTC_ToggleVis();		// ref CBasePlayer::ToggleVis @0x136454
+		UTIL_SayText( "Vous etes invisible... :-)\n", pPlayer );
+	}
+	else if( !stricmp( pPlayer->m_szTeamName, "Torri" ) )
+	{
+		if( pPlayer->m_bShieldSprint != 0 )		// ref +0x4e9 != 0
+			pPlayer->SGTC_ToggleVis();
+		pPlayer->pev->maxspeed = 400.0f;	// ref pev+0x210 = 0x43c80000
 		pPlayer->GiveNamedItem( "weapon_9mmhandgun" );
 		pPlayer->GiveNamedItem( "weapon_m92s" );
-		pPlayer->GiveNamedItem( "weapon_zat" );
+		pPlayer->GiveNamedItem( "weapon_handgrenade" );
 		pPlayer->GiveNamedItem( "weapon_flashbang" );
-		pPlayer->GiveAmmo( 68, "9mm", 48 );
-		UTIL_SayText( "Vous etes un Torri, invisible, bonne chance...\n", pPlayer );
-		pPlayer->pev->maxspeed = 250.0f;	// ref pev+0x210 = 0x437a0000
-		if( pPlayer->m_bShieldSprint == 1 )	// ref +0x4e9
-			pPlayer->SGTC_ToggleVis();		// ref CBasePlayer::ToggleVis @0x136454
-	}
-	else
-	{
 		pPlayer->GiveNamedItem( "weapon_lance" );
-		pPlayer->GiveNamedItem( "weapon_invis" );
-		UTIL_SayText( "Vous etes un Invisible, bonne chance...\n", pPlayer );
-		pPlayer->pev->maxspeed = 250.0f;	// ref pev+0x210 = 0x437a0000
-		if( pPlayer->m_bShieldSprint == 1 )
-			pPlayer->SGTC_ToggleVis();
+		pPlayer->GiveNamedItem( "weapon_zat" );
+		pPlayer->GiveAmmo( 68, "9mm", 48 );		// ref vcall+0x6c (0x44, "9mm", 0x30)
+		pPlayer->GiveAmmo( 2, "Hand Grenade", 3 );	// ref vcall+0x6c (2, "Hand Grenade", 3)
+		UTIL_SayText( "Trouvez l invisible...\n", pPlayer );
 	}
-	pPlayer->m_bSnagInvisLatch = 0;		// ref +0x4de = 0
-	pPlayer->SGTC_ToggleVis();			// ref CBasePlayer::ToggleVis @0x136454
 }
 
 CStargateReplicateur::CStargateReplicateur( void )
@@ -1309,9 +2108,10 @@ BOOL CStargateReplicateur::ClientCommand( CBasePlayer *pPlayer, const char *pcmd
 
 void CStargateReplicateur::PlayerSpawn( CBasePlayer *pPlayer )
 {
-	// ref @0x17dc7e: DM spawn, then shrink the "Replic" team hull.
+	// ref @0x17dc7e (rea_dump/CStargateReplicateur__PlayerSpawn.c): base spawn,
+	// +0xca8 &= ~0xb, then shrink the "Replic" team hull.
 	CHalfLifeMultiplay::PlayerSpawn( pPlayer );
-	// ref param_1+0xca8 &= ~0xb — low-nibble clear on an SGTC player flag.
+	pPlayer->m_iSgtcFlagsCa8 &= ~0xB;	// ref param_1+0xca8 &= 0xfffffff4
 	if( !stricmp( pPlayer->m_szTeamName, "Replic" ) ) // ref rodata 0x1eade0
 	{
 		pPlayer->pev->view_ofs = Vector( 0, 0, 6 );	// +0x174

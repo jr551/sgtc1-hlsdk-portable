@@ -36,6 +36,7 @@
 #include "cl_util.h"
 #include "parsemsg.h"
 #include "sgtc_vgui.h"
+#include "sgtc_hud.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -165,6 +166,12 @@ int CSgtcViewport::MsgFunc_TeamNames( const char *pszName, int iSize, void *pbuf
 		gHUD.m_TextMessage.LocaliseTextString(
 			READ_STRING(), m_sTeamNames[teamNum], SGTC_MAX_TEAMNAME );
 	}
+
+	// ref FUN_1004910b tail (v1 @0x1004910b / 2.0 FUN_1004adbb): after the team
+	// strings the message always carries 28 progress-slot BYTEs → DAT_100e1a34
+	// (m_iProgressSlotX). Server pads zeros (ref InitHUD @0x190b54).
+	for ( int i = 0; i < SGTC_BLIP_SLOTS; i++ )
+		g_SgtcHud.m_iProgressSlotX[i] = READ_BYTE();
 	return 1;
 }
 
