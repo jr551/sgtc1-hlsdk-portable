@@ -230,6 +230,7 @@ public:
 	float	m_flShieldThinkNext;	// ref +0x404
 	char	m_bShieldWall;		// ref +0x3e0 — deploy personal shield
 	char	m_bShieldSpawned;	// ref +0x4e4 — effect_shield entity active
+	char	m_bSgtcDeathCamArmed;	// ref +0x3e1 — set once StartDeathCam used the observer spot
 	char	m_bLanceStunLatch;	// ref +0x4e8 — latched copy of +0xa3e (SgtcThink)
 	char	m_bShieldSprint;	// ref +0x4e9 — sprint drain gate
 	char	m_bShieldLarge;		// ref +0x460 — big shield sizing on spawn
@@ -244,6 +245,7 @@ public:
 	int	m_fSgtcPushLatch;	// main secondary AoE stamp (ref vfunc +0x18c arg 0x25)
 	int	m_iStamina;		// ref +0x43c — HUD Stamina usermsg byte
 	int	m_iStaminaSent;		// ref +0xa24 — last value sent to client
+	unsigned short	m_usBeamStop;	// ref +0xa30 — events/mains.sc precache handle (StartDeathCam)
 	char	m_bLanceStunFlag;	// ref +0xa3e — set by CLanceProj::ProjTouch @0xfeb57
 	float	m_flShieldTraceTime;	// ref +0xa68 — shield TraceAttack timer (CheckTimeBasedDamage)
 	float	m_flMoveLatch;		// ref +0xa6c — stamina tick gate (now+interval)

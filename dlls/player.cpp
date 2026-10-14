@@ -52,6 +52,7 @@ extern void CopyToBodyQue( entvars_t *pev);
 extern void respawn( entvars_t *pev, BOOL fCopyCorpse );
 extern Vector VecBModelOrigin( entvars_t *pevBModel );
 extern edict_t *EntSelectSpawnPoint( CBaseEntity *pPlayer );
+extern int gmsgSpectator;	// sgtc_rules.cpp — ref StartObserver fan-out
 
 // the world node graph
 extern CGraph WorldGraph;
@@ -1398,64 +1399,123 @@ void CBasePlayer::PlayerDeathThink( void )
 	pev->nextthink = -1;
 }
 
+// ref Endo_distance3d @0x1bbc1c — Manhattan 3d distance as int.
+static int SGTC_Endo_distance3d( const Vector &a, const Vector &b )
+{
+	return (int)fabs( a.x - b.x ) + (int)fabs( a.y - b.y ) +
+		(int)fabs( a.z - b.z );
+}
+
+// ref Endo_BestAngle @0x1bc110 — the most open of the 8 yaw directions (45°
+// steps) around vecPos: trace 8192 units (rodata @0x1eedd0) along each and
+// keep the yaw with the longest clear run, else zero angles.  The ref's
+// `tr.vecEndPos` non-null guard is dead (Vector::operator float* returns &x).
+static Vector SGTC_Endo_BestAngle( const Vector &vecPos )
+{
+	Vector vecYaw = g_vecZero;	// ref local_6c — (0, yaw, 0), yaw += 45 per pass
+	Vector vecBest = g_vecZero;	// ref param_1 — zeroed up front
+	int iBestDist = 0;		// ref local_14
+
+	for( int i = 0; i < 8; i++ )	// ref: do { ... } while ( i <= 7 )
+	{
+		TraceResult tr;
+		UTIL_MakeVectors( vecYaw );
+		UTIL_TraceLine( vecPos, vecPos + gpGlobals->v_forward * 8192.0f,
+			ignore_monsters, NULL, &tr );
+
+		const int iDist = SGTC_Endo_distance3d( vecPos, tr.vecEndPos );
+		if( iDist > iBestDist )
+		{
+			vecBest = vecYaw;
+			iBestDist = iDist;
+		}
+
+		vecYaw.y += 45.0f;	// rodata @0x1eedd4
+	}
+
+	return vecBest;
+}
+
 //=========================================================
-// StartDeathCam - find an intermission spot and send the
-// player off into observer mode
+// StartDeathCam - put the player into observer mode
+//
+// ref CBasePlayer::StartDeathCam @0x14c2f2 — NOT the stock HLSDK
+// intermission cam: the mod's version clears the shield state, fires the
+// "mains.sc" beam-stop event, then either rises 128 units from here (when
+// ref +0x3e1 is already armed) or teleports onto the last info_player_torri /
+// info_player_goauld / info_observer spot facing the most open direction.
+// Called from gamerules InitHUD (connect), SGTC_ObserveClient /
+// SGTC_SpectateClient and PlayerDeathThink.
 //=========================================================
 void CBasePlayer::StartDeathCam( void )
 {
-	edict_t *pSpot, *pNewSpot;
-	int iRand;
-
 	if( pev->view_ofs == g_vecZero )
 	{
 		// don't accept subsequent attempts to StartDeathCam()
 		return;
 	}
 
-	pSpot = FIND_ENTITY_BY_CLASSNAME( NULL, "info_intermission" );
+	m_bShieldWall = 0;		// ref +0x3e0
+	m_bShieldSpawned = 0;		// ref +0x4e4
+	m_flShieldLatch = 0.0f;		// ref +0x3f8
+	pev->health = 200.0f;		// ref pev+0x210 (rodata @0x1e76f0)
+	m_flMaxSpeedLatch = pev->health;	// ref +0xa7c = health
 
-	if( !FNullEnt( pSpot ) )
+	// remove own effect_shield entities (ref owner field pev+0x198)
+	CBaseEntity *pShield = NULL;
+	while( ( pShield = UTIL_FindEntityByClassname( pShield, "effect_shield" ) ) != NULL )
 	{
-		// at least one intermission spot in the world.
-		iRand = RANDOM_LONG( 0, 3 );
+		if( pShield->pev->owner == edict() )
+			UTIL_Remove( pShield );
+	}
 
-		while( iRand > 0 )
-		{
-			pNewSpot = FIND_ENTITY_BY_CLASSNAME( pSpot, "info_intermission" );
+	// beam stop: fire the latched mains.sc handle at 0.01s delay (ref flags
+	// 3, bparam2 1), re-precache it, then fire the fresh handle silently.
+	PLAYBACK_EVENT_FULL( 3, edict(), m_usBeamStop, 0.01f,
+		(float *)&pev->origin, (float *)&pev->angles, 0, 0, 0, 0, 0, 1 );
+	m_usBeamStop = PRECACHE_EVENT( 1, "events/mains.sc" );	// ref +0xa30
+	PLAYBACK_EVENT_FULL( 0, edict(), m_usBeamStop, 0,
+		(float *)&g_vecZero, (float *)&g_vecZero, 0, 0, 0, 0, 0, 0 );
 
-			if( pNewSpot )
-			{
-				pSpot = pNewSpot;
-			}
+	EMIT_SOUND( ENT( pev ), CHAN_WEAPON, "empty.wav", 1.0f, ATTN_NORM );
 
-			iRand--;
-		}
+	MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pev );
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( 4 );
+		WRITE_BYTE( 0 );
+	MESSAGE_END();
 
-		CopyToBodyQue( pev );
+	if( m_bSgtcDeathCamArmed )	// ref +0x3e1
+	{
+		// observer spot already used once: rise 128 units from here
+		TraceResult tr;
+		UTIL_TraceLine( pev->origin, pev->origin + Vector( 0, 0, 128 ), ignore_monsters, edict(), &tr );
 
-		UTIL_SetOrigin( pev, pSpot->v.origin );
-		pev->angles = pev->v_angle = pSpot->v.v_angle;
+		StartObserver( tr.vecEndPos, UTIL_VecToAngles( tr.vecEndPos - pev->origin ) );
 	}
 	else
 	{
-		// no intermission spot. Push them up in the air, looking down at their corpse
-		TraceResult tr;
-		CopyToBodyQue( pev );
-		UTIL_TraceLine( pev->origin, pev->origin + Vector( 0, 0, 128 ), ignore_monsters, edict(), &tr );
+		// first call (connect): walk the chain for the last
+		// info_player_torri, then the last info_player_goauld, then the
+		// last info_observer (ref keeps the last non-null of each pass).
+		CBaseEntity *pSpot = NULL;
+		CBaseEntity *pLast = NULL;
 
-		UTIL_SetOrigin( pev, tr.vecEndPos );
-		pev->angles = pev->v_angle = UTIL_VecToAngles( tr.vecEndPos - pev->origin );
+		while( ( pSpot = UTIL_FindEntityByClassname( pSpot, "info_player_torri" ) ) != NULL )
+			pLast = pSpot;
+		while( ( pSpot = UTIL_FindEntityByClassname( pSpot, "info_player_goauld" ) ) != NULL )
+			pLast = pSpot;
+		while( ( pSpot = UTIL_FindEntityByClassname( pSpot, "info_observer" ) ) != NULL )
+			pLast = pSpot;
+
+		if( pLast != NULL && !( pLast->pev->origin == g_vecZero ) )
+			StartObserver( pLast->pev->origin, SGTC_Endo_BestAngle( pLast->pev->origin ) );
+		else
+			StartObserver( g_vecZero, g_vecZero );
+
+		m_bSgtcDeathCamArmed = 1;	// ref +0x3e1
 	}
-
-	// start death cam
-	m_afPhysicsFlags |= PFLAG_OBSERVER;
-	pev->view_ofs = g_vecZero;
-	pev->fixangle = TRUE;
-	pev->solid = SOLID_NOT;
-	pev->takedamage = DAMAGE_NO;
-	pev->movetype = MOVETYPE_NONE;
-	pev->modelindex = 0;
 }
 
 void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
@@ -1471,7 +1531,10 @@ void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
 		m_pActiveItem->Holster();
 
 	if( m_pTank != 0 )
+	{
 		m_pTank->Use( this, this, USE_OFF, 0 );
+		m_pTank = NULL;	// ref: EHANDLE::operator=( this+0xc74, 0 )
+	}
 
 	// clear out the suit message cache so we don't keep chattering
 	SetSuitUpdate( NULL, FALSE, 0 );
@@ -1490,8 +1553,8 @@ void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
 		WRITE_BYTE( 0 );
 	MESSAGE_END();
 
-	// Setup flags
-	m_iHideHUD = ( HIDEHUD_HEALTH | HIDEHUD_FLASHLIGHT | HIDEHUD_WEAPONS );
+	// Setup flags (ref m_iHideHUD = 9: weapons + health, no flashlight)
+	m_iHideHUD = ( HIDEHUD_WEAPONS | HIDEHUD_HEALTH );
 	m_afPhysicsFlags |= PFLAG_OBSERVER;
 	pev->effects = EF_NODRAW;
 	pev->view_ofs = g_vecZero;
@@ -1504,15 +1567,22 @@ void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
 	ClearBits( pev->flags, FL_DUCKING );
 	pev->deadflag = DEAD_RESPAWNABLE;
 	pev->health = 1;
+	m_flMaxSpeedLatch = pev->health;	// ref +0xa7c = health
 
 	// Clear out the status bar
 	m_fInitHUD = TRUE;
 
-	m_szTeamName[0] = '\0';
-	MESSAGE_BEGIN( MSG_ALL, gmsgTeamInfo );
-		WRITE_BYTE( ENTINDEX(edict()) );
-		WRITE_STRING( "" );
-	MESSAGE_END();
+	// ref: skipped when +0x461 is pre-set — the "spectate" ClientCommand path
+	// sends its own team/spectator messages before calling StartDeathCam.
+	if( !m_bSgtcPad461 )
+	{
+		pev->team = 0;	// ref pev+0x1ac
+		m_szTeamName[0] = '\0';
+		MESSAGE_BEGIN( MSG_ALL, gmsgTeamInfo );
+			WRITE_BYTE( ENTINDEX(edict()) );
+			WRITE_STRING( "" );
+		MESSAGE_END();
+	}
 
 	// Remove all the player's stuff
 	RemoveAllItems( FALSE );
@@ -1522,7 +1592,18 @@ void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
 
 	// Find a player to watch
 	m_flNextObserverInput = 0;
-	Observer_SetMode( m_iObserverLastMode );
+	Observer_SetMode( OBS_CHASE_LOCKED );	// ref pushes the literal 1
+
+	// ref: the spectator fan-out is also gated on +0x461
+	if( !m_bSgtcPad461 )
+	{
+		MESSAGE_BEGIN( MSG_ALL, gmsgSpectator );
+			WRITE_BYTE( ENTINDEX(edict()) );
+			WRITE_BYTE( 1 );
+		MESSAGE_END();
+	}
+
+	m_bSgtcPad461 = 0;	// ref +0x461 — consumed by this call
 }
 
 //
