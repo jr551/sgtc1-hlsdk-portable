@@ -217,6 +217,7 @@ extern cvar_t sgtc_cvar_freeguns;		// sgtc_round.cpp (ref freeguns @0x2238f8)
 extern cvar_t sgtc_cvar_attackcountdown;	// sgtc_round.cpp (ref @0x22390c)
 extern cvar_t sgtc_cvar_superweapons;	// sgtc_round.cpp (ref superguns @0x2234d4)
 extern void SetWeaponAllow( CBasePlayer *pPlayer );	// ref @0x17a26c — reads +0x93c, sends gmsgProgress variants
+extern cvar_t *const sgtc_wpnC[28];	// sgtc_round.cpp — ref wpnC0..wpnC27 cost cvars
 extern float sgtc_endtround;	// sgtc_round.cpp (ref BSS endtround @0x2468b8, goal+6s deadline)
 
 // Team spawn classname tables (rodata 0x1d7997 block ordering).
@@ -637,6 +638,7 @@ void CStargateTeamDM::InitHUD( CBasePlayer *pPlayer )
 	}
 	if( sgtc_G_players_focused + sgtc_T_players_focused < 1 )
 		pPlayer->StartDeathCam();
+	sgtc_SendPL = 1;	// ref m_SendPL = 1 (DM InitHUD @0x191238)
 }
 
 void CStargateTeamCP::InitHUD( CBasePlayer *pPlayer )
@@ -734,34 +736,49 @@ void SetWeaponAllow( CBasePlayer *pPlayer )
 {
 	int team = (int)pPlayer->pev->team;
 	int cls = pPlayer->m_iSgtcPortraitShown;
-	static const int g_wa_team2[5][17] = {
-		{ 0,2,7,9,0xb,0xc,0xd,0x11,0x12,0x13,0x14,0x15,0x1b,-1 },
-		{ 0,1,2,5,7,8,9,0xb,0xc,0xd,0x10,0x11,0x12,0x13,0x14,0x15,-1 },
-		{ 0,1,2,7,9,8,0xb,0xc,0xd,0xe,0x10,0x11,0x12,0x13,0x14,0x15,0x1b },
-		{ 2,5,6,9,0xc,0xd,0x11,0x12,0x13,0x15,0x18,0x1a,0x1b,-1 },
-		{ 0,2,9,0xa,0xb,0xc,0xd,0xe,0x10,0x11,0x12,0x13,0x14,0x15,0x18,0x1a,0x1b },
+	// Slot lists re-read from ref SetWeaponAllow @0x18a26c (Ghidra pseudo-code,
+	// offsets +0x93c..+0x9a8 zeroed per team/class). The earlier hand-typed
+	// tables were off; these are the ref's exact zeroed-slot sets (slot =
+	// (offset-0x93c)/4). Cross-check: the orig's menu-12 capture shows exactly
+	// the 15 slots allowed by team 2 / class 1.
+	static const int g_wa_team2[5][21] = {
+		// cls 1 (13)
+		{ 0,2,7,9,12,13,14,17,18,19,21,22,27,-1 },
+		// cls 2 (16)
+		{ 0,1,2,5,7,8,9,11,13,14,16,17,18,19,20,21,-1 },
+		// cls 3 (20)
+		{ 0,1,2,7,8,9,11,12,13,14,15,17,18,19,20,21,23,24,25,27,-1 },
+		// cls 4 (13)
+		{ 2,5,6,9,13,14,17,18,19,21,24,26,27,-1 },
+		// cls 5 (18; ref case has no break — falls out of the switch)
+		{ 0,2,9,10,11,12,13,14,16,17,18,19,20,21,22,24,26,27,-1 },
 	};
-	static const int g_wa_team1[5][21] = {
-		{ 0,1,3,4,5,6,7,8,0xb,0xc,0xf,0x10,0x13,0x14,0x17,0x18,0x19,0x1a,-1 },
-		{ 0,1,3,4,5,6,7,8,9,0xc,0xf,0x10,0x11,0x12,0x13,0x14,0x17,0x18,0x19,0x1a,0x1b },
-		{ 0,1,2,3,4,5,6,7,8,9,0xb,0xd,0xf,0x10,0x11,0x13,0x14,0x15,0x17,0x18,0x19 },
-		{ 1,3,4,5,6,7,8,9,0xc,0xd,0xf,0x10,0x11,0x14,0x17,0x18,0x19,0x1a,-1 },
-		{ 0,1,3,4,5,6,7,8,9,0xa,0xb,0xd,0xf,0x10,0x12,0x13,0x14,0x15,0x17,0x18,0x19 },
+	static const int g_wa_team1[5][26] = {
+		// cls 1 (19)
+		{ 0,1,3,4,5,6,7,8,11,12,15,16,19,20,22,23,24,25,26,-1 },
+		// cls 2 (22)
+		{ 0,1,3,4,5,6,7,8,9,13,15,16,17,18,19,20,22,23,24,25,26,27,-1 },
+		// cls 3 (24)
+		{ 0,1,2,3,4,5,6,7,8,9,12,14,15,16,17,18,20,21,22,23,24,25,26,27,-1 },
+		// cls 4 (20)
+		{ 1,3,4,5,6,7,8,9,13,14,15,16,17,18,20,22,23,24,25,26,-1 },
+		// cls 5 (23)
+		{ 0,1,3,4,5,6,7,8,9,10,12,14,15,16,18,19,20,21,22,23,24,25,26,-1 },
 	};
 	if( team == 2 && cls >= 1 && cls <= 5 )
 	{
 		const int *t = g_wa_team2[cls - 1];
-		for( int k = 0; k < 17; k++ )
+		for( int k = 0; k < 21; k++ )
 		{
 			if( t[k] < 0 )
-				break;		// sentinel; ref team==2 cases are terminated with break
+				break;
 			pPlayer->m_iProgressTeam[t[k]] = 0;
 		}
 	}
 	if( team == 1 && cls >= 1 && cls <= 5 )
 	{
 		const int *t = g_wa_team1[cls - 1];
-		for( int k = 0; k < 21; k++ )
+		for( int k = 0; k < 26; k++ )
 		{
 			if( t[k] < 0 )
 				break;
@@ -1287,6 +1304,23 @@ void CStargateTeamDM::Think( void )
 	CHalfLifeTeamplay::Think();
 	if( m_bRoundOver )
 		return;
+
+	// ref Think @0x1929ce (DM) / @0x1853e8 (CP): when m_SendPL is armed
+	// (both InitHUDs set it) the rules broadcast TeamNames with the 28 wpnC
+	// cost bytes (ROUND of the live cvar value, same order as the client's
+	// slot table) and disarm the flag. The InitHUD variant of TeamNames
+	// carries zeros; this re-send is what fills the menu-12 per-slot costs.
+	if( sgtc_SendPL )
+	{
+		MESSAGE_BEGIN( MSG_ALL, gmsgTeamNames );
+			WRITE_BYTE( m_iSGTCTeamCount );
+			for( int i = 0; i < m_iSGTCTeamCount; i++ )
+				WRITE_STRING( m_szSGTCTeams[i] );
+			for( int i = 0; i < 28; i++ )
+				WRITE_BYTE( (int)( sgtc_wpnC[i]->value + 0.5f ) );
+		MESSAGE_END();
+		sgtc_SendPL = 0;	// ref m_SendPL = 0
+	}
 
 	// Key-holder sanity (Think strings: "GameRule: More than one player
 	// has a key!! Total %d").

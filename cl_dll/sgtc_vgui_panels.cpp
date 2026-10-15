@@ -236,35 +236,43 @@ CSgtcBriefingPanel::CSgtcBriefingPanel( int iTrans, int iRemoveMe, int x, int y,
 	SchemeHandle_t hBriefingText = pSchemes->getSchemeHandle( "Briefing Text" );
 	int r, g, b, a;
 
-	// Background TextPanel + LineBorder (ref +0xf8: 0x15,0x15, W-0x2a, H-0x3c)
+	// Background TextPanel + LineBorder (ref +0xf8: 0x15,0x15, W-0x2a, H-0x3c).
+	// The ref passes &DAT_100e126c as the panel colour; that object is in BSS,
+	// its only reference is this ctor (xrefs 0x100e126c -> 0x1003f715) and
+	// nothing ever writes it, so it is Color(0,0,0,0) = opaque black — the orig
+	// briefing background is black, not the vgui default grey.
 	TextPanel *pBackground = new TextPanel( "", XRES( 21 ), YRES( 21 ),
 		ScreenWidth - XRES( 42 ), ScreenHeight - YRES( 60 ) );
 	pBackground->setParent( this );
-	pBackground->setBorder( new LineBorder( Color( 255 * 0.7, 170 * 0.7, 0, 0 ) ) );
+	pBackground->setBgColor( 0, 0, 0, 0 );
+	// Ref border colour: Color(0,0,0xff,0) = solid blue (asm @0x1003f943).
+	pBackground->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
 
 	// Inner window (ref +0xdc) with its own LineBorder — ctor asm @0x1003f855:
-	// X(40), Y(40)+0x5a, X(560), Y(0x1009be28=360)-0x32.
+	// X(40), Y(40)+0x5a, X(560), Y(0x1009be28=360)-0x32. Same blue border.
 	m_pWindow = new CTransparentPanel( 255, XRES( 40 ), YRES( 40 ) + 90,
 		XRES( 560 ), YRES( 360 ) - 50 );
 	m_pWindow->setParent( this );
-	m_pWindow->setBorder( new LineBorder( Color( 255 * 0.7, 170 * 0.7, 0, 0 ) ) );
+	m_pWindow->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
 
-	// Title (ref +0xec, Title Font, ScreenWidth/2-200 @0x23; the ref passes the
-	// literal string "title" — kept verbatim). The x/y are the ref's raw
-	// ScreenWidth/2-0xc8 and literal 0x23 (35), not resolution-scaled.
+	// Banner (ref +0xec): the ctor builds an image Label, not a text label —
+	// FUN_100339e3("title", x, y) = Label("") + setContentFitted(true) +
+	// setImage(LoadTGAForRes(name)). The name is a *file* base name:
+	// LoadTGAForRes builds "gfx/vgui/<res>_title.tga" with the ref ladder
+	// (FUN_10033160: <640 -> 320, <1024 -> 640, else 1024), so 1024x768+ loads
+	// gfx/vgui/1024_title.tga — the "STARGATETC" banner art (400x104, the
+	// measured white core 315x44 matches the orig capture exactly). The ref
+	// then parents it, setVisible(true) (asm 0x1003fa43 pushes 1 — the label
+	// is VISIBLE) and setPos(ScreenWidth/2 - 0xc8, 0x23) at asm 0x1003fa5x.
 	m_pTitle = new Label( "", ScreenWidth / 2 - 200, 35 );
-	m_pTitle->setParent( m_pWindow );
-	m_pTitle->setFont( pSchemes->getFont( hTitleScheme ) );
-	pSchemes->getFgColor( hTitleScheme, r, g, b, a );
-	m_pTitle->setFgColor( r, g, b, a );
-	pSchemes->getBgColor( hTitleScheme, r, g, b, a );
-	m_pTitle->setBgColor( r, g, b, a );
-	m_pTitle->setText( "%s", "title" );
-	// The ref ctor hides this label right after creating it (vtable+0x24 =
-	// Panel::setVisible, Panel has exactly 127 virtuals so +0x24 is Panel slot 9
-	// = setVisible): the orig briefing panel shows no title text — verified on
-	// the running orig client (only the blue server/map labels are visible).
-	m_pTitle->setVisible( false );
+	m_pTitle->setContentFitted( true );
+	m_pTitle->setImage( LoadTGAForRes( "title" ) );
+	m_pTitle->setParent( this );
+	m_pTitle->setVisible( true );
+	// FreeVGUI's Label inherits Panel's default background (sc_secondary3 =
+	// (204,204,204)), which would draw a grey box around the banner; the orig
+	// shows the art alone over the black panel, so the background is off.
+	m_pTitle->setPaintBackgroundEnabled( false );
 
 	// Server name (ref +0xe8) and map name (ref +0xe4) labels: Title Font,
 	// fg 0x55,0x73,0xb9, bg black, content alignment 3. In the SDK enum the mod
@@ -284,10 +292,13 @@ CSgtcBriefingPanel::CSgtcBriefingPanel( int iTrans, int iRemoveMe, int x, int y,
 	m_pMapName->setBgColor( 0, 0, 0, 0xff );
 	m_pMapName->setContentAlignment( vgui::Label::a_west );
 
-	// Scroll panel (ref +0xd8) + TextPanel (ref +0xf0, "Briefing Text" scheme,
-	// fg 0x55,0x73,0xb9) holding the map briefing. Default text is the localised
-	// "#objectif_manquant" key, exactly as the ref sets it
-	// (FUN_1007ad9c(s__objectif_manquant_100b4cbc)).
+	// Scroll panel (ref +0xd8) + TextPanel (ref +0xf0, "Briefing Text" scheme
+	// font, fg *hardcoded* 0x55,0x73,0xb9, bg from the scheme) holding the map
+	// briefing. Ref asm: setFont(scheme) → (+0x120)(0x55,0x73,0xb9,0) →
+	// getBgColor(scheme) → setBgColor(...). The orig briefing text is the same
+	// blue as the labels, not the scheme's orange FgColor.
+	// Default text is the localised "#objectif_manquant" key, exactly as the ref
+	// sets it (FUN_1007ad9c(s__objectif_manquant_100b4cbc)).
 	//
 	// Ref geometry (FUN_1003f640 asm @0x1003fe00..0x1003ff69):
 	//   scroll  = ( X(16), Y(48)+0x2d, X(0x1009be24=560)-2*X(16), Y(0x1009be20=296)-0x5a )
@@ -307,8 +318,7 @@ CSgtcBriefingPanel::CSgtcBriefingPanel( int iTrans, int iRemoveMe, int x, int y,
 	m_pBriefing = new TextPanel( "", 0, 45, XRES( 560 ) - XRES( 16 ), YRES( 296 ) - 90 );
 	m_pBriefing->setParent( m_pScrollPanel->getClient() );
 	m_pBriefing->setFont( pSchemes->getFont( hBriefingText ) );
-	pSchemes->getFgColor( hBriefingText, r, g, b, a );
-	m_pBriefing->setFgColor( r, g, b, a );
+	m_pBriefing->setFgColor( 0x55, 0x73, 0xb9, 0 );
 	pSchemes->getBgColor( hBriefingText, r, g, b, a );
 	m_pBriefing->setBgColor( r, g, b, a );
 	m_pBriefing->setText( gHUD.m_TextMessage.BufferedLocaliseTextString( "#objectif_manquant" ) );
@@ -420,7 +430,9 @@ void CSgtcBriefingPanel::Refresh( void )
 #define SGTC_TEAMCLASS_INFO_LEN		1024
 
 // ref class tables: "oneill".."esclave" (0x100b4230) are the info file base
-// names, "#Oneill".."#Esclave" (0x100b4280) the localised cell labels.
+// names, "#Oneill".."#Esclave" (0x100b4280) the localised cell labels. The ref
+// rodata carries the full paths as "info/<name>.txt" (0x100b42f8..0x100b439c),
+// not the "info_<name>.txt" the port used to build.
 struct SgtcClassEntry
 {
 	const char *pszLabel;	// titles.txt key used as the button text
@@ -429,16 +441,16 @@ struct SgtcClassEntry
 
 static const SgtcClassEntry s_SgtcClasses[SGTC_TEAMCLASS_COUNT] =
 {
-	{ "#Oneill",  "info_oneill.txt" },	// row 0 (Torri): 0x100b42f8
-	{ "#Carter",  "info_carter.txt" },
-	{ "#Jackson", "info_jackson.txt" },
-	{ "#Tealc",   "info_tealc.txt" },
-	{ "#Soldat",  "info_soldat.txt" },
-	{ "#Dieu",    "info_dieu.txt" },	// row 1 (Goauld): 0x100b434c
-	{ "#Anubis",  "info_anubis.txt" },
-	{ "#Jaffa",   "info_jaffa.txt" },
-	{ "#Prima",   "info_prima.txt" },
-	{ "#Esclave", "info_esclave.txt" }
+	{ "#Oneill",  "info/oneill.txt" },	// row 0 (Torri): 0x100b42f8
+	{ "#Carter",  "info/carter.txt" },
+	{ "#Jackson", "info/jackson.txt" },
+	{ "#Tealc",   "info/tealc.txt" },
+	{ "#Soldat",  "info/soldat.txt" },
+	{ "#Dieu",    "info/dieu.txt" },	// row 1 (Goauld): 0x100b434c
+	{ "#Anubis",  "info/anubis.txt" },
+	{ "#Jaffa",   "info/jaffa.txt" },
+	{ "#Prima",   "info/prima.txt" },
+	{ "#Esclave", "info/esclave.txt" }
 };
 
 class CSgtcTeamClassPanel : public CMenuPanel
@@ -533,11 +545,14 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 	SchemeHandle_t hBriefingText = pSchemes->getSchemeHandle( "Briefing Text" );
 	int r, g, b, a;
 
-	// Background (ref +0x110: TextPanel 0x15,0x15, W-0x2a, H-0x15 + border)
+	// Background (ref +0x110: TextPanel 0x15,0x15, W-0x2a, H-0x15 + border).
+	// Colour arg is the BSS object 0x100ddb0c (all zero, same pattern as menu
+	// 10's 0x100e126c) → opaque black, not the vgui default grey.
 	TextPanel *pBackground = new TextPanel( "", XRES( 21 ), YRES( 21 ),
 		ScreenWidth - XRES( 42 ), ScreenHeight - YRES( 21 ) );
 	pBackground->setParent( this );
-	pBackground->setBorder( new LineBorder( Color( 255 * 0.7, 170 * 0.7, 0, 0 ) ) );
+	pBackground->setBgColor( 0, 0, 0, 0 );
+	pBackground->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
 
 	// Title (ref +0x1b0, literal French string, not localised) — ctor asm
 	// @0x1002bfa3: Label(0,0, X(0x100974e0=640), Y(0x100974e8=21)).
@@ -568,7 +583,7 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 
 		m_pTeamWindow[iTeam] = new CTransparentPanel( 255, iWindowX, YRES( 105 ), iWindowWide, iWindowTall );
 		m_pTeamWindow[iTeam]->setParent( this );
-		m_pTeamWindow[iTeam]->setBorder( new LineBorder( Color( 255 * 0.7, 170 * 0.7, 0, 0 ) ) );
+		m_pTeamWindow[iTeam]->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
 
 		// Team header (ref +0x180 "+#Torri" / +0x184 "+#Goauld")
 		m_pTeamHeader[iTeam] = new Label( "", XRES( 6 ), YRES( 4 ) );
@@ -581,7 +596,8 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 		m_pTeamHeader[iTeam]->setText( "%s", gHUD.m_TextMessage.BufferedLocaliseTextString(
 			iTeam == 0 ? "#Torri" : "#Goauld" ) );
 
-		// Team info panel (ref +0x148 info_sg1.txt / +0x14c info_goauld.txt).
+		// Team info panel (ref +0x148 info/sg1.txt / +0x14c info/goauld.txt —
+		// the ref rodata holds the full paths, 0x100b43d4 / 0x100b43e4).
 		// Fallbacks are the ref's own literals.
 		m_pTeamInfo[iTeam] = new TextPanel( "", XRES( 6 ), YRES( 22 ), iWindowWide - XRES( 12 ), YRES( 64 ) );
 		m_pTeamInfo[iTeam]->setParent( m_pTeamWindow[iTeam] );
@@ -592,7 +608,7 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 		m_pTeamInfo[iTeam]->setBgColor( r, g, b, a );
 		m_pTeamInfo[iTeam]->setText( iTeam == 0 ? "fichier sg1 absent" : "fichier goauld absent" );
 
-		pfile = SgtcPanels_LoadFile( iTeam == 0 ? "info_sg1.txt" : "info_goauld.txt" );
+		pfile = SgtcPanels_LoadFile( iTeam == 0 ? "info/sg1.txt" : "info/goauld.txt" );
 		if ( pfile )
 		{
 			m_pTeamInfo[iTeam]->setText( pfile );
@@ -687,7 +703,7 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 	m_pSpecButton->setParent( this );
 	m_pSpecButton->addActionSignal( new CMenuHandler_StringCommand( "spectate", 1 ) );
 
-	// Footer panel (ref +0x17c info_equipe.txt, fallback literal).
+	// Footer panel (ref +0x17c info/equipe.txt, fallback literal).
 	// Ref ctor asm @0x1002cd1f builds it as TextPanel(0, 0, X(640)-2*X(21),
 	// Y(0x10097f74=76)+Y(10)) and parents it to the container at panel+0x144,
 	// which the port does not have — with `this` as the parent the ref (0,0)
@@ -703,7 +719,7 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 	m_pFooter->setBgColor( r, g, b, a );
 	m_pFooter->setText( "Stargate TC , B.I.G. & Endolaylith" );
 
-	pfile = SgtcPanels_LoadFile( "info_equipe.txt" );
+	pfile = SgtcPanels_LoadFile( "info/equipe.txt" );
 	if ( pfile )
 	{
 		m_pFooter->setText( pfile );
@@ -959,11 +975,13 @@ CSgtcWeaponSelPanel::CSgtcWeaponSelPanel( int iTrans, int iRemoveMe, int x, int 
 	SchemeHandle_t hBriefingText = pSchemes->getSchemeHandle( "Briefing Text" );
 	int r, g, b, a;
 
-	// Background (ref +0x168: TextPanel 0x15,0x15, W-0x2a, H-0x2a + border)
+	// Background (ref +0x168: TextPanel 0x15,0x15, W-0x2a, H-0x2a + border).
+	// Colour arg 0x100ddadc (BSS, all zero) → opaque black.
 	TextPanel *pBackground = new TextPanel( "", XRES( 21 ), YRES( 21 ),
 		ScreenWidth - XRES( 42 ), ScreenHeight - YRES( 42 ) );
 	pBackground->setParent( this );
-	pBackground->setBorder( new LineBorder( Color( 255 * 0.7, 170 * 0.7, 0, 0 ) ) );
+	pBackground->setBgColor( 0, 0, 0, 0 );
+	pBackground->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
 
 	// Title (ref +0x350, same literal as menus 11/60)
 	m_pTitle = new Label( "", XRES( 40 ), YRES( 16 ) );
@@ -979,7 +997,7 @@ CSgtcWeaponSelPanel::CSgtcWeaponSelPanel( int iTrans, int iRemoveMe, int x, int 
 	m_pWindow = new CTransparentPanel( 255, XRES( 24 ), YRES( 40 ),
 		ScreenWidth - XRES( 48 ), ScreenHeight - YRES( 150 ) );
 	m_pWindow->setParent( this );
-	m_pWindow->setBorder( new LineBorder( Color( 255 * 0.7, 170 * 0.7, 0, 0 ) ) );
+	m_pWindow->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
 
 	// 28 slot buttons: 14 primaries in the left column, 14 secondaries in the
 	// right one (ref: buttons +0x200 / +0x238, texts localised "#WEAPON_*").
@@ -1008,10 +1026,11 @@ CSgtcWeaponSelPanel::CSgtcWeaponSelPanel( int iTrans, int iRemoveMe, int x, int 
 		m_pSlotCost[iSlot]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
 		m_pSlotCost[iSlot]->setBgColor( 0, 0, 0, 0xff );
 
-		// Per-slot blurb (ref "info_<label>.txt", fallback "fichier absent %s"
-		// in the ref; the Update uses "missing text file %s" — both are kept).
+		// Per-slot blurb (ref "info/<label>.txt" — the ref rodata carries the
+		// full paths, e.g. info/glstaff.txt @0x100b3cd0..; fallback "fichier
+		// absent %s" in the ref, the Update uses "missing text file %s").
 		char szFile[64];
-		snprintf( szFile, sizeof( szFile ), "info_%s.txt", s_SgtcWeapons[iSlot].pszLabel );
+		snprintf( szFile, sizeof( szFile ), "info/%s.txt", s_SgtcWeapons[iSlot].pszLabel );
 		char *pfile = SgtcPanels_LoadFile( szFile );
 		if ( pfile )
 		{
@@ -1470,11 +1489,13 @@ CSgtcPackSelPanel::CSgtcPackSelPanel( int iTrans, int iRemoveMe, int x, int y, i
 	SchemeHandle_t hBriefingText = pSchemes->getSchemeHandle( "Briefing Text" );
 	int r, g, b, a;
 
-	// Background (ref +0x164: TextPanel 0x15,0x15, W-0x2a, H-0x2a + border)
+	// Background (ref +0x164: TextPanel 0x15,0x15, W-0x2a, H-0x2a + border).
+	// Colour arg 0x100ddaf4 (BSS, all zero) → opaque black.
 	TextPanel *pBackground = new TextPanel( "", XRES( 21 ), YRES( 21 ),
 		ScreenWidth - XRES( 42 ), ScreenHeight - YRES( 42 ) );
 	pBackground->setParent( this );
-	pBackground->setBorder( new LineBorder( Color( 255 * 0.7, 170 * 0.7, 0, 0 ) ) );
+	pBackground->setBgColor( 0, 0, 0, 0 );
+	pBackground->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
 
 	// Title (ref +0x234, literal "Identifiez-vous")
 	m_pTitle = new Label( "", XRES( 40 ), YRES( 16 ) );

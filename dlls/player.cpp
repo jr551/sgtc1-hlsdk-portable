@@ -3112,6 +3112,12 @@ void CBasePlayer::Spawn( void )
 	m_bSgtcCloakTick = 0;
 	m_flCloakTickNext = 0.0f;
 
+	// ref Spawn @0x151fb8 — point-score floor: if (+0x934 <= 0) +0x934 = 6
+	// (the menu-12 "Total" budget byte; the per-player SgtcThink re-floors
+	// <=5 to 6, see SGTC_SgtcThink).
+	if( m_iNukeBonus <= 0 )
+		m_iNukeBonus = 6;
+
 	g_pGameRules->PlayerSpawn( this );
 }
 

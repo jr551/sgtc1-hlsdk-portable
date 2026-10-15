@@ -153,6 +153,158 @@ static void ParseRGBAFromString( byte colorArray[4], const char *colorVector )
 }
 
 //-----------------------------------------------------------------------------
+// ClientScheme.res fallback (VGUI2 keyvalues)
+//
+// The stock VGUI1 path below reads "<res>_textscheme.txt": the ref client.dll
+// carries exactly those strings ("_textscheme.txt" @0x100b4650, "Unable to
+// find *_textscheme.txt" @0x100b4660) and no "ClientScheme" string at all
+// (REA search_strings on the running client.dll, sha256 9ec27e22…). The mod
+// ships its own scheme in the VGUI2 keyvalues format instead:
+//     resource/ClientScheme.res  — Scheme { Colors / BaseSettings / Fonts / Borders }
+// When the stock textscheme cannot be found (a mod tree without valve/'s
+// 640..1600_textscheme.txt), the TFC scheme handles the panels ask for are
+// built from ClientScheme.res so the panels keep the mod's colours/fonts
+// instead of falling back to the vgui library defaults.
+//-----------------------------------------------------------------------------
+
+struct SgtcResColor
+{
+	char szName[32];
+	byte rgba[4];
+};
+
+struct SgtcResFont
+{
+	char szName[32];
+	char szFont[48];
+	int iTall;
+	int iWeight;
+};
+
+#define SGTC_RES_MAX_COLORS	64
+#define SGTC_RES_MAX_FONTS	16
+#define SGTC_RES_MAX_DEPTH	8
+
+static SgtcResColor g_ResColors[SGTC_RES_MAX_COLORS];
+static int g_iResColors = 0;
+static SgtcResFont g_ResFonts[SGTC_RES_MAX_FONTS];
+static int g_iResFonts = 0;
+
+static SgtcResColor *Res_FindColor( const char *pszName )
+{
+	for ( int i = 0; i < g_iResColors; i++ )
+	{
+		if ( !stricmp( g_ResColors[i].szName, pszName ) )
+			return &g_ResColors[i];
+	}
+	return NULL;
+}
+
+static SgtcResFont *Res_FindFont( const char *pszName )
+{
+	for ( int i = 0; i < g_iResFonts; i++ )
+	{
+		if ( !stricmp( g_ResFonts[i].szName, pszName ) )
+			return &g_ResFonts[i];
+	}
+	return NULL;
+}
+
+// Minimal VGUI2 keyvalues reader: tokenises with the engine's COM_ParseFile
+// (the same call the textscheme parser uses) and records the "Colors" and
+// "Fonts" blocks. Returns true when at least one colour was read.
+static bool ParseClientSchemeRes( void )
+{
+	char *pFile = (char *)gEngfuncs.COM_LoadFile( "resource/ClientScheme.res", 5, NULL );
+	if ( !pFile )
+		return false;
+
+	char *pFileStart = pFile;
+	char token[512];
+	char szBlocks[SGTC_RES_MAX_DEPTH][40];
+	memset( szBlocks, 0, sizeof( szBlocks ) );
+	int iDepth = 0;
+	int iFontIndex = -1;
+
+	while ( ( pFile = gEngfuncs.COM_ParseFile( pFile, token ) ) != NULL && token[0] )
+	{
+		if ( !strcmp( token, "{" ) )
+		{
+			iDepth++;
+			if ( iDepth >= SGTC_RES_MAX_DEPTH )
+				break;
+			continue;
+		}
+		if ( !strcmp( token, "}" ) )
+		{
+			if ( iDepth > 0 )
+				iDepth--;
+			if ( iFontIndex >= 0 && iDepth < 3 )
+				iFontIndex = -1;
+			continue;
+		}
+
+		// a name token: the next token is either a value or a "{" block start
+		char szName[40];
+		strlcpy( szName, token, sizeof( szName ) );
+
+		pFile = gEngfuncs.COM_ParseFile( pFile, token );
+		if ( !token[0] )
+			break;
+
+		if ( !strcmp( token, "{" ) )
+		{
+			// named block: remember it at the current depth
+			if ( iDepth < SGTC_RES_MAX_DEPTH )
+				strlcpy( szBlocks[iDepth], szName, sizeof( szBlocks[iDepth] ) );
+			// "Fonts" -> "<FontName>" opens a font description
+			if ( iDepth == 2 && !stricmp( szBlocks[1], "Fonts" ) && g_iResFonts < SGTC_RES_MAX_FONTS )
+			{
+				iFontIndex = g_iResFonts++;
+				memset( &g_ResFonts[iFontIndex], 0, sizeof( g_ResFonts[iFontIndex] ) );
+				strlcpy( g_ResFonts[iFontIndex].szName, szName, sizeof( g_ResFonts[iFontIndex].szName ) );
+				strlcpy( g_ResFonts[iFontIndex].szFont, "Arial", sizeof( g_ResFonts[iFontIndex].szFont ) );
+			}
+			iDepth++;
+			if ( iDepth >= SGTC_RES_MAX_DEPTH )
+				break;
+			continue;
+		}
+
+		// name/value pair
+		if ( iDepth >= 2 && !stricmp( szBlocks[1], "Colors" ) && g_iResColors < SGTC_RES_MAX_COLORS )
+		{
+			SgtcResColor *pColor = &g_ResColors[g_iResColors];
+			strlcpy( pColor->szName, szName, sizeof( pColor->szName ) );
+			ParseRGBAFromString( pColor->rgba, token );
+			g_iResColors++;
+		}
+		else if ( iFontIndex >= 0 && !stricmp( szName, "name" ) )
+		{
+			strlcpy( g_ResFonts[iFontIndex].szFont, token, sizeof( g_ResFonts[iFontIndex].szFont ) );
+		}
+		else if ( iFontIndex >= 0 && !stricmp( szName, "tall" ) )
+		{
+			g_ResFonts[iFontIndex].iTall = atoi( token );
+		}
+		else if ( iFontIndex >= 0 && !stricmp( szName, "weight" ) )
+		{
+			g_ResFonts[iFontIndex].iWeight = atoi( token );
+		}
+	}
+
+	gEngfuncs.COM_FreeFile( pFileStart );
+	return g_iResColors > 0;
+}
+
+// Applies a ClientScheme.res colour (when present) to a scheme's colour slot.
+static void Res_ApplyColor( byte colorArray[4], const char *pszName, const byte *pDefault )
+{
+	SgtcResColor *pColor = Res_FindColor( pszName );
+	memcpy( colorArray, pColor ? pColor->rgba : pDefault, 4 );
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: initializes the scheme manager
 //			loading the scheme files for the current resolution
 // Input  : xRes - 
@@ -344,6 +496,73 @@ CSchemeManager::CSchemeManager( int xRes, int yRes )
 
 buildDefaultFont:
 
+	// No textscheme found: build the scheme list the panels ask for from the
+	// mod's VGUI2 scheme (resource/ClientScheme.res, see the header comment on
+	// ParseClientSchemeRes). Colours are stored in the file's convention
+	// (alpha 255 = opaque) — the 255-a inversion below is applied to all
+	// schemes at the end, exactly like the textscheme path.
+	if ( currentScheme < 0 && ParseClientSchemeRes() )
+	{
+		struct SgtcResSchemeMap
+		{
+			const char *szHandle;	// TFC scheme handle the panels request
+			const char *szFont;	// ClientScheme.res "Fonts" entry
+			const char *szFg;	// ClientScheme.res "Colors" entry
+			const char *szBg;
+			const char *szArmedFg;
+			const char *szArmedBg;
+			const char *szBorder;
+		};
+		static const SgtcResSchemeMap sMap[] =
+		{
+			// buttons/menus: mod orange text, dark blue control background
+			{ "Primary Button Text", "Default",         "BaseText",       "ControlBG",   "BrightBaseText", "SelectionBG", "BorderBright" },
+			{ "CommandMenu Text",    "Default",         "BaseText",       "ControlBG",   "BrightBaseText", "SelectionBG", "BorderBright" },
+			// scoreboard rows
+			{ "Scoreboard Text",     "DefaultSmall",    "BaseText",       NULL, NULL, NULL, NULL },
+			{ "Scoreboard Title Text", "ClassMenuTitleFont", "BaseText",  NULL, NULL, NULL, NULL },
+			{ "Scoreboard Small Text", "DefaultVerySmall",   "BaseText",  NULL, NULL, NULL, NULL },
+			// in-game panels
+			{ "Title Font",          "ClassMenuTitleFont", "BaseText",    NULL, NULL, NULL, NULL },
+			{ "Briefing Text",       "Default",         "LabelDimText",   "WindowBG", NULL, NULL, NULL },
+			{ "Team Info Text",      "Default",         "BaseText",       "ControlBG", NULL, NULL, NULL },
+		};
+		const byte rgbaWhite[4] = { 255, 255, 255, 255 };	// textscheme default fg
+		const byte rgbaNone[4] = { 0, 0, 0, 0 };		// textscheme default bg
+
+		for ( int i = 0; i < (int)( sizeof( sMap ) / sizeof( sMap[0] ) ); i++ )
+		{
+			currentScheme++;
+			pScheme = &tmpSchemes[currentScheme];
+			strlcpy( pScheme->schemeName, sMap[i].szHandle, CScheme::SCHEME_NAME_LENGTH );
+
+			SgtcResFont *pFont = Res_FindFont( sMap[i].szFont );
+			if ( !pFont )
+				pFont = Res_FindFont( "Default" );
+			if ( pFont )
+			{
+				strlcpy( pScheme->fontName, pFont->szFont, CScheme::FONT_NAME_LENGTH );
+				pScheme->fontSize = pFont->iTall;
+				pScheme->fontWeight = pFont->iWeight;
+			}
+			else
+			{
+				strcpy( pScheme->fontName, "Arial" );
+				pScheme->fontSize = 17;
+			}
+
+			Res_ApplyColor( pScheme->fgColor, sMap[i].szFg, rgbaWhite );
+			Res_ApplyColor( pScheme->bgColor, sMap[i].szBg, rgbaNone );
+			Res_ApplyColor( pScheme->armedFgColor, sMap[i].szArmedFg, pScheme->fgColor );
+			Res_ApplyColor( pScheme->armedBgColor, sMap[i].szArmedBg, pScheme->bgColor );
+			memcpy( pScheme->mousedownFgColor, pScheme->armedFgColor, sizeof( pScheme->mousedownFgColor ) );
+			memcpy( pScheme->mousedownBgColor, pScheme->armedBgColor, sizeof( pScheme->mousedownBgColor ) );
+			Res_ApplyColor( pScheme->borderColor, sMap[i].szBorder, rgbaNone );
+		}
+
+		gEngfuncs.Con_DPrintf( "Scheme: %d schemes built from resource/ClientScheme.res\n", currentScheme + 1 );
+	}
+
 	// make sure we have at least 1 valid font
 	if ( currentScheme < 0 )
 	{
@@ -391,17 +610,24 @@ buildDefaultFont:
 
 			if(g_CV_BitmapFonts && g_CV_BitmapFonts->value)
 			{
-				int fontRes = 640;
-				if ( m_xRes >= 1600 )
+				// The mod ships bitmap VGUI fonts in valve/gfx/vgui/fonts/
+				// <res>_<scheme>.tga. The orig's VGUI.DLL does *not* load these
+				// TGAs (it falls back to the system font at the scheme's point
+				// size — that is why the orig's text is scalable and larger),
+				// while FreeVGUI does load them, so our glyphs are the TGA's
+				// fixed cell size. Measured at 1024x768 the 1024_*.tga cells
+				// render ~0.6x the orig's text (Title Font ink 15px vs the
+				// orig's 25-31px, Briefing Text 10px vs ~13px cap height); the
+				// 1600 tier's cells match the orig's measured sizes (Title Font
+				// cell 32 -> ~25px ink, Briefing Text cell 20 -> ~13px ink), so
+				// the port steps one tier up from the stock ladder.
+				int fontRes = 1024;
+				if ( m_xRes >= 1024 )
 					fontRes = 1600;
-				else if ( m_xRes >= 1280 )
-					fontRes = 1280;
-				else if ( m_xRes >= 1152 )
-					fontRes = 1152;
-				else if ( m_xRes >= 1024 )
-					fontRes = 1024;
 				else if ( m_xRes >= 800 )
-					fontRes = 800;
+					fontRes = 1280;
+				else
+					fontRes = 1024;
 
 				sprintf(fontFilename, "gfx\\vgui\\fonts\\%d_%s.tga", fontRes, m_pSchemeList[i].schemeName);
 				pFontData = gEngfuncs.COM_LoadFile( fontFilename, 5, &fontFileLength );

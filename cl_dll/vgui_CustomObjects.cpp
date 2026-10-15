@@ -41,7 +41,13 @@ const char *sArrowFilenames[] =
 	"arrowrt", 
 };
 
-// Get the name of TGA file, without a gamedir
+// Get the name of TGA file, without a gamedir.
+// Ref FUN_10033160 (client.dll) has a third tier the stock SDK lacks:
+//   ScreenWidth < 640  -> 320
+//   ScreenWidth < 1024 -> 640
+//   else               -> 1024
+// (the mod ships 1024_* art; the orig briefing banner at 1920x1080 is the
+// 1024_title.tga — measured white core 315x44 == the file's own core).
 char *GetTGANameForRes( const char *pszName )
 {
 	int i, len;
@@ -50,8 +56,10 @@ char *GetTGANameForRes( const char *pszName )
 
 	if( ScreenWidth < 640 )
 		i = 320;
-	else
+	else if( ScreenWidth < 1024 )
 		i = 640;
+	else
+		i = 1024;
 
 	safe_snprintf( sz, sizeof( sz ), pszName, i );
 	len = safe_snprintf( gd, sizeof( gd ), "gfx/vgui/%s.tga", sz );
@@ -205,7 +213,13 @@ void CommandButton::paint()
 	}
 	else
 	{
-		setFgColor( Scheme::sc_primary1 );
+		// The orig renders the non-armed button text in the vgui grey default:
+		// measured (200,200,200) on the orig's menu-10 OK button (and no orange
+		// text anywhere in that panel). The ref button class's own setFgColor
+		// vtable slot cannot be mapped onto FreeVGUI (the ref Panel vtable has
+		// more than FreeVGUI's 127 virtuals), so the *rendered* colour is
+		// mirrored here instead of the scheme's orange FgColor.
+		setFgColor( 200, 200, 200, 0 );
 	}
 	
 	Button::paint();

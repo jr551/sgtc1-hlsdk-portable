@@ -536,11 +536,11 @@ TeamFortressViewport::TeamFortressViewport( int x, int y, int wide, int tall ) :
 		m_SchemeManager.getBgArmedColor( hPrimaryScheme, r, g, b, a );
 		pScheme->setColor( Scheme::sc_primary2, r, g, b, a );
 
-		//!! need to get this color from scheme file
-		// used for orange borders around buttons
-		m_SchemeManager.getBorderColor( hPrimaryScheme, r, g, b, a );
-		// pScheme->setColor( Scheme::sc_secondary1, r, g, b, a );
-		pScheme->setColor( Scheme::sc_secondary1, 255 * 0.7, 170 * 0.7, 0, 0);
+		// Border color. The ref viewport ctor (FUN_10041e94 asm @0x10041ff4..)
+		// calls the scheme's setColor(slot 6) with a hardcoded (0,0,255,0) —
+		// solid blue, NOT the stock SDK's orange 255*0.7,170*0.7: every orig
+		// panel/button border is blue (measured (0,0,255) in the orig capture).
+		pScheme->setColor( Scheme::sc_secondary1, 0, 0, 255, 0);
 	}
 
 	// Change the second primary font (used in the scoreboard)
