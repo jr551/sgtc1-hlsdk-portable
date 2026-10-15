@@ -219,6 +219,23 @@ extern cvar_t sgtc_cvar_superweapons;	// sgtc_round.cpp (ref superguns @0x2234d4
 extern void SetWeaponAllow( CBasePlayer *pPlayer );	// ref @0x17a26c — reads +0x93c, sends gmsgProgress variants
 extern cvar_t *const sgtc_wpnC[28];	// sgtc_round.cpp — ref wpnC0..wpnC27 cost cvars
 extern float sgtc_endtround;	// sgtc_round.cpp (ref BSS endtround @0x2468b8, goal+6s deadline)
+extern char sgtc_round_official;			// sgtc_round.cpp (ref BSS 0x236888)
+extern cvar_t sgtc_cvar_autobalance;		// sgtc_round.cpp (ref autobalance @0x213420)
+extern cvar_t sgtc_cvar_classlimitmodel;	// sgtc_round.cpp (ref classlimitmodel @0x2135d8)
+extern cvar_t sgtc_cvar_max_syslord;		// ref @0x213650
+extern cvar_t sgtc_cvar_max_anubis;			// ref @0x21363c
+extern cvar_t sgtc_cvar_max_jaffa;			// ref @0x213628
+extern cvar_t sgtc_cvar_max_serpent;		// ref @0x213614
+extern cvar_t sgtc_cvar_max_horus;			// ref @0x213600
+extern cvar_t sgtc_cvar_max_oniell;			// ref @0x2136b4 (max_oneill)
+extern cvar_t sgtc_cvar_max_carter;			// ref @0x2136a0
+extern cvar_t sgtc_cvar_max_jackson;		// ref @0x21368c
+extern cvar_t sgtc_cvar_max_tealc;			// ref @0x213678
+extern cvar_t sgtc_cvar_max_commander;		// ref @0x213664 (max_soldier)
+extern int sgtc_count_syslord, sgtc_count_prime, sgtc_count_jaffa,
+	sgtc_count_serpent, sgtc_count_horus, sgtc_count_oniell,
+	sgtc_count_carter, sgtc_count_jackson, sgtc_count_tealc,
+	sgtc_count_commander;					// sgtc_round.cpp — BSS 0x2368f4..0x236918
 
 // Team spawn classname tables (rodata 0x1d7997 block ordering).
 static const char *const s_SGTCDMSpawns[SGTC_MAX_SGTC_TEAMS] =
@@ -1159,41 +1176,616 @@ void CStargateTeamDM::ClientDisconnected( edict_t *pClient )
 	RecountTeams( TRUE );
 }
 
+// ref CStargateTeamDM::ClientCommand @0x191336 — verbatim verb chain:
+// voice → menuselect (drains argv) → client → radio → customcolor → spook →
+// fakeman → spookstorm → timeleft → sayitloud → autopick → jointeam (inert)
+// → mod → showmenu(0xb) → showequip → showmotd(10) → kill → classe →
+// resetptr/recount/toggleportrait tail. No CHalfLifeTeamplay fallback — the
+// ref returns 0 (engine prints "Unknown command").
 BOOL CStargateTeamDM::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 {
-	if( SGTC_HandleClientCommand( pPlayer, pcmd ) )
+	if( g_VoiceGameMgr.ClientCommand( pPlayer, pcmd ) )
 		return TRUE;
 
-	// Verified commands: menuselect/jointeam/showmenu/autopick/classe/radio.
-	if( FStrEq( pcmd, "jointeam" ) )
-	{
-		if( CMD_ARGC() < 2 )
-			return TRUE;
-		int team = atoi( CMD_ARGV( 1 ) );
-		if( team == 5 ) // auto
-			ChangePlayerTeam( pPlayer, TeamWithFewestPlayers(), TRUE, TRUE );
-		else if( team == SGTC_TEAM_TORRI )
-			ChangePlayerTeam( pPlayer, m_szSGTCTeams[0], TRUE, TRUE );
-		else if( team == SGTC_TEAM_GOAULD )
-			ChangePlayerTeam( pPlayer, m_szSGTCTeams[1], TRUE, TRUE );
-		else
-			ClientPrint( pPlayer->pev, HUD_PRINTNOTIFY, "Teams Unbalanced\n" );
-		return TRUE;
-	}
-	if( FStrEq( pcmd, "autopick" ) )
-	{
-		ChangePlayerTeam( pPlayer, TeamWithFewestPlayers(), TRUE, TRUE );
-		return TRUE;
-	}
 	if( FStrEq( pcmd, "menuselect" ) )
 	{
-		if( CMD_ARGC() >= 2 )
-			pPlayer->SGTC_MenuselectBombKey( atoi( CMD_ARGV( 1 ) ) );
+		// ref drains argv(1) and returns — the export-level ClientCommand
+		// @0xd8ff2 has no menuselect case, so this rules handler is the only
+		// receiver and does nothing (bomb-key arming is the VoteMode verb).
+		if( CMD_ARGC() > 1 )
+			atoi( CMD_ARGV( 1 ) );
 		return TRUE;
 	}
-	if( FStrEq( pcmd, "showmenu" ) || FStrEq( pcmd, "classe" ) )
-		return TRUE; // VGUI-less client stub handles display
-	return CHalfLifeTeamplay::ClientCommand( pPlayer, pcmd );
+
+	if( FStrEq( pcmd, "client" ) )	// ref: missing arg prints notice
+	{
+		if( CMD_ARGC() < 1 )
+		{
+			ClientPrint( pPlayer->pev, HUD_PRINTNOTIFY,
+				"missing parameter, use clindex\n" );
+			return TRUE;
+		}
+		pPlayer->m_iSgtcClientIdx = atoi( CMD_ARGV( 1 ) );	// ref +0x3e8
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "radio" ) )
+	{
+		if( CMD_ARGC() < 1 )
+			return TRUE;
+		CBasePlayer *plr = (CBasePlayer *)UTIL_PlayerByIndex( pPlayer->m_iSgtcClientIdx );
+		if( plr != NULL )
+		{
+			// ref: MSG_ONE gmsgRadio to the addressed client — BYTE cmd, BYTE sender.
+			MESSAGE_BEGIN( MSG_ONE, gmsgRadio, NULL, plr->edict() );
+				WRITE_BYTE( atoi( CMD_ARGV( 1 ) ) );
+				WRITE_BYTE( pPlayer->entindex() );
+			MESSAGE_END();
+		}
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "customcolor" ) )
+	{
+		if( CMD_ARGC() > 0 )
+			pPlayer->m_iSgtcCustomColor = atoi( CMD_ARGV( 1 ) );	// ref +0x450
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "spook" ) )
+	{
+		if( !pPlayer->m_bShieldLarge )	// ref +0x460 gate — dev bigshield flag
+			return FALSE;
+		Vector vSpawn = pPlayer->pev->origin;
+		vSpawn.z += 120.0f;	// ref: z +120.0
+		vSpawn.x += 70.0f;	// ref: x +70.0
+		CBaseEntity *pMon = CBaseEntity::Create( "monster_implanted",
+			vSpawn, pPlayer->pev->v_angle, NULL );
+		if( pMon )
+			pMon->pev->owner = pPlayer->edict();	// ref ent+0xc4 owner write
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "fakeman" ) )
+	{
+		if( !pPlayer->m_bShieldLarge )
+			return FALSE;
+		// ref: MSG_ALL fake AddPortrait — "Endo-Clone" scoreboard row.
+		MESSAGE_BEGIN( MSG_ALL, gmsgAddPortrait, NULL );
+			WRITE_BYTE( RANDOM_LONG( 1, 0xf ) );
+			WRITE_SHORT( 100 );
+			WRITE_BYTE( 2 );
+			WRITE_BYTE( RANDOM_LONG( 1, 5 ) );
+			WRITE_BYTE( RANDOM_LONG( 1, 10 ) );
+			WRITE_BYTE( 0 );
+			WRITE_BYTE( RANDOM_LONG( 1, 5 ) );
+			WRITE_BYTE( RANDOM_LONG( 1, 5 ) );
+			WRITE_STRING( "Endo-Clone" );
+			WRITE_BYTE( 0 );
+		MESSAGE_END();
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "spookstorm" ) )
+	{
+		if( pPlayer->m_bShieldLarge != 1 || CMD_ARGC() < 1 )
+			return FALSE;
+		// ref: spawn a monster_implanted at each info_player_torri spawn,
+		// argv(1) entries deep; stop when the spawn list runs out.
+		int iDepth = 0;
+		CBaseEntity *pSpot = NULL;
+		while( ( pSpot = UTIL_FindEntityByClassname( pSpot, "info_player_torri" ) ) != NULL &&
+			iDepth < atoi( CMD_ARGV( 1 ) ) )
+		{
+			iDepth++;
+			CBaseEntity *pMon = CBaseEntity::Create( "monster_implanted",
+				pSpot->pev->origin, pSpot->pev->v_angle, NULL );
+			if( pMon )
+				pMon->pev->owner = pPlayer->edict();	// ref ent+0xc4
+		}
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "timeleft" ) )
+	{
+		char szTime[64];
+		int iSec = (int)timeleft.value;
+		if( iSec % 60 < 10 )
+			snprintf( szTime, sizeof( szTime ), "%d:0%d", iSec / 60, iSec % 60 );
+		else
+			snprintf( szTime, sizeof( szTime ), "%d:%d", iSec / 60, iSec % 60 );
+		ClientPrint( pPlayer->pev, HUD_PRINTTALK, "%s: %s\n", "#time_left", szTime );
+		return FALSE;	// ref returns 0 — engine prints "Unknown command"
+	}
+
+	if( FStrEq( pcmd, "sayitloud" ) )
+	{
+		ClientPrint( pPlayer->pev, HUD_PRINTTALK,
+			UTIL_VarArgs( "SteamID: %d\n", pPlayer->m_iSgtcSpecMode ) );	// ref +0x914
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "autopick" ) )
+	{
+		// ref: focused-count auto team pick + random class (1..5).
+		int iTeam = 0;
+		if( sgtc_G_players_focused < sgtc_T_players_focused )
+			iTeam = 1;
+		else if( sgtc_T_players_focused < sgtc_G_players_focused )
+			iTeam = 2;
+		else
+			iTeam = RANDOM_LONG( 1, 2 );
+		pPlayer->m_iSgtcTeam = iTeam;					// ref +0x438
+		pPlayer->m_iSgtcPortraitSel = RANDOM_LONG( 1, 5 );	// ref +0xa44
+		pPlayer->m_bSgtcBadGuy = 0;						// ref +0x462
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "jointeam" ) )
+		return TRUE;	// ref: inert verb (team comes from classe argv 2)
+
+	if( FStrEq( pcmd, "mod" ) )
+		return FALSE;	// ref returns 0
+
+	if( FStrEq( pcmd, "showmenu" ) )
+	{
+		pPlayer->ShowVGUIMenu( 11 );	// ref 0xb — team/class select
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "showequip" ) )
+	{
+		if( pPlayer->m_bSnagInvisLatch != 1 )	// ref +0x4de
+		{
+			if( sgtc_cvar_wepselmode.value == 1.0f )
+				pPlayer->ShowVGUIMenu( 0xc );
+			else if( sgtc_cvar_wepselmode.value == 2.0f )
+				pPlayer->ShowVGUIMenu( 0x3c );
+		}
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "showmotd" ) )
+	{
+		pPlayer->ShowVGUIMenu( 10 );	// ref 0xa
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "kill" ) )
+	{
+		pPlayer->m_bLanceStunFlag = 0;	// ref +0xa3e
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "classe" ) )
+	{
+		SGTC_CommandClasse( pPlayer, FALSE );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "resetptr" ) )
+	{
+		pPlayer->ResetPortrait( 1 );
+		return FALSE;	// ref returns 0 after the reset
+	}
+
+	if( FStrEq( pcmd, "recount" ) )
+	{
+		RecountTeams( FALSE );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "toggleportrait" ) )
+	{
+		pPlayer->TogglePortrait();
+		return TRUE;
+	}
+
+	return FALSE;	// ref returns 0 — engine prints "Unknown command"
+}
+
+// ---------------------------------------------------------------------------
+// SGTC_CommandClasse — shared body of the ref 'classe' verb
+// (DM @0x191336 tail / CP @0x183b88 tail). argv(1) = class 1..5, argv(2) =
+// team 1|2 (1 = Torri, 2 = Goa'uld — the pending +0x438 numbering, opposite
+// of pev->team where 1 = Goa'uld, 2 = Torri). The pending fields land in
+// +0x438/+0xa44 and PlayerThink consumes them on the 1s dead tick.
+// bCaptureMode selects the CP-only type-4 side gate (ref rules+0x734).
+// ---------------------------------------------------------------------------
+void CStargateTeamDM::SGTC_CommandClasse( CBasePlayer *pPlayer, BOOL bCaptureMode )
+{
+	pPlayer->m_bSgtcBadGuy = 0;		// ref +0x462 = 0
+	pPlayer->m_iSgtcTeam = 0;		// ref +0x438 = 0
+	RecountTeams( FALSE );
+	UpdateClassCount();				// ref vtable+0x118
+
+	int iTeamArg = atoi( CMD_ARGV( 2 ) );
+
+	// ref DM gate: during an official round an EXPLICIT team arg is refused
+	// (auto-pick path below still runs — ref allows classe <class> to slip
+	// through with a count-based pick). CP skips this gate entirely.
+	if( !bCaptureMode && sgtc_round_official == 1 && iTeamArg >= 1 )
+		return;	// ref return 1 — pick silently refused
+
+	if( iTeamArg >= 1 )
+	{
+		if( bCaptureMode && sgtc_type == 4 )
+		{
+			// ref CP: a player already on a side cannot swap INTO the
+			// attacker team — m_iSgtcCPSide==0 makes Torri (arg 1) the
+			// attacker; nonzero makes Goa'uld (arg 2) the attacker.
+			const int iSide = ((CStargateTeamCP *)this)->m_iSgtcCPSide;
+			if( ( iSide == 0 && iTeamArg == 1 && pPlayer->pev->team == 2 ) ||
+				( iSide != 0 && iTeamArg == 2 && pPlayer->pev->team == 1 ) )
+				return;	// ref return 1 — pick silently refused
+		}
+
+		if( sgtc_cvar_autobalance.value <= 0.0f )
+		{
+			pPlayer->m_iSgtcTeam = iTeamArg;
+		}
+		else
+		{
+			// ref autobalance: joining the BIGGER focused team past the
+			// cvar threshold is refused — the player is flipped to the
+			// other side and told.
+			BOOL bAllow1 = TRUE, bAllow2 = TRUE;
+			if( sgtc_T_players_focused < sgtc_G_players_focused &&
+				sgtc_cvar_autobalance.value < (float)( sgtc_G_players_focused - sgtc_T_players_focused ) )
+				bAllow2 = FALSE;	// ref local_22 (can't join team 2)
+			if( sgtc_G_players_focused < sgtc_T_players_focused &&
+				sgtc_cvar_autobalance.value < (float)( sgtc_T_players_focused - sgtc_G_players_focused ) )
+				bAllow1 = FALSE;	// ref local_21 (can't join team 1)
+			if( ( iTeamArg == 1 && bAllow1 ) || ( iTeamArg == 2 && bAllow2 ) )
+				pPlayer->m_iSgtcTeam = iTeamArg;
+			else
+			{
+				pPlayer->m_iSgtcTeam = ( iTeamArg == 1 ) ? 2 : 1;
+				ClientPrint( pPlayer->pev, HUD_PRINTCONSOLE, "Teams Unbalanced\n" );
+			}
+		}
+	}
+
+	if( pPlayer->m_iSgtcTeam == 0 )
+	{
+		if( sgtc_T_players_focused < sgtc_G_players_focused )
+			pPlayer->m_iSgtcTeam = 2;
+		else if( sgtc_G_players_focused < sgtc_T_players_focused )
+			pPlayer->m_iSgtcTeam = 1;
+		else
+			pPlayer->m_iSgtcTeam = RANDOM_LONG( 1, 2 );
+	}
+
+	if( CMD_ARGC() > 0 )
+	{
+		pPlayer->m_iSgtcPortraitSel = 0;							// ref +0xa44
+		pPlayer->m_iSgtcPortraitPrev = pPlayer->m_iSgtcPortraitShown;	// ref +0xa38
+		if( sgtc_cvar_classlimitmodel.value != 0.0f )
+			pPlayer->m_iSgtcPortraitShown = 0;					// ref +0xa40
+
+		int iClass = atoi( CMD_ARGV( 1 ) );
+		int iTeam = pPlayer->m_iSgtcTeam;
+		BOOL bCapped = FALSE;
+		RecountTeams( FALSE );
+		UpdateClassCount();	// ref vtable+0x118 — fresh counts for the caps
+
+		if( iTeam == 2 )	// Goa'uld side (ref max_syslord/anubis/jaffa/serpent/horus)
+		{
+			switch( iClass )
+			{
+			case 1:
+				if( sgtc_cvar_max_syslord.value <= (float)sgtc_count_syslord &&
+					sgtc_cvar_max_syslord.value != 0.0f )
+					bCapped = TRUE;
+				break;
+			case 2:
+				if( sgtc_cvar_max_anubis.value <= (float)sgtc_count_prime &&
+					sgtc_cvar_max_anubis.value != 0.0f )
+					bCapped = TRUE;
+				break;
+			case 3:
+				if( sgtc_cvar_max_jaffa.value <= (float)sgtc_count_jaffa &&
+					sgtc_cvar_max_jaffa.value != 0.0f )
+					bCapped = TRUE;
+				break;
+			case 4:
+				if( sgtc_cvar_max_serpent.value <= (float)sgtc_count_serpent &&
+					sgtc_cvar_max_serpent.value != 0.0f )
+					bCapped = TRUE;
+				break;
+			case 5:
+				if( sgtc_cvar_max_horus.value <= (float)sgtc_count_horus &&
+					sgtc_cvar_max_horus.value != 0.0f )
+					bCapped = TRUE;
+				break;
+			}
+		}
+		else if( iTeam == 1 )	// Torri side (ref max_oneill/carter/jackson/tealc/soldier)
+		{
+			switch( iClass )
+			{
+			case 1:
+				if( sgtc_cvar_max_oniell.value <= (float)sgtc_count_oniell &&
+					sgtc_cvar_max_oniell.value != 0.0f )
+					bCapped = TRUE;
+				break;
+			case 2:
+				if( sgtc_cvar_max_carter.value <= (float)sgtc_count_carter &&
+					sgtc_cvar_max_carter.value != 0.0f )
+					bCapped = TRUE;
+				break;
+			case 3:
+				if( sgtc_cvar_max_jackson.value <= (float)sgtc_count_jackson &&
+					sgtc_cvar_max_jackson.value != 0.0f )
+					bCapped = TRUE;
+				break;
+			case 4:
+				if( sgtc_cvar_max_tealc.value <= (float)sgtc_count_tealc &&
+					sgtc_cvar_max_tealc.value != 0.0f )
+					bCapped = TRUE;
+				break;
+			case 5:
+				if( sgtc_cvar_max_commander.value <= (float)sgtc_count_commander &&
+					sgtc_cvar_max_commander.value != 0.0f )
+					bCapped = TRUE;
+				break;
+			}
+		}
+
+		if( !bCapped && iClass > 0 && iClass < 6 )
+		{
+			pPlayer->m_iSgtcPortraitSel = iClass;
+			return;
+		}
+
+		// ref: invalid or capped pick → keep rolling 1..5 until an UNLIMITED
+		// (max_* == 0) class comes up for the chosen team.
+		if( iTeam == 2 )
+		{
+			while( pPlayer->m_iSgtcPortraitSel == 0 )
+			{
+				int iRoll = RANDOM_LONG( 1, 5 );
+				if( sgtc_cvar_max_syslord.value == 0.0f && iRoll == 1 )
+					pPlayer->m_iSgtcPortraitSel = 1;
+				if( sgtc_cvar_max_anubis.value == 0.0f && iRoll == 2 )
+					pPlayer->m_iSgtcPortraitSel = 2;
+				if( sgtc_cvar_max_jaffa.value == 0.0f && iRoll == 3 )
+					pPlayer->m_iSgtcPortraitSel = 3;
+				if( sgtc_cvar_max_serpent.value == 0.0f && iRoll == 4 )
+					pPlayer->m_iSgtcPortraitSel = 4;
+				if( sgtc_cvar_max_horus.value == 0.0f && iRoll == 5 )
+					pPlayer->m_iSgtcPortraitSel = 5;
+			}
+		}
+		if( iTeam == 1 )
+		{
+			while( pPlayer->m_iSgtcPortraitSel == 0 )
+			{
+				int iRoll = RANDOM_LONG( 1, 5 );
+				if( sgtc_cvar_max_oniell.value == 0.0f && iRoll == 1 )
+					pPlayer->m_iSgtcPortraitSel = 1;
+				if( sgtc_cvar_max_carter.value == 0.0f && iRoll == 2 )
+					pPlayer->m_iSgtcPortraitSel = 2;
+				if( sgtc_cvar_max_jackson.value == 0.0f && iRoll == 3 )
+					pPlayer->m_iSgtcPortraitSel = 3;
+				if( sgtc_cvar_max_tealc.value == 0.0f && iRoll == 4 )
+					pPlayer->m_iSgtcPortraitSel = 4;
+				if( sgtc_cvar_max_commander.value == 0.0f && iRoll == 5 )
+					pPlayer->m_iSgtcPortraitSel = 5;
+			}
+		}
+	}
+}
+
+// ref CStargateTeamCP::ClientCommand @0x183b88 — CP verb chain. The CP table
+// drops jointeam/mod (classe does the join work) and adds n00bkill +
+// oldobserver before recount/toggleportrait. classe is the CP variant (the
+// type-4 side gate replaces DM's round_official gate).
+BOOL CStargateTeamCP::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
+{
+	if( g_VoiceGameMgr.ClientCommand( pPlayer, pcmd ) )
+		return TRUE;
+
+	if( FStrEq( pcmd, "menuselect" ) )
+	{
+		if( CMD_ARGC() > 1 )
+			atoi( CMD_ARGV( 1 ) );	// ref drains the arg
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "spook" ) )
+	{
+		if( !pPlayer->m_bShieldLarge )
+			return FALSE;
+		Vector vSpawn = pPlayer->pev->origin;
+		vSpawn.z += 120.0f;
+		vSpawn.x += 70.0f;
+		CBaseEntity *pMon = CBaseEntity::Create( "monster_implanted",
+			vSpawn, pPlayer->pev->v_angle, NULL );
+		if( pMon )
+			pMon->pev->owner = pPlayer->edict();
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "spookstorm" ) )
+	{
+		if( pPlayer->m_bShieldLarge != 1 || CMD_ARGC() < 1 )
+			return FALSE;
+		int iDepth = 0;
+		CBaseEntity *pSpot = NULL;
+		while( ( pSpot = UTIL_FindEntityByClassname( pSpot, "info_player_torri" ) ) != NULL &&
+			iDepth < atoi( CMD_ARGV( 1 ) ) )
+		{
+			iDepth++;
+			CBaseEntity *pMon = CBaseEntity::Create( "monster_implanted",
+				pSpot->pev->origin, pSpot->pev->v_angle, NULL );
+			if( pMon )
+				pMon->pev->owner = pPlayer->edict();
+		}
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "customcolor" ) )
+	{
+		if( CMD_ARGC() > 0 )
+			pPlayer->m_iSgtcCustomColor = atoi( CMD_ARGV( 1 ) );	// ref +0x450
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "client" ) )
+	{
+		if( CMD_ARGC() < 1 )
+		{
+			ClientPrint( pPlayer->pev, HUD_PRINTNOTIFY,
+				"parametre manquant, utilisez la commande \"client clindex\"\n" );	// ref string
+			return TRUE;
+		}
+		pPlayer->m_iSgtcClientIdx = atoi( CMD_ARGV( 1 ) );	// ref +0x3e8
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "radio" ) )
+	{
+		if( CMD_ARGC() < 1 )
+			return TRUE;
+		CBasePlayer *plr = (CBasePlayer *)UTIL_PlayerByIndex( pPlayer->m_iSgtcClientIdx );
+		if( plr != NULL )
+		{
+			MESSAGE_BEGIN( MSG_ONE, gmsgRadio, NULL, plr->edict() );
+				WRITE_BYTE( atoi( CMD_ARGV( 1 ) ) );
+				WRITE_BYTE( pPlayer->entindex() );
+			MESSAGE_END();
+		}
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "testmsg" ) )
+		return TRUE;	// ref: inert
+
+	if( FStrEq( pcmd, "timeleft" ) )
+	{
+		char szTime[64];
+		int iSec = (int)timeleft.value;
+		if( iSec % 60 < 10 )
+			snprintf( szTime, sizeof( szTime ), "%d:0%d", iSec / 60, iSec % 60 );
+		else
+			snprintf( szTime, sizeof( szTime ), "%d:%d", iSec / 60, iSec % 60 );
+		ClientPrint( pPlayer->pev, HUD_PRINTTALK, "%s: %s\n", "#time_left", szTime );
+		return FALSE;	// ref returns 0
+	}
+
+	if( FStrEq( pcmd, "autopick" ) )
+	{
+		int iTeam = 0;
+		if( sgtc_G_players_focused < sgtc_T_players_focused )
+			iTeam = 1;
+		else if( sgtc_T_players_focused < sgtc_G_players_focused )
+			iTeam = 2;
+		else
+			iTeam = RANDOM_LONG( 1, 2 );
+		pPlayer->m_iSgtcTeam = iTeam;
+		pPlayer->m_iSgtcPortraitSel = RANDOM_LONG( 1, 5 );
+		pPlayer->m_bSgtcBadGuy = 0;
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "n00bkill" ) )
+	{
+		// ref: dev nuke — kills every ALIVE player on the OTHER pev->team.
+		if( pPlayer->m_bShieldLarge )
+		{
+			for( int i = 1; i <= gpGlobals->maxClients; i++ )
+			{
+				CBasePlayer *plr = (CBasePlayer *)UTIL_PlayerByIndex( i );
+				if( plr && plr->IsAlive() &&
+					plr->pev->team != pPlayer->pev->team )
+					PlayerKilled( plr, pPlayer->pev, plr->pev );	// ref vtable+0x84
+			}
+		}
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "showmenu" ) )
+	{
+		pPlayer->ShowVGUIMenu( 11 );	// ref 0xb
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "showequip" ) )
+	{
+		if( pPlayer->m_bSnagInvisLatch != 1 )
+		{
+			if( sgtc_cvar_wepselmode.value == 1.0f )
+				pPlayer->ShowVGUIMenu( 0xc );
+			else if( sgtc_cvar_wepselmode.value == 2.0f )
+				pPlayer->ShowVGUIMenu( 0x3c );
+		}
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "showmotd" ) )
+	{
+		pPlayer->ShowVGUIMenu( 10 );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "kill" ) )
+	{
+		pPlayer->m_bLanceStunFlag = 0;	// ref +0xa3e
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "classe" ) )
+	{
+		SGTC_CommandClasse( pPlayer, TRUE );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "resetptr" ) )
+	{
+		pPlayer->ResetPortrait( 1 );
+		return FALSE;	// ref returns 0
+	}
+
+	if( FStrEq( pcmd, "recount" ) )
+	{
+		RecountTeams( FALSE );
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "oldobserver" ) )
+	{
+		// ref: untime the ground flag, wipe the team name, move into a traced
+		// observer spot 128u up, then resend TeamInfo for valid teammates.
+		pPlayer->pev->flags &= ~FL_ONGROUND;	// ref pev+0x1a4 & 0xfffffdff
+		pPlayer->m_szTeamName[0] = '\0';
+		RecountTeams( FALSE );
+		TraceResult tr;
+		UTIL_TraceLine( pPlayer->pev->origin, pPlayer->pev->origin + Vector( 0, 0, 128 ),
+			ignore_monsters, pPlayer->edict(), &tr );
+		pPlayer->StartObserver( tr.vecEndPos,
+			UTIL_VecToAngles( tr.vecEndPos - pPlayer->pev->origin ) );
+		for( int i = 1; i <= gpGlobals->maxClients; i++ )
+		{
+			CBaseEntity *plr = UTIL_PlayerByIndex( i );
+			if( plr && IsValidTeam( plr->TeamID() ) )
+			{
+				MESSAGE_BEGIN( MSG_ONE, gmsgTeamInfo, NULL, pPlayer->edict() );
+					WRITE_BYTE( plr->entindex() );
+					WRITE_STRING( plr->TeamID() );
+				MESSAGE_END();
+			}
+		}
+		return TRUE;
+	}
+
+	if( FStrEq( pcmd, "toggleportrait" ) )
+	{
+		pPlayer->TogglePortrait();
+		return TRUE;
+	}
+
+	return FALSE;
 }
 
 void CStargateTeamDM::ClientUserInfoChanged( CBasePlayer *pPlayer, char *infobuffer )
@@ -1275,25 +1867,48 @@ void CStargateTeamDM::RedrawPortrait( CBasePlayer *pPlayer )
 	MESSAGE_END();
 }
 
+// ref CStargateTeamDM::UpdateClassCount @0x18c2e2 (CP @0x17f308, identical body)
+// — counts each alive-teamed player's SHOWN class (+0xa40) into the per-class
+// globals by pev->team (1=Goa'uld, 2=Torri). vtable+0xa8 = TeamID() non-null
+// check; the +0xa44!=0 && classlimitmode!=0 gate skips players mid-pick unless
+// class limiting is off. The classe verb calls this via vtable+0x118.
 void CStargateTeamDM::UpdateClassCount( void )
 {
-	// Tallies portrait/model usage across clients (InitHUD table upkeep).
-	int counts[SGTC_NUM_PORTRAITS];
-	for( size_t m = 0; m < SGTC_NUM_PORTRAITS; m++ )
-		counts[m] = 0;
+	sgtc_count_oniell = sgtc_count_carter = sgtc_count_jackson =
+		sgtc_count_tealc = sgtc_count_commander = 0;
+	sgtc_count_syslord = sgtc_count_prime = sgtc_count_jaffa =
+		sgtc_count_serpent = sgtc_count_horus = 0;
+
 	for( int i = 1; i <= gpGlobals->maxClients; i++ )
 	{
-		CBaseEntity *plr = UTIL_PlayerByIndex( i );
-		if( !plr )
+		CBasePlayer *plr = (CBasePlayer *)UTIL_PlayerByIndex( i );
+		if( !plr || !plr->TeamID() )
 			continue;
-		char *mdls = g_engfuncs.pfnInfoKeyValue(
-			g_engfuncs.pfnGetInfoKeyBuffer( plr->edict() ), "model" );
-		for( size_t m = 0; m < SGTC_NUM_PORTRAITS; m++ )
+		if( plr->m_iSgtcPortraitShown <= 0 || plr->pev->team <= 0 )
+			continue;
+		if( plr->m_iSgtcPortraitSel != 0 &&
+			sgtc_cvar_classlimitmodel.value != 0.0f )
+			continue;
+		if( plr->pev->team == 1 )
 		{
-			if( !stricmp( mdls, s_SGTCPortraits[m] ) )
+			switch( plr->m_iSgtcPortraitShown )
 			{
-				counts[m]++;
-				break;
+			case 1: sgtc_count_syslord++;	break;
+			case 2: sgtc_count_prime++;		break;
+			case 3: sgtc_count_jaffa++;		break;
+			case 4: sgtc_count_serpent++;	break;
+			case 5: sgtc_count_horus++;		break;
+			}
+		}
+		else if( plr->pev->team == 2 )
+		{
+			switch( plr->m_iSgtcPortraitShown )
+			{
+			case 1: sgtc_count_oniell++;	break;
+			case 2: sgtc_count_carter++;	break;
+			case 3: sgtc_count_jackson++;	break;
+			case 4: sgtc_count_tealc++;		break;
+			case 5: sgtc_count_commander++;	break;
 			}
 		}
 	}

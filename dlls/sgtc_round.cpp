@@ -98,6 +98,19 @@ int sgtc_G_players_last = 0;   // BSS 0x2147bc — previous focused-G count
 int sgtc_T_players_last = 0;   // BSS 0x21401c — previous focused-T count
 int sgtc_SendPL = 0;           // BSS — ref m_SendPL (CP InitHUD arms it)
 
+// Per-class population tallies (BSS 0x2368f4..0x236918) — refilled by
+// UpdateClassCount (vtable+0x118) and read by the classe cap switches.
+int sgtc_count_syslord = 0;   // BSS 0x236904 (Goa'uld class 1)
+int sgtc_count_prime = 0;     // BSS 0x236900 (Goa'uld class 2 — "prime")
+int sgtc_count_jaffa = 0;     // BSS 0x2368fc (Goa'uld class 3)
+int sgtc_count_serpent = 0;   // BSS 0x2368f8 (Goa'uld class 4)
+int sgtc_count_horus = 0;     // BSS 0x2368f4 (Goa'uld class 5)
+int sgtc_count_oniell = 0;    // BSS 0x236918 (Torri class 1 — "oniell" in .so)
+int sgtc_count_carter = 0;    // BSS 0x236914 (Torri class 2)
+int sgtc_count_jackson = 0;   // BSS 0x236910 (Torri class 3)
+int sgtc_count_tealc = 0;     // BSS 0x23690c (Torri class 4)
+int sgtc_count_commander = 0; // BSS 0x236908 (Torri class 5)
+
 // ---------------------------------------------------------------------------
 // Ref cvar table (12-byte .data blobs: {const char *name, const char *string,
 // int flags}) — the .so reads/writes the string pointers directly:
@@ -124,6 +137,21 @@ cvar_t sgtc_cvar_truezat = { "mp_truezat", "0", FCVAR_SERVER };	// ref truezat @
 cvar_t sgtc_cvar_wepselmode = { "mp_wepselmode", "2", FCVAR_SERVER };	// ref weaponsel @0x223484 — spawn menu mode (1->0xc, 2->0x3c)
 cvar_t sgtc_cvar_freeguns = { "mp_freeguns", "0", FCVAR_SERVER };		// ref freeguns @0x2238f8 — CP spawn grants all slots when >1
 cvar_t sgtc_cvar_attackcountdown = { "mp_attackcountdown", "30", FCVAR_SERVER };	// ref attackcountdown @0x22390c
+
+// ref ClientCommand 'classe' reads these cvar_t blobs live (@0x213420
+// autobalance, @0x2135d8 mp_altclasslimiter, @0x213600..0x2136b4 class caps):
+cvar_t sgtc_cvar_autobalance = { "mp_autobalance", "2", FCVAR_SERVER };	// ref autobalance @0x213420
+cvar_t sgtc_cvar_classlimitmodel = { "mp_altclasslimiter", "0", FCVAR_SERVER };	// ref classlimitmodel @0x2135d8
+cvar_t sgtc_cvar_max_syslord = { "max_syslord", "1", FCVAR_SERVER };	// ref @0x213650
+cvar_t sgtc_cvar_max_anubis = { "max_anubis", "3", FCVAR_SERVER };	// ref @0x21363c (counts vs count_prime)
+cvar_t sgtc_cvar_max_jaffa = { "max_jaffa", "0", FCVAR_SERVER };		// ref @0x213628
+cvar_t sgtc_cvar_max_serpent = { "max_serpent", "1", FCVAR_SERVER };	// ref @0x213614
+cvar_t sgtc_cvar_max_horus = { "max_horus", "3", FCVAR_SERVER };		// ref @0x213600
+cvar_t sgtc_cvar_max_oniell = { "max_oneill", "1", FCVAR_SERVER };	// ref @0x2136b4
+cvar_t sgtc_cvar_max_carter = { "max_carter", "1", FCVAR_SERVER };	// ref @0x2136a0
+cvar_t sgtc_cvar_max_jackson = { "max_jackson", "1", FCVAR_SERVER };	// ref @0x21368c
+cvar_t sgtc_cvar_max_tealc = { "max_tealc", "1", FCVAR_SERVER };		// ref @0x213678
+cvar_t sgtc_cvar_max_commander = { "max_soldier", "0", FCVAR_SERVER };	// ref @0x213664
 
 // ---------------------------------------------------------------------------
 // wpnC0..wpnC27 — ref .data cvar_t blobs @0x2236c8..0x2238e4 (20 B each:
@@ -193,6 +221,18 @@ void SGTC_RegisterRulesCvars( void )
 	CVAR_REGISTER( &sgtc_cvar_wepselmode );
 	CVAR_REGISTER( &sgtc_cvar_freeguns );
 	CVAR_REGISTER( &sgtc_cvar_attackcountdown );
+	CVAR_REGISTER( &sgtc_cvar_autobalance );
+	CVAR_REGISTER( &sgtc_cvar_classlimitmodel );
+	CVAR_REGISTER( &sgtc_cvar_max_syslord );
+	CVAR_REGISTER( &sgtc_cvar_max_anubis );
+	CVAR_REGISTER( &sgtc_cvar_max_jaffa );
+	CVAR_REGISTER( &sgtc_cvar_max_serpent );
+	CVAR_REGISTER( &sgtc_cvar_max_horus );
+	CVAR_REGISTER( &sgtc_cvar_max_oniell );
+	CVAR_REGISTER( &sgtc_cvar_max_carter );
+	CVAR_REGISTER( &sgtc_cvar_max_jackson );
+	CVAR_REGISTER( &sgtc_cvar_max_tealc );
+	CVAR_REGISTER( &sgtc_cvar_max_commander );
 	for( int i = 0; i < 28; i++ )
 		CVAR_REGISTER( sgtc_wpnC[i] );
 }
@@ -657,17 +697,39 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 
 	if( pPlayer->m_flSgtcTeamsTick < flNow )
 	{
-		// DM: Goa'uld tickets (team string "Goa'uld") or Torri tickets.
-		BOOL bTickets = ( 0 < sgtc_G_tickets &&
-			!stricmp( pPlayer->TeamID(), "Goa'uld" ) && !g_fGameOver ) ||
-			( 0 < sgtc_T_tickets && !stricmp( pPlayer->TeamID(), "Torri" ) &&
-			!g_fGameOver );
+		// ref DM PlayerThink @0x18d088 ticket flag: name == "Goa'uld" &&
+		// 0 < G_tickets || name == "Torri" && 0 < T_tickets, taken BEFORE
+		// +0xe08 is rewritten below — this snapshot is the consume-gate input.
+		BOOL bTickets = ( !strncmp( pPlayer->m_szTeamName, "Goa'uld", 7 ) &&
+			0 < sgtc_G_tickets && !g_fGameOver ) ||
+			( !strncmp( pPlayer->m_szTeamName, "Torri", 5 ) &&
+			0 < sgtc_T_tickets && !g_fGameOver );
 
 		if( !( pPlayer->m_bSnagInvisLatch || pPlayer->IsAlive() || bTickets ||
 			( pPlayer->m_bSgtcRoundAlive || g_fGameOver ) ) )
-			pPlayer->ShowVGUIMenu( 11 );
+			pPlayer->ShowVGUIMenu( 11 );	// ref 0xb
 
-		if( !pPlayer->IsAlive() && !pPlayer->IsObserver() && !g_fGameOver )
+		// ref consume gate — verbatim transcription of the mode-dependent
+		// chain (0x18d5c0..0x18d830). DM modes (GameModeSet >= 1): consume
+		// only when the current team still has tickets OR a pending pick
+		// exists (+0x438 != 0 && +0xa44 != -1). Mode 0: consume while the
+		// round is < 30s old, a team is empty, or the player has tickets.
+		// Alive non-observers and game-over never consume.
+		BOOL bConsume;
+		if( ( ( ( sgtc_GameModeSet < 1 || !bTickets ) &&
+			( ( sgtc_GameModeSet < 1 ||
+				( pPlayer->m_iSgtcTeam == 0 || pPlayer->m_iSgtcPortraitSel == -1 ) ) &&
+				( sgtc_GameModeSet != 0 ||
+					( ( pPlayer->m_bSgtcRoundAlive || pPlayer->m_iSgtcPortraitSel == -1 ) ||
+						pPlayer->m_iSgtcTeam < 1 ) ) ) &&
+			( ( sgtc_GameModeSet != 0 || sgtc_roundstart <= flNow - 30.0f ) || bTickets ) ) &&
+			( ( sgtc_GameModeSet != 0 || m_iSgtcEmptyTeams == 0 ) || bTickets ) ) ||
+			( ( pPlayer->IsAlive() && !pPlayer->IsObserver() ) || g_fGameOver ) )
+			bConsume = FALSE;
+		else
+			bConsume = TRUE;
+
+		if( bConsume )
 		{
 			if( pPlayer->m_iSgtcTeam == 1 )
 				strncpy( pPlayer->m_szTeamName, "Torri", TEAM_NAME_LENGTH );
@@ -679,24 +741,28 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 				pPlayer->m_iSgtcPrevTeam = pPlayer->m_iSgtcActiveTeam;
 				pPlayer->m_iSgtcActiveTeam = pPlayer->m_iSgtcTeam;
 			}
-			SetDefaultPlayerTeam( pPlayer );
+			SetDefaultPlayerTeam( pPlayer );	// ref vtable+0x64
 
 			if( 0 < pPlayer->m_iSgtcPortraitSel )
 				pPlayer->m_iSgtcPortraitShown = pPlayer->m_iSgtcPortraitSel;
 
-			if( ( 0 < sgtc_G_tickets &&
-				!stricmp( pPlayer->TeamID(), "Goa'uld" ) ) ||
-				( 0 < sgtc_T_tickets && !stricmp( pPlayer->TeamID(), "Torri" ) ) )
+			// ref re-tests tickets on the NEW name (post-SetDefaultPlayerTeam).
+			BOOL bJoinTickets = ( !strncmp( pPlayer->m_szTeamName, "Goa'uld", 7 ) &&
+				0 < sgtc_G_tickets ) ||
+				( !strncmp( pPlayer->m_szTeamName, "Torri", 5 ) &&
+				0 < sgtc_T_tickets );
+			if( bJoinTickets )
 			{
-				ChangePlayerTeam( pPlayer, pPlayer->TeamID(), 0, 0 );
+				ChangePlayerTeam( pPlayer, pPlayer->m_szTeamName, 0, 0 );	// ref vtable+0xec
 				int iRespawn = SGTC_Round_intconstrain( 3, 120,
 					SGTC_Round_roundf( sgtc_cvar_respawntime.value ) );
 				if( sgtc_GameModeSet == 0 || !bTickets )
 					iRespawn = 1;
-				if( !pPlayer->IsAlive() && !pPlayer->IsObserver() &&
-					( sgtc_GameModeSet < 1 ||
-					flNow - iRespawn > pPlayer->m_flSgtcDeathTime ) &&
-					sgtc_GameModeSet != 0 )
+				// ref: respawn only dead OBSERVERS; the mp_respawntime
+				// delay applies only in modes >= 1 (mode 0 respawns at once).
+				if( !pPlayer->IsAlive() && pPlayer->IsObserver() &&
+					( sgtc_GameModeSet == 0 ||
+						flNow - iRespawn > pPlayer->m_flSgtcDeathTime ) )
 					respawn( pPlayer->pev, 0 );
 			}
 		}
@@ -799,59 +865,59 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 		}
 	}
 
-	if( flNow <= pPlayer->m_flSgtcTeamsTick || pPlayer->IsAlive() )
-		return;
-
-	// Dead, 1s re-eval tick.
-	if( pPlayer->m_bSgtcRoundAlive != 1 && !g_fGameOver )
-		pPlayer->ShowVGUIMenu( 11 );
-
-	if( pPlayer->m_iSgtcTeam == 1 )
-		strncpy( pPlayer->m_szTeamName, "Torri", TEAM_NAME_LENGTH );
-	else if( pPlayer->m_iSgtcTeam == 2 )
-		strncpy( pPlayer->m_szTeamName, "Goa'uld", TEAM_NAME_LENGTH );
-
-	if( pPlayer->m_iSgtcTeam != 0 )
+	// ref CP PlayerThink @0x19008c gate: skip only when the 1s tick is due OR
+	// the player is alive — observers and dead players consume below.
+	if( flNow > pPlayer->m_flSgtcTeamsTick && !pPlayer->IsAlive() )
 	{
-		pPlayer->m_iSgtcPrevTeam = pPlayer->m_iSgtcActiveTeam;
-		pPlayer->m_iSgtcActiveTeam = pPlayer->m_iSgtcTeam;
-	}
-	SetDefaultPlayerTeam( pPlayer );
+		if( pPlayer->m_bSgtcRoundAlive != 1 && !g_fGameOver )
+			pPlayer->ShowVGUIMenu( 11 );	// ref 0xb
 
-	if( 0 < pPlayer->m_iSgtcPortraitSel )
-		pPlayer->m_iSgtcPortraitShown = pPlayer->m_iSgtcPortraitSel;
+		if( pPlayer->m_iSgtcTeam == 1 )
+			strncpy( pPlayer->m_szTeamName, "Torri", TEAM_NAME_LENGTH );
+		else if( pPlayer->m_iSgtcTeam == 2 )
+			strncpy( pPlayer->m_szTeamName, "Goa'uld", TEAM_NAME_LENGTH );
 
-	BOOL bRespawn = FALSE;
-	// base flag: either team still has tickets (same DM test).
-	if( ( 0 < sgtc_G_tickets && !stricmp( pPlayer->TeamID(), "Goa'uld" ) ) ||
-		( 0 < sgtc_T_tickets && !stricmp( pPlayer->TeamID(), "Torri" ) ) )
-		bRespawn = TRUE;
+		if( pPlayer->m_iSgtcTeam != 0 )
+		{
+			pPlayer->m_iSgtcPrevTeam = pPlayer->m_iSgtcActiveTeam;
+			pPlayer->m_iSgtcActiveTeam = pPlayer->m_iSgtcTeam;
+		}
+		SetDefaultPlayerTeam( pPlayer );	// ref vtable+0x64
 
-	// type 2 + 0x464: the capture-holding team gets a respawn pass.
-	if( sgtc_type == 2 && pPlayer->m_bSgtcPad464 )
-	{
-		if( sgtc_teamed == 1 && !stricmp( pPlayer->TeamID(), "Goa'uld" ) )
-			bRespawn = FALSE; // ref: holding team excluded (flag state path)
-		if( sgtc_teamed == 2 && !stricmp( pPlayer->TeamID(), "Torri" ) )
-			bRespawn = FALSE;
-	}
-	// type 4 + 0x464: rules+0x734 selector excludes the chosen team.
-	if( sgtc_type == 4 && pPlayer->m_bSgtcPad464 )
-	{
-		const int iSel = 0; // ref rules+0x734 (leader-slot flag, default 0)
-		if( iSel != 0 && !stricmp( pPlayer->TeamID(), "Goa'uld" ) )
-			bRespawn = FALSE;
-		if( iSel == 0 && !stricmp( pPlayer->TeamID(), "Torri" ) )
-			bRespawn = FALSE;
-	}
+		if( 0 < pPlayer->m_iSgtcPortraitSel )
+			pPlayer->m_iSgtcPortraitShown = pPlayer->m_iSgtcPortraitSel;
 
-	if( bRespawn )
-	{
-		ChangePlayerTeam( pPlayer, pPlayer->TeamID(), 0, 0 );
-		if( !pPlayer->IsAlive() && pPlayer->IsObserver() )
-			respawn( pPlayer->pev, 0 );
+		// ref: either team NAME alone arms the team change — no ticket test
+		// in CP (unlike the DM variant at 0x18d088).
+		BOOL bJoin = !strncmp( pPlayer->m_szTeamName, "Torri", 5 ) ||
+			!strncmp( pPlayer->m_szTeamName, "Goa'uld", 7 );
+
+		// type 2 + 0x464: the capture-holding team is excluded.
+		if( sgtc_type == 2 && pPlayer->m_bSgtcPad464 )
+		{
+			if( sgtc_teamed == 1 && !strncmp( pPlayer->m_szTeamName, "Goa'uld", 7 ) )
+				bJoin = FALSE;
+			if( sgtc_teamed == 2 && !strncmp( pPlayer->m_szTeamName, "Torri", 5 ) )
+				bJoin = FALSE;
+		}
+		// type 4 + 0x464: rules+0x734 (m_iSgtcCPSide) excludes the chosen team.
+		if( sgtc_type == 4 && pPlayer->m_bSgtcPad464 )
+		{
+			if( m_iSgtcCPSide != 0 && !strncmp( pPlayer->m_szTeamName, "Goa'uld", 7 ) )
+				bJoin = FALSE;
+			if( m_iSgtcCPSide == 0 && !strncmp( pPlayer->m_szTeamName, "Torri", 5 ) )
+				bJoin = FALSE;
+		}
+
+		if( bJoin )
+		{
+			ChangePlayerTeam( pPlayer, pPlayer->m_szTeamName, 0, 0 );	// ref vtable+0xec
+			// ref: respawn only dead OBSERVERS (the fresh-join path).
+			if( !pPlayer->IsAlive() && pPlayer->IsObserver() )
+				respawn( pPlayer->pev, 0 );
+		}
+		pPlayer->m_flSgtcTeamsTick = flNow + 1.0f;
 	}
-	pPlayer->m_flSgtcTeamsTick = flNow + 1.0f;
 
 	if( pPlayer->IsAlive() )
 		pPlayer->m_bSgtcRoundAlive = 1;

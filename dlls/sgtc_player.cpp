@@ -23,6 +23,7 @@ extern int gmsgReset;
 extern int gmsgArmor;
 extern int gmsgSpectator;
 extern int gmsgHideVGUI;
+extern int gmsgTogglePortrait;
 extern cvar_t allow_spectators;
 extern int sgtc_GameModeSet;	// sgtc_round.cpp
 extern int sgtc_G_tickets;
@@ -1962,6 +1963,16 @@ void CBasePlayer::ResetPortrait( int mode )
 		WRITE_BYTE( 0 );
 	MESSAGE_END();
 	m_bSgtcPortraitLatch = 0;
+}
+
+// ref CBasePlayer::TogglePortrait() @0x146412 — MSG_ONE gmsgTogglePortrait,
+// no payload (TogglePor registered size 0).
+void CBasePlayer::TogglePortrait( void )
+{
+	if( !gmsgTogglePortrait )
+		return;
+	MESSAGE_BEGIN( MSG_ONE, gmsgTogglePortrait, NULL, pev );
+	MESSAGE_END();
 }
 
 // ===========================================================================

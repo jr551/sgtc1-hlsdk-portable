@@ -271,8 +271,11 @@ public:
 	int	m_iSgtcTeam;		// ref +0x438 — SGTC team id
 	int	m_iSgtcActiveTeam;	// ref +0x430
 	int	m_iSgtcPrevTeam;	// ref +0x4fc
-	int	m_iSgtcPortraitSel;	// ref +0xa44 — portrait menu selection
+	int	m_iSgtcPortraitSel;	// ref +0xa44 — portrait menu selection (classe arg 1)
 	int	m_iSgtcPortraitShown;	// ref +0xa40 — shown portrait; also Talent() switch index (1..5)
+	int	m_iSgtcPortraitPrev;	// ref +0xa38 — snapshot of +0xa40 on re-pick (classe)
+	int	m_iSgtcClientIdx;	// ref +0x3e8 — "client" cmd arg: radio peer index
+	int	m_iSgtcCustomColor;	// ref +0x450 — "customcolor" cmd arg
 	int	m_iSgtcTeamLatch;	// [INFERENCE] ref +0x3e0-ish — cleared by "spectate"
 	char	m_bSgtcPad464;		// ref +0x464
 	char	m_bSgtcMenuLock;	// ref +0x4e5 — gond4h9wp menu lock
@@ -326,6 +329,7 @@ public:
 	void NVG_Zoomout( void );	// ref @0x13442a
 	void Talent( void );		// ref @0x134a02
 	void ResetPortrait( int mode );	// ref @0x13633e — portrait msg + clears +0x926
+	void TogglePortrait( void );	// ref @0x146412 — MSG_ONE TogglePor to owner
 
 
 	void SGTC_RadarScan( void );	// ref @0x135592 — Blip usermsg to client HUD

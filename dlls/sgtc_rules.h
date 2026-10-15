@@ -99,6 +99,7 @@ public:
 	void DeathNotice( CBasePlayer *pVictim, entvars_t *pKiller, entvars_t *pInflictor ) override;
 	void ClientDisconnected( edict_t *pClient ) override;
 	BOOL ClientCommand( CBasePlayer *pPlayer, const char *pcmd ) override;
+	void SGTC_CommandClasse( CBasePlayer *pPlayer, BOOL bCaptureMode );	// ref 'classe' verb body (DM @0x191336 tail / CP @0x183b88 tail)
 	void ClientUserInfoChanged( CBasePlayer *pPlayer, char *infobuffer ) override;
 	int DeadPlayerWeapons( CBasePlayer *pPlayer ) override;
 	int DeadPlayerAmmo( CBasePlayer *pPlayer ) override;
@@ -156,6 +157,7 @@ public:
 	void PlayerThink( CBasePlayer *pPlayer ) override;
 	void NewRound( void );
 	void InitHUD( CBasePlayer *pPlayer ) override;	// ref @0x1733f2
+	BOOL ClientCommand( CBasePlayer *pPlayer, const char *pcmd ) override;	// ref @0x183b88
 	edict_t *GetPlayerSpawnSpot( CBasePlayer *pPlayer );
 	BOOL m_bSpawnsInversed;
 	int m_iSgtcCPSide;			// ref this+0x734 — type-4 50hp side selector
