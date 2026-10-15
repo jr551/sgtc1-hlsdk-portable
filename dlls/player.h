@@ -274,6 +274,7 @@ public:
 	int	m_iSgtcPortraitSel;	// ref +0xa44 — portrait menu selection (classe arg 1)
 	int	m_iSgtcPortraitShown;	// ref +0xa40 — shown portrait; also Talent() switch index (1..5)
 	int	m_iSgtcPortraitPrev;	// ref +0xa38 — snapshot of +0xa40 on re-pick (classe)
+	int	m_iSgtcInfoLock;	// ref +0xdc — class-limits/info lock gate (ClientUserInfoChanged)
 	int	m_iSgtcClientIdx;	// ref +0x3e8 — "client" cmd arg: radio peer index
 	int	m_iSgtcCustomColor;	// ref +0x450 — "customcolor" cmd arg
 	int	m_iSgtcTeamLatch;	// [INFERENCE] ref +0x3e0-ish — cleared by "spectate"

@@ -1566,10 +1566,12 @@ void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
 	ClearBits( m_afPhysicsFlags, PFLAG_DUCKING );
 	ClearBits( pev->flags, FL_DUCKING );
 	// ref StartObserver @0x138c12: pev+0x160 (health) = 1.0f, pev+0x210
-	// (maxspeed) = 200.0f, +0xa7c = maxspeed, and NO deadflag write — the
-	// stock DEAD_RESPAWNABLE made IsAlive() false, which made PlayerThink
-	// send VGUIMenu(11) at connect and hide the briefing window.
+	// (maxspeed) = 200.0f, +0xa7c = maxspeed, and pev+0x170 (deadflag) = 3
+	// = DEAD_RESPAWNABLE. The deadflag write is required: CP::PlayerThink's
+	// pending-team consume gate (sgtc_rules.cpp) needs !IsAlive(), so a
+	// connect-observer left at DEAD_NO can never take autopick/jointeam/classe.
 	pev->health = 1;
+	pev->deadflag = DEAD_RESPAWNABLE;	// ref pev+0x170 = 3
 	pev->maxspeed = 200.0f;
 	m_flMaxSpeedLatch = pev->maxspeed;	// ref +0xa7c = pev+0x210
 

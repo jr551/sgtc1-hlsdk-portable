@@ -158,6 +158,7 @@ public:
 	void NewRound( void );
 	void InitHUD( CBasePlayer *pPlayer ) override;	// ref @0x1733f2
 	BOOL ClientCommand( CBasePlayer *pPlayer, const char *pcmd ) override;	// ref @0x183b88
+	void ClientUserInfoChanged( CBasePlayer *pPlayer, char *infobuffer ) override;	// ref @0x182c02
 	edict_t *GetPlayerSpawnSpot( CBasePlayer *pPlayer );
 	BOOL m_bSpawnsInversed;
 	int m_iSgtcCPSide;			// ref this+0x734 — type-4 50hp side selector

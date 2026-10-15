@@ -610,6 +610,7 @@ void CStargateTeamDM::InitHUD( CBasePlayer *pPlayer )
 	for( int t = 0; t < 5; t++ ) { s_SgtcHudInitA[t] = 0; s_SgtcHudInitB[t] = 0; }
 	pPlayer->m_iSgtcPortraitSel = 0;	// ref +0xa44
 	pPlayer->m_iSgtcTeam = 0;			// ref +0x438
+	pPlayer->m_iSgtcInfoLock = 0;		// ref +0xdc — info lock off at connect
 	pPlayer->m_szTeamName[0] = '\0';	// ref +0xe08 strncpy
 	CHalfLifeMultiplay::InitHUD( pPlayer );
 
@@ -1790,24 +1791,58 @@ BOOL CStargateTeamCP::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 
 void CStargateTeamDM::ClientUserInfoChanged( CBasePlayer *pPlayer, char *infobuffer )
 {
-	char *mdls = g_engfuncs.pfnInfoKeyValue( infobuffer, "model" );
-	if( !stricmp( mdls, pPlayer->m_szTeamName ) )
-		return;
-	if( !IsValidTeam( mdls ) )
+	// ref CStargateTeamDM::ClientUserInfoChanged @0x190288.
+	// NOT the stock teamplay body — no IsValidTeam/"Can't change team"
+	// rejection; the ref derives pev->team + the "model" key from
+	// m_szTeamName/m_iSgtcPortraitShown.
+	(void)infobuffer;
+	if( pPlayer->IsObserver() )
+		pPlayer->pev->team = 0;						// ref pev+0x1ac = 0
+
+	if( pPlayer->m_iSgtcInfoLock != 1 &&			// ref +0xdc != 1
+		pPlayer->m_bSnagInvisLatch != 1 )			// ref +0x4de != 1
 	{
-		int clientIndex = pPlayer->entindex();
-		g_engfuncs.pfnSetClientKeyValue( clientIndex,
-			g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model", pPlayer->m_szTeamName );
-		char text[128];
-		snprintf( text, sizeof( text ), "* Can't change team to '%s'\n", mdls );
-		UTIL_SayText( text, pPlayer );
-		return;
+		char *infobuf = g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() );	// ref DAT_00238fa8
+		if( !strncmp( pPlayer->m_szTeamName, "Goa'uld", 7 ) )
+		{
+			pPlayer->pev->team = 1;
+			switch( pPlayer->m_iSgtcPortraitShown )				// ref +0xa40
+			{
+			case 1:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "systemlord" );	break;
+			case 2:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "anubis" );		break;
+			case 3:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "goauld3" );		break;
+			case 4:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "snakegoauld" );	break;
+			case 5:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "horus" );		break;
+			}
+		}
+		else if( !strncmp( pPlayer->m_szTeamName, "Torri", 5 ) )
+		{
+			pPlayer->pev->team = 2;
+			switch( pPlayer->m_iSgtcPortraitShown )
+			{
+			case 1:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "oneill" );		break;
+			case 2:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "carter" );		break;
+			case 3:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "jackson" );	break;
+			case 4:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "tealc" );		break;
+			case 5:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "commander" );	break;
+			}
+		}
 	}
-	char text[128];
-	snprintf( text, sizeof( text ), "* %s changed to team '%s'\n", STRING( pPlayer->pev->netname ), mdls );
-	UTIL_SayTextAll( text, pPlayer );
-	ChangePlayerTeam( pPlayer, mdls, TRUE, TRUE );
-	RecountTeams( TRUE );
+
+	// DM-only tail: invis latch (+0x4de) pushes "unasteammate" (DAT_001ebc6c)
+	// when the info lock (+0xdc) isn't forced.
+	if( pPlayer->m_bSnagInvisLatch != 0 && pPlayer->m_iSgtcInfoLock != 1 )
+		g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(),
+			g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() ), "model", "unasteammate" );
+
+	pPlayer->SendAboutMe( (int)pPlayer->pev->team,
+		STRING( pPlayer->pev->netname ), pPlayer->entindex() );	// ref: pev+0x1ac, STRING(netname), pev+0x1d0
+	RecountTeams( FALSE );
+
+	if( !pPlayer->IsObserver() )
+		pPlayer->m_bSgtcPadA3D = 1;					// ref +0xa3d = 1 (DM only)
+
+	UpdateGameMode( pPlayer );						// ref vtable+0x34 tail
 }
 
 int CStargateTeamDM::DeadPlayerWeapons( CBasePlayer *pPlayer )
@@ -2229,6 +2264,51 @@ void CStargateTeamCP::PlayerSpawn( CBasePlayer *pPlayer )
 				pPlayer->m_flSgtcAttackEnd = 0.0f;
 		}
 	}
+}
+
+void CStargateTeamCP::ClientUserInfoChanged( CBasePlayer *pPlayer, char *infobuffer )
+{
+	// ref CStargateTeamCP::ClientUserInfoChanged @0x182c02 — same body as the
+	// DM variant MINUS the +0x4de "unasteammate" tail and the +0xa3d latch.
+	(void)infobuffer;
+	if( pPlayer->IsObserver() )
+		pPlayer->pev->team = 0;						// ref pev+0x1ac = 0
+
+	if( pPlayer->m_iSgtcInfoLock != 1 &&			// ref +0xdc != 1
+		pPlayer->m_bSnagInvisLatch != 1 )			// ref +0x4de != 1
+	{
+		char *infobuf = g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() );
+		if( !strncmp( pPlayer->m_szTeamName, "Goa'uld", 7 ) )
+		{
+			pPlayer->pev->team = 1;
+			switch( pPlayer->m_iSgtcPortraitShown )				// ref +0xa40
+			{
+			case 1:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "systemlord" );	break;
+			case 2:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "anubis" );		break;
+			case 3:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "goauld3" );		break;
+			case 4:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "snakegoauld" );	break;
+			case 5:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "horus" );		break;
+			}
+		}
+		else if( !strncmp( pPlayer->m_szTeamName, "Torri", 5 ) )
+		{
+			pPlayer->pev->team = 2;
+			switch( pPlayer->m_iSgtcPortraitShown )
+			{
+			case 1:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "oneill" );		break;
+			case 2:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "carter" );		break;
+			case 3:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "jackson" );	break;
+			case 4:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "tealc" );		break;
+			case 5:	g_engfuncs.pfnSetClientKeyValue( pPlayer->entindex(), infobuf, "model", "commander" );	break;
+			}
+		}
+	}
+
+	pPlayer->SendAboutMe( (int)pPlayer->pev->team,
+		STRING( pPlayer->pev->netname ), pPlayer->entindex() );
+	RecountTeams( FALSE );
+
+	UpdateGameMode( pPlayer );						// ref vtable+0x34 tail — virtual, dispatches CP
 }
 
 // ===========================================================================
