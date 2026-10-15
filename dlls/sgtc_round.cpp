@@ -124,6 +124,57 @@ cvar_t sgtc_cvar_truezat = { "mp_truezat", "0", FCVAR_SERVER };	// ref truezat @
 cvar_t sgtc_cvar_wepselmode = { "mp_wepselmode", "2", FCVAR_SERVER };	// ref weaponsel @0x223484 — spawn menu mode (1->0xc, 2->0x3c)
 cvar_t sgtc_cvar_freeguns = { "mp_freeguns", "0", FCVAR_SERVER };		// ref freeguns @0x2238f8 — CP spawn grants all slots when >1
 cvar_t sgtc_cvar_attackcountdown = { "mp_attackcountdown", "30", FCVAR_SERVER };	// ref attackcountdown @0x22390c
+
+// ---------------------------------------------------------------------------
+// wpnC0..wpnC27 — ref .data cvar_t blobs @0x2236c8..0x2238e4 (20 B each:
+// {name, default-string, FCVAR_SERVER=4, value, next}), read by the DM/CP
+// Think m_SendPL block as ROUND(value) and written as the 28-byte cost tail of
+// the TeamNames usermsg (menu-12 per-slot costs, client DAT_100dd974[28]).
+// Names/defaults read from the ref .data + its rodata string pool
+// (0x1e0ee9..0x1e12e2); defaults cross-checked against the orig menu-12
+// screenshot (USAS 40, Beretta 5, MP5 7, PSG1 11, P90 9, M16 8, Zat 6,
+// Lance 7, Hand Grenade 6, Mine 7, C4 13, Smoke 5, Nerve 6, Narco 6,
+// Mustard 7).
+// ---------------------------------------------------------------------------
+cvar_t sgtc_cvar_wpnC0 = { "wpn_weapon_glstaff", "40", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC1 = { "wpn_weapon_usas", "40", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC2 = { "wpn_weapon_batsup", "3", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC3 = { "wpn_weapon_m92", "5", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC4 = { "wpn_weapon_mp5", "7", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC5 = { "wpn_weapon_psg1", "11", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC6 = { "wpn_weapon_p90", "9", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC7 = { "wpn_weapon_spas", "8", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC8 = { "wpn_weapon_m16", "8", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC9 = { "wpn_weapon_main", "8", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC10 = { "wpn_weapon_zat", "6", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC11 = { "wpn_weapon_lance", "7", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC12 = { "wpn_weapon_reetou", "9", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC13 = { "wpn_weapon_zatarc", "11", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC14 = { "wpn_weapon_tacgun", "6", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC15 = { "wpn_weapon_handgrenade", "6", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC16 = { "wpn_weapon_mine", "7", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC17 = { "wpn_weapon_invis", "8", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC18 = { "wpn_weapon_shield", "8", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC19 = { "wpn_weapon_gacgoa", "7", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC20 = { "wpn_weapon_c4", "13", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC21 = { "wpn_weapon_larve", "9", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC22 = { "wpn_weapon_medic", "8", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC23 = { "wpn_weapon_smokegrenade", "5", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC24 = { "wpn_weapon_nervegrenade", "6", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC25 = { "wpn_weapon_narcogrenade", "6", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC26 = { "wpn_weapon_mustardgrenade", "7", FCVAR_SERVER };
+cvar_t sgtc_cvar_wpnC27 = { "wpn_weapon_goaregen", "7", FCVAR_SERVER };
+// Index-ordered accessors for the cost tail (slot i ↔ wpnC<i>).
+extern cvar_t *const sgtc_wpnC[28] =
+{
+	&sgtc_cvar_wpnC0,  &sgtc_cvar_wpnC1,  &sgtc_cvar_wpnC2,  &sgtc_cvar_wpnC3,
+	&sgtc_cvar_wpnC4,  &sgtc_cvar_wpnC5,  &sgtc_cvar_wpnC6,  &sgtc_cvar_wpnC7,
+	&sgtc_cvar_wpnC8,  &sgtc_cvar_wpnC9,  &sgtc_cvar_wpnC10, &sgtc_cvar_wpnC11,
+	&sgtc_cvar_wpnC12, &sgtc_cvar_wpnC13, &sgtc_cvar_wpnC14, &sgtc_cvar_wpnC15,
+	&sgtc_cvar_wpnC16, &sgtc_cvar_wpnC17, &sgtc_cvar_wpnC18, &sgtc_cvar_wpnC19,
+	&sgtc_cvar_wpnC20, &sgtc_cvar_wpnC21, &sgtc_cvar_wpnC22, &sgtc_cvar_wpnC23,
+	&sgtc_cvar_wpnC24, &sgtc_cvar_wpnC25, &sgtc_cvar_wpnC26, &sgtc_cvar_wpnC27,
+};
 void SGTC_RegisterRulesCvars( void )
 {
 	CVAR_REGISTER( &sgtc_cvar_friendlyfire );
@@ -142,6 +193,8 @@ void SGTC_RegisterRulesCvars( void )
 	CVAR_REGISTER( &sgtc_cvar_wepselmode );
 	CVAR_REGISTER( &sgtc_cvar_freeguns );
 	CVAR_REGISTER( &sgtc_cvar_attackcountdown );
+	for( int i = 0; i < 28; i++ )
+		CVAR_REGISTER( sgtc_wpnC[i] );
 }
 
 float sgtc_roundstart = 0.0f; // mirror of rules this+0x72c
@@ -1384,14 +1437,17 @@ void CStargateTeamDM::PlayerKilled( CBasePlayer *pVictim,
 	if( pKiller )
 	{
 		CBaseEntity *pKillerEnt = CBaseEntity::Instance( pKiller );
-		// ref: killer != victim && killer team (+0x1ac) != victim team ->
-		// killer +0x934 += ROUND(killpoints), victim +0x934 += ROUND(vicpoints).
-		// Ref +0x934 is CBaseEntity+0x930 = pev->frags.
+		// ref @0x18fb4a / @0x18262a: killer != victim && killer team (+0x1ac)
+		// != victim team -> killer +0x934 += ROUND(killpoints), victim +0x934
+		// += ROUND(vicpoints). +0x934 is the SGTC point score (CBasePlayer
+		// m_iNukeBonus — the menu-12 "Total" budget byte), NOT pev->frags.
 		if( pKillerEnt && pKillerEnt != pVictim &&
 			pKillerEnt->pev->team != pVictim->pev->team )
 		{
-			pKillerEnt->pev->frags += SGTC_Round_roundf( sgtc_cvar_killpoints.value );
-			pVictim->pev->frags += SGTC_Round_roundf( sgtc_cvar_diepoints.value );
+			( (CBasePlayer *)pKillerEnt )->m_iNukeBonus +=
+				SGTC_Round_roundf( sgtc_cvar_killpoints.value );
+			pVictim->m_iNukeBonus +=
+				SGTC_Round_roundf( sgtc_cvar_diepoints.value );
 		}
 	}
 
