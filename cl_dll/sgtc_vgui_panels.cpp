@@ -314,6 +314,7 @@ CSgtcBriefingPanel::CSgtcBriefingPanel( int iTrans, int iRemoveMe, int x, int y,
 	m_pScrollPanel = new CTFScrollPanel( XRES( 16 ), YRES( 48 ) + 45, iScrollWide, iScrollTall );
 	m_pScrollPanel->setParent( m_pWindow );
 	m_pScrollPanel->setScrollBarVisible( false, false );
+	m_pScrollPanel->setScrollBarAutoVisible( false, false );	// kill the auto thick gold bar
 
 	m_pBriefing = new TextPanel( "", 0, 45, XRES( 560 ) - XRES( 16 ), YRES( 296 ) - 90 );
 	m_pBriefing->setParent( m_pScrollPanel->getClient() );
@@ -546,23 +547,23 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 	int r, g, b, a;
 
 	// Background (ref +0x110: TextPanel 0x15,0x15, W-0x2a, H-0x15 + border).
-	// Colour arg is the BSS object 0x100ddb0c (all zero, same pattern as menu
-	// 10's 0x100e126c) → opaque black, not the vgui default grey.
+	// ASM @0x1002c211: setBgColor(0,0,0x32,0x64) — dark navy translucent,
+	// NOT the opaque black the earlier BSS-misread suggested.
 	TextPanel *pBackground = new TextPanel( "", XRES( 21 ), YRES( 21 ),
 		ScreenWidth - XRES( 42 ), ScreenHeight - YRES( 21 ) );
 	pBackground->setParent( this );
-	pBackground->setBgColor( 0, 0, 0, 0 );
+	pBackground->setBgColor( 0, 0, 0x32, 0x64 );
 	pBackground->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
 
 	// Title (ref +0x1b0, literal French string, not localised) — ctor asm
-	// @0x1002bfa3: Label(0,0, X(0x100974e0=640), Y(0x100974e8=21)).
+	// @0x1002bfa3: Label(0,0, X(0x100974e0=640), Y(0x100974e8=21)); fg is the
+	// hardcoded periwinkle 0x8c,0x8c,0xf0 (@0x1002c074), not the scheme colour.
 	Label *pTitle = new Label( "", 0, 0, XRES( 640 ), YRES( 21 ) );
 	pTitle->setParent( this );
 	pTitle->setFont( pSchemes->getFont( hTitleScheme ) );
-	pSchemes->getFgColor( hTitleScheme, r, g, b, a );
-	pTitle->setFgColor( r, g, b, a );
-	pSchemes->getBgColor( hTitleScheme, r, g, b, a );
-	pTitle->setBgColor( r, g, b, a );
+	pTitle->setFgColor( 0x8c, 0x8c, 0xf0, 0 );
+	pTitle->setBgColor( 0, 0, 0, 0xff );
+	pTitle->setContentAlignment( Label::a_center );
 	pTitle->setText( "%s", "Identifiez-vous" );
 
 	// Ref column geometry (asm @0x1002c260..0x1002c4f3):
@@ -858,6 +859,43 @@ static const SgtcWeaponEntry s_SgtcWeapons[SGTC_WPSEL_SLOTS] =
 	{ "medicgoa", "#WEAPON_MEDICGOA" }
 };
 
+// ref info/<name>.txt file stems (Update switch @0x100b3cd0..0x100b3e94) —
+// these differ from the TGA/preview short names for 12 of the 28 slots.
+static const char *s_SgtcWeaponInfo[SGTC_WPSEL_SLOTS] =
+{
+	"glstaff", "usas", "batsup", "ber", "mp5", "psg1", "p90", "spas",
+	"m16", "main", "zat", "lancer", "ter", "zatarc",
+	"tacs", "hgrenade", "mines", "invis", "shield", "gacgoa", "c4", "larve",
+	"medic", "smoke_g", "nerve_g", "narco_g", "mustard_g", "medicgoa"
+};
+
+// Ref menu-12 / bottom buttons (FUN_1003321c ctor @0x1003321c): stock vgui
+// Button visuals do NOT match the orig look — the orig draws a flat navy fill
+// with a thin blue outline, turning red only while armed/selected (see the
+// A/B shots). CommandButton paints an orange scheme outline, so menu 12 gets
+// its own lightweight slot-button subclass.
+class CSgtcWepButton : public CommandButton
+{
+public:
+	CSgtcWepButton( const char *text, int x, int y, int wide, int tall )
+		: CommandButton( text, x, y, wide, tall ) {}
+
+	virtual void paintBackground()
+	{
+		// dark navy fill (matches the +0x168 background tint) then the outline:
+		// blue at rest, red while armed/selected.
+		int w, h;
+		getPaintSize( w, h );
+		drawSetColor( 0, 0, 0x32, 0x20 );
+		drawFilledRect( 0, 0, w, h );
+		if ( isArmed() || isSelected() )
+			drawSetColor( 0xff, 0, 0, 0 );
+		else
+			drawSetColor( 0, 0, 0xff, 0 );
+		drawOutlinedRect( 0, 0, w, h );
+	}
+};
+
 class CSgtcWeaponSelPanel : public CMenuPanel
 {
 public:
@@ -879,8 +917,9 @@ private:
 	void ShowSlotInfo( int iSlot );
 
 	Label *m_pTitle;
-	CTransparentPanel *m_pWindow;
+	CTFScrollPanel *m_pScroll;
 	TextPanel *m_pInfo;
+	Label *m_pPreview[SGTC_WPSEL_SLOTS];	// ref +0x2e0 per-slot TGA preview labels
 	CommandButton *m_pSlotButton[SGTC_WPSEL_SLOTS];
 	TextPanel *m_pSlotCost[SGTC_WPSEL_SLOTS];	// ref cost labels (+0x270 / +0x2a8)
 	TextPanel *m_pCounter[3];			// #Total / #Used / #Free
@@ -975,62 +1014,130 @@ CSgtcWeaponSelPanel::CSgtcWeaponSelPanel( int iTrans, int iRemoveMe, int x, int 
 	SchemeHandle_t hBriefingText = pSchemes->getSchemeHandle( "Briefing Text" );
 	int r, g, b, a;
 
-	// Background (ref +0x168: TextPanel 0x15,0x15, W-0x2a, H-0x2a + border).
-	// Colour arg 0x100ddadc (BSS, all zero) → opaque black.
-	TextPanel *pBackground = new TextPanel( "", XRES( 21 ), YRES( 21 ),
-		ScreenWidth - XRES( 42 ), ScreenHeight - YRES( 42 ) );
+	// Row-height shrink ladder (ref FUN_100261c0 local_330): 2 below 800px,
+	// 1 below 1024px, 0 above. Row pitch (0x25-9s), button h (0x1d-9s).
+	int iShrink = 0;
+	if ( ScreenWidth < 800 )
+		iShrink = 2;
+	else if ( ScreenWidth < 1024 )
+		iShrink = 1;
+	const int iRowPitch = 0x25 - iShrink * 9;
+	const int iRowTall = 0x1d - iShrink * 9;
+
+	// Background (ref +0x168: TextPanel 0x15,0x15, W-0x2a, H-0x2a, blue
+	// LineBorder). Ref asm @0x10026545: setBgColor(0,0,0x32,0x64) — a dark
+	// navy translucent fill (a=100 -> ~60% opaque), not opaque black.
+	TextPanel *pBackground = new TextPanel( "", 0x15, 0x15,
+		ScreenWidth - 0x2a, ScreenHeight - 0x2a );
 	pBackground->setParent( this );
-	pBackground->setBgColor( 0, 0, 0, 0 );
+	pBackground->setBgColor( 0, 0, 0x32, 0x64 );
 	pBackground->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
 
-	// Title (ref +0x350, same literal as menus 11/60)
-	m_pTitle = new Label( "", XRES( 40 ), YRES( 16 ) );
+	// Title (ref +0x350): "Identifiez-vous", Title Font, fg hardcoded
+	// periwinkle (0x8c,0x8c,0xf0 — asm @0x100263a6), transparent bg, drawn
+	// across the top centre of the panel.
+	m_pTitle = new Label( "", 0, 0, ScreenWidth, 0x24 );
 	m_pTitle->setParent( this );
 	m_pTitle->setFont( pSchemes->getFont( hTitleScheme ) );
-	pSchemes->getFgColor( hTitleScheme, r, g, b, a );
-	m_pTitle->setFgColor( r, g, b, a );
-	pSchemes->getBgColor( hTitleScheme, r, g, b, a );
-	m_pTitle->setBgColor( r, g, b, a );
+	m_pTitle->setFgColor( 0x8c, 0x8c, 0xf0, 0 );
+	m_pTitle->setBgColor( 0, 0, 0, 0xff );
+	m_pTitle->setContentAlignment( Label::a_center );
 	m_pTitle->setText( "%s", "Identifiez-vous" );
 
-	// Weapon list window
-	m_pWindow = new CTransparentPanel( 255, XRES( 24 ), YRES( 40 ),
-		ScreenWidth - XRES( 48 ), ScreenHeight - YRES( 150 ) );
-	m_pWindow->setParent( this );
-	m_pWindow->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
+	pSchemes->getFgColor( hBriefingText, r, g, b, a );
 
-	// 28 slot buttons: 14 primaries in the left column, 14 secondaries in the
-	// right one (ref: buttons +0x200 / +0x238, texts localised "#WEAPON_*").
-	const int iRowTall = BUTTON_SIZE_Y;
-	const int iColWide = ( ScreenWidth - XRES( 48 ) - XRES( 16 ) ) / 2;
+	// Counters (ref +0x16c/+0x170/+0x174: overlapping TextPanels with literal
+	// widths — each starts where the previous one ends and runs to the same
+	// right edge, so the blue borders nest; formats "#Total %d"/"#Used %d"/
+	// "#Free %d" @0x100b3ec0.. with no colon).
+	static const int iCounterX[3] = { 0x2a, 0xc2, 0x15a };
+	static const int iCounterW[3] = { 0x1f2, 0x15a, 0xc2 };
+	for ( int i = 0; i < 3; i++ )
+	{
+		m_pCounter[i] = new TextPanel( "", iCounterX[i], ScreenHeight - 0x86,
+			iCounterW[i], 0x1d );
+		m_pCounter[i]->setParent( this );
+		m_pCounter[i]->setFont( pSchemes->getFont( hBriefingText ) );
+		m_pCounter[i]->setFgColor( r, g, b, a );
+		m_pCounter[i]->setBgColor( 0, 0, 0x32, 0x64 );
+		m_pCounter[i]->setBorder( new LineBorder( Color( 0, 0, 0xff, 0 ) ) );
+	}
+
+	// Right column (ref +0xd4 scroll + +0x178 info text + +0x2e0[28] preview
+	// labels): only exists at width > 800 — below that the ctor shrinks the
+	// scroll bars away and Update() never shows the previews.
+	const int iScrollY = (int)( ScreenHeight / 480.0f * 21.0f + 0.5f ) + 0x1c;
+	const int iScrollH = ScreenHeight - ( iScrollY + 0x1c );
+	if ( ScreenWidth > 800 )
+	{
+		m_pScroll = new CTFScrollPanel( 0x28f, iScrollY,
+			ScreenWidth - 0x2b9, iScrollH - iScrollY );
+		m_pScroll->setParent( this );
+
+		m_pInfo = new TextPanel( "", 0, 0, ScreenWidth - 0x232, iScrollH );
+		m_pInfo->setParent( m_pScroll->getClient() );
+		m_pInfo->setFont( pSchemes->getFont( hBriefingText ) );
+		m_pInfo->setFgColor( r, g, b, a );
+		m_pInfo->setBgColor( 0, 0, 0x32, 0x64 );
+		m_pInfo->setText( "" );
+
+		// ref +0x2e0[i]: Label("") + setContentFitted + setImage() pinned at
+		// 0x299,0x2a (top of the right column), hidden until a slot hover.
+		// TGA is gfx/vgui/<res>_<shortname>.tga through LoadTGAForRes — the
+		// ref's own name formatter is broken (FUN_100331d3 sprintf's the
+		// short-name pointer into %2d), but the shipped files are the
+		// <320,640,1024>_<short> set the orig shows.
+		for ( int iSlot = 0; iSlot < SGTC_WPSEL_SLOTS; iSlot++ )
+		{
+			m_pPreview[iSlot] = new Label( "" );
+			m_pPreview[iSlot]->setContentFitted( true );
+			m_pPreview[iSlot]->setImage( LoadTGAForRes( s_SgtcWeapons[iSlot].pszLabel ) );
+			m_pPreview[iSlot]->setPaintBackgroundEnabled( false );
+			m_pPreview[iSlot]->setParent( this );
+			m_pPreview[iSlot]->setPos( 0x299, 0x2a );
+			m_pPreview[iSlot]->setVisible( false );
+		}
+	}
+	else
+	{
+		m_pScroll = NULL;
+		m_pInfo = NULL;
+		for ( int iSlot = 0; iSlot < SGTC_WPSEL_SLOTS; iSlot++ )
+			m_pPreview[iSlot] = NULL;
+	}
+
+	// 28 slot buttons (ref +0x200 primaries at x=0x2a, +0x238 secondaries at
+	// x=0x160; each 0x104 x iRowTall) + per-slot cost TextPanels (+0x270 at
+	// x=0x136, +0x2a8 at x=0x26c; 0x1b wide, grey text, blue LineBorder).
 	for ( int iSlot = 0; iSlot < SGTC_WPSEL_SLOTS; iSlot++ )
 	{
-		const int iColumn = iSlot / SGTC_WPSEL_PRIMARY;		// 0 = primary, 1 = secondary
+		const int iColumn = iSlot / SGTC_WPSEL_PRIMARY;
 		const int iRow = iSlot % SGTC_WPSEL_PRIMARY;
+		const int iBtnX = iColumn ? 0x160 : 0x2a;
+		const int iCostX = iColumn ? 0x26c : 0x136;
+		const int iY = iRowPitch * iRow + 0x2a;
 
-		m_pSlotButton[iSlot] = new CommandButton(
+		m_pSlotButton[iSlot] = new CSgtcWepButton(
 			gHUD.m_TextMessage.BufferedLocaliseTextString( s_SgtcWeapons[iSlot].pszKey ),
-			XRES( 8 ) + iColumn * ( iColWide + XRES( 8 ) ),
-			YRES( 4 ) + iRow * ( iRowTall + YRES( 2 ) ),
-			iColWide, iRowTall );
-		m_pSlotButton[iSlot]->setParent( m_pWindow );
+			iBtnX, iY, 0x104, iRowTall );
+		m_pSlotButton[iSlot]->setParent( this );
+		m_pSlotButton[iSlot]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
+		m_pSlotButton[iSlot]->setFont( pSchemes->getFont( hBriefingText ) );
 		m_pSlotButton[iSlot]->addActionSignal( new CSgtcHandler_SlotClick( this, iSlot ) );
 		m_pSlotButton[iSlot]->addInputSignal( new CSgtcHandler_SlotOver( this, iSlot ) );
 
-		// Per-slot cost label (ref widget arrays +0x270 / +0x2a8, text "%d",
-		// fg grey 0x8c8c8c, black bg): right-aligned inside the button's row.
-		m_pSlotCost[iSlot] = new TextPanel( "", XRES( 8 ) + iColumn * ( iColWide + XRES( 8 ) ) + iColWide - XRES( 34 ),
-			YRES( 4 ) + iRow * ( iRowTall + YRES( 2 ) ) + YRES( 6 ), XRES( 30 ), iRowTall );
-		m_pSlotCost[iSlot]->setParent( m_pWindow );
+		m_pSlotCost[iSlot] = new TextPanel( "", iCostX, iY, 0x1b, iRowTall );
+		m_pSlotCost[iSlot]->setParent( this );
 		m_pSlotCost[iSlot]->setFont( pSchemes->getFont( hBriefingText ) );
 		m_pSlotCost[iSlot]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
-		m_pSlotCost[iSlot]->setBgColor( 0, 0, 0, 0xff );
+		m_pSlotCost[iSlot]->setBgColor( 0, 0, 0x32, 0x64 );
+		m_pSlotCost[iSlot]->setBorder( new LineBorder( Color( 0, 0, 0xff, 0 ) ) );
 
-		// Per-slot blurb (ref "info/<label>.txt" — the ref rodata carries the
-		// full paths, e.g. info/glstaff.txt @0x100b3cd0..; fallback "fichier
-		// absent %s" in the ref, the Update uses "missing text file %s").
+		// Per-slot blurb (ref Update loads "info/<name>.txt" on hover with
+		// the fallback "missing text file %s"; the port preloads like the
+		// ctor-time local_118 table).
 		char szFile[64];
-		snprintf( szFile, sizeof( szFile ), "info/%s.txt", s_SgtcWeapons[iSlot].pszLabel );
+		snprintf( szFile, sizeof( szFile ), "info/%s.txt", s_SgtcWeaponInfo[iSlot] );
 		char *pfile = SgtcPanels_LoadFile( szFile );
 		if ( pfile )
 		{
@@ -1043,47 +1150,26 @@ CSgtcWeaponSelPanel::CSgtcWeaponSelPanel( int iTrans, int iRemoveMe, int x, int 
 		}
 	}
 
-	// Slot info panel (ref +0x178 inside the scroll client; the port keeps the
-	// same text panel without the scroll strip, sized to the window)
-	m_pInfo = new TextPanel( "", XRES( 8 ), m_pWindow->getTall() - YRES( 74 ),
-		m_pWindow->getWide() - XRES( 16 ), YRES( 66 ) );
-	m_pInfo->setParent( m_pWindow );
-	m_pInfo->setFont( pSchemes->getFont( hBriefingText ) );
-	pSchemes->getFgColor( hBriefingText, r, g, b, a );
-	m_pInfo->setFgColor( r, g, b, a );
-	pSchemes->getBgColor( hBriefingText, r, g, b, a );
-	m_pInfo->setBgColor( r, g, b, a );
-	m_pInfo->setText( "" );
+	// Bottom buttons, left→right as the ref draws them: +0x11c #Apply
+	// (x=0x2a), +0x120 #Reset (x=0xd7), +0x118 #Annuler (x=0x184); all
+	// y=H-0x54, 0x98 x 0x2a, created in the opposite order.
+	m_pApplyButton = new CSgtcWepButton(
+		gHUD.m_TextMessage.BufferedLocaliseTextString( "#Apply" ),
+		0x2a, ScreenHeight - 0x54, 0x98, 0x2a );
+	m_pApplyButton->setParent( this );
+	m_pApplyButton->addActionSignal( new CSgtcHandler_WepSelApply( this ) );
 
-	// Counters (ref +0x16c / +0x170 / +0x174, formats "#Total : %d" @0x100b3ec0,
-	// "#Used : %d" @0x100b3ecc, "#Free : %d" @0x100b3ed8).
-	for ( int i = 0; i < 3; i++ )
-	{
-		m_pCounter[i] = new TextPanel( "", XRES( 42 ) + i * XRES( 178 ), ScreenHeight - YRES( 104 ),
-			XRES( 172 ), YRES( 20 ) );
-		m_pCounter[i]->setParent( this );
-		m_pCounter[i]->setFont( pSchemes->getFont( hBriefingText ) );
-		pSchemes->getFgColor( hBriefingText, r, g, b, a );
-		m_pCounter[i]->setFgColor( r, g, b, a );
-		m_pCounter[i]->setBgColor( 0, 0, 0, 0xff );
-		m_pCounter[i]->setBorder( new LineBorder( Color( 0, 0, 0xff, 0 ) ) );
-	}
-
-	// Bottom buttons (ref +0x118 #Annuler, +0x120 #Reset, +0x11c #Apply)
-	m_pCancelButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Annuler" ),
-		XRES( 42 ), ScreenHeight - YRES( 72 ), XRES( 172 ), BUTTON_SIZE_Y );
-	m_pCancelButton->setParent( this );
-	m_pCancelButton->addActionSignal( new CMenuHandler_TextWindow( HIDE_TEXTWINDOW ) );
-
-	m_pResetButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Reset" ),
-		XRES( 234 ), ScreenHeight - YRES( 72 ), XRES( 172 ), BUTTON_SIZE_Y );
+	m_pResetButton = new CSgtcWepButton(
+		gHUD.m_TextMessage.BufferedLocaliseTextString( "#Reset" ),
+		0xd7, ScreenHeight - 0x54, 0x98, 0x2a );
 	m_pResetButton->setParent( this );
 	m_pResetButton->addActionSignal( new CSgtcHandler_WepSelReset( this ) );
 
-	m_pApplyButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Apply" ),
-		XRES( 426 ), ScreenHeight - YRES( 72 ), XRES( 172 ), BUTTON_SIZE_Y );
-	m_pApplyButton->setParent( this );
-	m_pApplyButton->addActionSignal( new CSgtcHandler_WepSelApply( this ) );
+	m_pCancelButton = new CSgtcWepButton(
+		gHUD.m_TextMessage.BufferedLocaliseTextString( "#Annuler" ),
+		0x184, ScreenHeight - 0x54, 0x98, 0x2a );
+	m_pCancelButton->setParent( this );
+	m_pCancelButton->addActionSignal( new CMenuHandler_TextWindow( HIDE_TEXTWINDOW ) );
 
 	Reset();
 }
@@ -1106,6 +1192,8 @@ void CSgtcWeaponSelPanel::Reset( void )
 		m_pSlotButton[i]->setVisible( true );	// ref vtable+0x24 = setVisible
 		if ( m_pSlotCost[i] )
 			m_pSlotCost[i]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
+		if ( m_pPreview[i] )
+			m_pPreview[i]->setVisible( false );	// ref FUN_100282c1
 	}
 
 	m_iCurrentSlot = 0;
@@ -1138,8 +1226,7 @@ void CSgtcWeaponSelPanel::ApplyServerState( void )
 		{
 			s_iWepFlag[i] = 1;
 			m_iSelected[i] = 1;
-			m_pSlotButton[i]->setArmed( true );
-			m_pSlotButton[i]->setFgColor( 0xff, 0xff, 0xff, 0 );
+			m_pSlotButton[i]->setArmed( true );	// ref +0x130 — paints red outline
 			if ( i < SGTC_WEP_PRIM )
 				s_iWepUsed += s_iWepCost[i];		// ref: (&DAT_100dd974)[i]
 			else
@@ -1148,17 +1235,14 @@ void CSgtcWeaponSelPanel::ApplyServerState( void )
 		}
 
 		// ref: flag == 2 (blocked by team/class) or cost == 0 -> the ref calls
-		// vtable+0x24 (Panel::setVisible) on the slot button and paints the
-		// cost label black; with the shipped server's all-zero cost tail every
-		// weapon button is therefore hidden in the orig too.
+		// vtable+0x24 (Panel::setVisible) on the slot BUTTON only; the cost
+		// label stays visible but is painted black, so the orig shows an empty
+		// blue-bordered box (see the A/B shots).
 		if ( s_iWepFlag[i] == 2 || s_iWepCost[i] == 0 )
 		{
 			m_pSlotButton[i]->setVisible( false );
 			if ( m_pSlotCost[i] )
-			{
 				m_pSlotCost[i]->setFgColor( 0, 0, 0, 0xff );
-				m_pSlotCost[i]->setVisible( false );
-			}
 		}
 		else if ( m_pSlotCost[i] )
 		{
@@ -1257,14 +1341,19 @@ void CSgtcWeaponSelPanel::UpdateCounters( void )
 	snprintf( szText, sizeof( szText ), "#Free %d", s_iWepBudget - s_iWepUsed );
 	m_pCounter[2]->setText( gHUD.m_TextMessage.BufferedLocaliseTextString( szText ) );
 
-	// Ref tints the #Free counter: < 3 free -> red (0xb4,0,0), else grey.
+	// Ref tints the #Free counter three ways (FUN_10028323 @0x1002903a..):
+	// free < 3 -> red, else primaries already picked (DAT_100dda58 >= 3) ->
+	// olive yellow, else blue-grey.
 	if ( s_iWepBudget - s_iWepUsed < 3 )
 		m_pCounter[2]->setFgColor( 0xb4, 0, 0, 0 );
+	else if ( s_iWepPrimCount < 3 )
+		m_pCounter[2]->setFgColor( 0x8c, 0x8c, 0xc8, 0 );
 	else
-		m_pCounter[2]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
+		m_pCounter[2]->setFgColor( 0xb4, 0xb4, 0, 0 );
 
 	// Ref cost labels (DAT_100ddacc block): "%d" of the slot cost, shown only
-	// while the slot is not blocked.
+	// while the slot is not blocked — blocked slots keep the (now black)
+	// bordered box but clear the text.
 	for ( int i = 0; i < SGTC_WPSEL_SLOTS; i++ )
 	{
 		if ( !m_pSlotCost[i] )
@@ -1274,6 +1363,7 @@ void CSgtcWeaponSelPanel::UpdateCounters( void )
 			char szCost[16];
 			snprintf( szCost, sizeof( szCost ), "%d", s_iWepCost[i] );
 			m_pSlotCost[i]->setText( szCost );
+			m_pSlotCost[i]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
 		}
 		else
 		{
@@ -1287,8 +1377,19 @@ void CSgtcWeaponSelPanel::ShowSlotInfo( int iSlot )
 	if ( iSlot < 0 || iSlot >= SGTC_WPSEL_SLOTS )
 		return;
 
+	// ref FUN_10028323 hover block: hide the previous preview label, swap the
+	// info text, show the new preview (right column exists at width > 800).
+	if ( m_iCurrentSlot >= 0 && m_iCurrentSlot < SGTC_WPSEL_SLOTS &&
+		m_pPreview[m_iCurrentSlot] )
+		m_pPreview[m_iCurrentSlot]->setVisible( false );
+
 	m_iCurrentSlot = iSlot;
-	m_pInfo->setText( m_szSlotInfo[iSlot] );
+	if ( m_pInfo )
+		m_pInfo->setText( m_szSlotInfo[iSlot] );
+	if ( m_pPreview[iSlot] )
+		m_pPreview[iSlot]->setVisible( true );
+	if ( m_pScroll )
+		m_pScroll->setScrollValue( 0, 0 );	// ref scrolls to top on hover
 }
 
 void CSgtcWeaponSelPanel::SetActiveInfo( int iInput )
@@ -1490,21 +1591,21 @@ CSgtcPackSelPanel::CSgtcPackSelPanel( int iTrans, int iRemoveMe, int x, int y, i
 	int r, g, b, a;
 
 	// Background (ref +0x164: TextPanel 0x15,0x15, W-0x2a, H-0x2a + border).
-	// Colour arg 0x100ddaf4 (BSS, all zero) → opaque black.
+	// ASM @0x1002a1ca: setBgColor(0,0,0x32,0x64) — dark navy translucent,
+	// same as menus 11/12 (0x100ddaf4 is the TextPanel ctor arg, not a colour).
 	TextPanel *pBackground = new TextPanel( "", XRES( 21 ), YRES( 21 ),
 		ScreenWidth - XRES( 42 ), ScreenHeight - YRES( 42 ) );
 	pBackground->setParent( this );
-	pBackground->setBgColor( 0, 0, 0, 0 );
+	pBackground->setBgColor( 0, 0, 0x32, 0x64 );
 	pBackground->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
 
-	// Title (ref +0x234, literal "Identifiez-vous")
+	// Title (ref +0x234, literal "Identifiez-vous"; fg hardcoded periwinkle
+	// 0x8c,0x8c,0xf0 @0x1002a02b — same as menus 11/12, not the scheme colour)
 	m_pTitle = new Label( "", XRES( 40 ), YRES( 16 ) );
 	m_pTitle->setParent( this );
 	m_pTitle->setFont( pSchemes->getFont( hTitleScheme ) );
-	pSchemes->getFgColor( hTitleScheme, r, g, b, a );
-	m_pTitle->setFgColor( r, g, b, a );
-	pSchemes->getBgColor( hTitleScheme, r, g, b, a );
-	m_pTitle->setBgColor( r, g, b, a );
+	m_pTitle->setFgColor( 0x8c, 0x8c, 0xf0, 0 );
+	m_pTitle->setBgColor( 0, 0, 0, 0xff );
 	m_pTitle->setText( "%s", "Identifiez-vous" );
 
 	// 4 pack buttons (ref +0x1fc array, texts "#PACK_1".."#PACK_4")
