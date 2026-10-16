@@ -47,7 +47,7 @@ public:
 	static CCrossbowBolt *BoltCreate( void );
 };
 
-LINK_ENTITY_TO_CLASS( crossbow_bolt, CCrossbowBolt )
+// SGTC: crossbow_bolt unregistered — ref/stc_i386.so link table has no crossbow_bolt
 
 CCrossbowBolt *CCrossbowBolt::BoltCreate( void )
 {
@@ -286,7 +286,7 @@ void CCrossbow::Precache( void )
 	PRECACHE_SOUND( "weapons/xbow_fire1.wav" );
 	PRECACHE_SOUND( "weapons/xbow_reload1.wav" );
 
-	UTIL_PrecacheOther( "crossbow_bolt" );
+// SGTC: crossbow_bolt precache dropped — name unregistered (no ref link)
 
 	m_usCrossbow = PRECACHE_EVENT( 1, "events/crossbow1.sc" );
 	m_usCrossbow2 = PRECACHE_EVENT( 1, "events/crossbow2.sc" );
@@ -553,5 +553,5 @@ class CCrossbowAmmo : public CBasePlayerAmmo
 	}
 };
 
-LINK_ENTITY_TO_CLASS( ammo_crossbow, CCrossbowAmmo )
+// SGTC: ammo_crossbow unregistered — ref/stc_i386.so link table has no ammo_crossbow
 #endif

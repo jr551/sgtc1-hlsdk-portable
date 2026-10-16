@@ -41,7 +41,7 @@ enum rpg_e
 
 #if !CLIENT_DLL
 
-LINK_ENTITY_TO_CLASS( laser_spot, CLaserSpot )
+// SGTC: laser_spot unregistered — ref/stc_i386.so link table has no laser_spot
 
 //=========================================================
 //=========================================================
@@ -97,7 +97,7 @@ void CLaserSpot::Precache( void )
 	PRECACHE_MODEL( "sprites/laserdot.spr" );
 }
 
-LINK_ENTITY_TO_CLASS( rpg_rocket, CRpgRocket )
+// SGTC: rpg_rocket unregistered — ref/stc_i386.so link table has no rpg_rocket
 
 //=========================================================
 //=========================================================
@@ -380,8 +380,8 @@ void CRpg::Precache( void )
 
 	PRECACHE_SOUND( "items/9mmclip1.wav" );
 
-	UTIL_PrecacheOther( "laser_spot" );
-	UTIL_PrecacheOther( "rpg_rocket" );
+// SGTC: laser_spot precache dropped — name unregistered (no ref link)
+// SGTC: rpg_rocket precache dropped — name unregistered (no ref link)
 
 	PRECACHE_SOUND( "weapons/rocketfire1.wav" );
 	PRECACHE_SOUND( "weapons/glauncher.wav" ); // alternative fire sound
@@ -623,5 +623,5 @@ class CRpgAmmo : public CBasePlayerAmmo
 	}
 };
 
-LINK_ENTITY_TO_CLASS( ammo_rpgclip, CRpgAmmo )
+// SGTC: ammo_rpgclip unregistered — ref/stc_i386.so link table has no ammo_rpgclip
 #endif

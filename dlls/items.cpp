@@ -296,7 +296,7 @@ class CItemSecurity : public CItem
 	}
 };
 
-LINK_ENTITY_TO_CLASS( item_security, CItemSecurity )
+// SGTC: item_security unregistered — ref/stc_i386.so link table has no item_security
 
 class CItemLongJump : public CItem
 {

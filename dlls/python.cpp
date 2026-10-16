@@ -305,5 +305,5 @@ class CPythonAmmo : public CBasePlayerAmmo
 	}
 };
 
-LINK_ENTITY_TO_CLASS( ammo_357, CPythonAmmo )
+// SGTC: ammo_357 unregistered — ref/stc_i386.so link table has no ammo_357
 #endif

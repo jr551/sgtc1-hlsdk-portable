@@ -551,5 +551,5 @@ class CEgonAmmo : public CBasePlayerAmmo
 	}
 };
 
-LINK_ENTITY_TO_CLASS( ammo_egonclip, CEgonAmmo )
+// SGTC: ammo_egonclip unregistered — ref/stc_i386.so link table has no ammo_egonclip
 #endif

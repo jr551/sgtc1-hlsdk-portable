@@ -298,62 +298,30 @@ void W_Precache( void )
 	UTIL_PrecacheOther( "item_healthkit" );
 	UTIL_PrecacheOther( "item_battery" );
 	UTIL_PrecacheOther( "item_antidote" );
-	UTIL_PrecacheOther( "item_security" );
+// SGTC: item_security precache dropped — name unregistered (no ref link)
 	UTIL_PrecacheOther( "item_longjump" );
 
-	// shotgun
-	UTIL_PrecacheOtherWeapon( "weapon_shotgun" );
-	UTIL_PrecacheOther( "ammo_buckshot" );
+	// SGTC: stock weapon precaches dropped with the class registrations —
+	// ref/stc_i386.so registers only the SGTC weapon names (mp5, 9mmAR,
+	// handgrenade + the c4/mine/spas aliases), so the other weapon_* names
+	// no longer exist. Kept stock entries mirror the ref link table; ammo
+	// precaches stay (ref keeps its ammo classes too).
 
-	// crowbar
-	UTIL_PrecacheOtherWeapon( "weapon_crowbar" );
+	UTIL_PrecacheOther( "ammo_buckshot" );	// shotgun ammo (weapon_spas)
 
-	// glock
-	UTIL_PrecacheOtherWeapon( "weapon_9mmhandgun" );
-	UTIL_PrecacheOther( "ammo_9mmclip" );
+	UTIL_PrecacheOther( "ammo_9mmclip" );	// glock ammo
 
 	// mp5
 	UTIL_PrecacheOtherWeapon( "weapon_9mmAR" );
 	UTIL_PrecacheOther( "ammo_9mmAR" );
-	UTIL_PrecacheOther( "ammo_ARgrenades" );
+// SGTC: ammo_ARgrenades precache dropped — name unregistered (no ref link)
 
 	// 9mm ammo box
-	UTIL_PrecacheOther( "ammo_9mmbox" );
+// SGTC: ammo_9mmbox precache dropped — name unregistered (no ref link)
 
 #if !OEM_BUILD && !HLDEMO_BUILD
-	// python
-	UTIL_PrecacheOtherWeapon( "weapon_357" );
-	UTIL_PrecacheOther( "ammo_357" );
-
-	// gauss
-	UTIL_PrecacheOtherWeapon( "weapon_gauss" );
-	UTIL_PrecacheOther( "ammo_gaussclip" );
-
-	// rpg
-	UTIL_PrecacheOtherWeapon( "weapon_rpg" );
-	UTIL_PrecacheOther( "ammo_rpgclip" );
-
-	// crossbow
-	UTIL_PrecacheOtherWeapon( "weapon_crossbow" );
-	UTIL_PrecacheOther( "ammo_crossbow" );
-
-	// egon
-	UTIL_PrecacheOtherWeapon( "weapon_egon" );
-#endif
-	// tripmine
-	UTIL_PrecacheOtherWeapon( "weapon_tripmine" );
-#if !OEM_BUILD && !HLDEMO_BUILD
-	// satchel charge
-	UTIL_PrecacheOtherWeapon( "weapon_satchel" );
-#endif
-	// hand grenade
-	UTIL_PrecacheOtherWeapon("weapon_handgrenade");
-#if !OEM_BUILD && !HLDEMO_BUILD
-	// squeak grenade
-	UTIL_PrecacheOtherWeapon( "weapon_snark" );
-
-	// hornetgun
-	UTIL_PrecacheOtherWeapon( "weapon_hornetgun" );
+	// hand grenade — the only stock player weapon the ref registers.
+	UTIL_PrecacheOtherWeapon( "weapon_handgrenade" );
 
 	if( g_pGameRules->IsDeathmatch() )
 	{

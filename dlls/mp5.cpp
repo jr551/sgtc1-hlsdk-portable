@@ -328,7 +328,7 @@ class CMP5Chainammo : public CBasePlayerAmmo
 	}
 };
 
-LINK_ENTITY_TO_CLASS( ammo_9mmbox, CMP5Chainammo )
+// SGTC: ammo_9mmbox unregistered — ref/stc_i386.so link table has no ammo_9mmbox
 
 class CMP5AmmoGrenade : public CBasePlayerAmmo
 {
@@ -355,5 +355,5 @@ class CMP5AmmoGrenade : public CBasePlayerAmmo
 	}
 };
 
-LINK_ENTITY_TO_CLASS( ammo_mp5grenades, CMP5AmmoGrenade )
-LINK_ENTITY_TO_CLASS( ammo_ARgrenades, CMP5AmmoGrenade )
+// SGTC: ammo_mp5grenades unregistered — ref/stc_i386.so link table has no ammo_mp5grenades
+// SGTC: ammo_ARgrenades unregistered — ref/stc_i386.so link table has no ammo_ARgrenades

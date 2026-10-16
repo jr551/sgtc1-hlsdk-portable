@@ -879,7 +879,7 @@ LINK_ENTITY_TO_CLASS( func_tankrocket, CFuncTankRocket )
 
 void CFuncTankRocket::Precache( void )
 {
-	UTIL_PrecacheOther( "rpg_rocket" );
+// SGTC: rpg_rocket precache dropped — name unregistered (no ref link)
 	CFuncTank::Precache();
 }
 

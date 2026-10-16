@@ -627,5 +627,5 @@ class CGaussAmmo : public CBasePlayerAmmo
 	}
 };
 
-LINK_ENTITY_TO_CLASS( ammo_gaussclip, CGaussAmmo )
+// SGTC: ammo_gaussclip unregistered — ref/stc_i386.so link table has no ammo_gaussclip
 #endif
