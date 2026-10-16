@@ -438,22 +438,22 @@ struct SgtcClassEntry
 {
 	const char *pszLabel;	// titles.txt key used as the button text
 	const char *pszInfo;	// info file loaded into the cell's info panel
+	const char *pszTga;	// LoadTGAForRes name for the hover portrait (+0x188)
 };
 
 static const SgtcClassEntry s_SgtcClasses[SGTC_TEAMCLASS_COUNT] =
 {
-	{ "#Oneill",  "info/oneill.txt" },	// row 0 (Torri): 0x100b42f8
-	{ "#Carter",  "info/carter.txt" },
-	{ "#Jackson", "info/jackson.txt" },
-	{ "#Tealc",   "info/tealc.txt" },
-	{ "#Soldat",  "info/soldat.txt" },
-	{ "#Dieu",    "info/dieu.txt" },	// row 1 (Goauld): 0x100b434c
-	{ "#Anubis",  "info/anubis.txt" },
-	{ "#Jaffa",   "info/jaffa.txt" },
-	{ "#Prima",   "info/prima.txt" },
-	{ "#Esclave", "info/esclave.txt" }
+	{ "#Oneill",  "info/oneill.txt",  "oneill"  },	// row 0 (Torri): 0x100b42f8
+	{ "#Carter",  "info/carter.txt",  "carter"  },
+	{ "#Jackson", "info/jackson.txt", "jackson" },
+	{ "#Tealc",   "info/tealc.txt",   "tealc"   },
+	{ "#Soldat",  "info/soldat.txt",  "soldat"  },
+	{ "#Dieu",    "info/dieu.txt",    "dieu"    },	// row 1 (Goauld): 0x100b434c
+	{ "#Anubis",  "info/anubis.txt",  "anubis"  },
+	{ "#Jaffa",   "info/jaffa.txt",   "jaffa"   },
+	{ "#Prima",   "info/prima.txt",   "prima"   },
+	{ "#Esclave", "info/esclave.txt", "esclave" }
 };
-
 class CSgtcTeamClassPanel : public CMenuPanel
 {
 public:
@@ -470,6 +470,7 @@ private:
 	TextPanel *m_pTeamInfo[SGTC_TEAMCLASS_TEAMS];	// info_sg1 / info_goauld
 	CommandButton *m_pClassButton[SGTC_TEAMCLASS_COUNT];
 	TextPanel *m_pClassInfo[SGTC_TEAMCLASS_COUNT];	// one visible at a time
+	Label *m_pPortrait[SGTC_TEAMCLASS_COUNT];		// ref +0x188 image labels
 	CommandButton *m_pTeamButton[SGTC_TEAMCLASS_TEAMS];
 	CommandButton *m_pCancelButton;
 	CommandButton *m_pAutoButton;
@@ -671,6 +672,25 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 		}
 	}
 
+	// Class portraits (ref +0x188[10]: image-Labels created hidden with the
+	// class's gfx/vgui/<res>_<name>.tga, each centred in the 136x304 gap
+	// between the two team columns at XRES(252),YRES(42) — ctor asm
+	// @0x1002dff7..0x1002e0c1). SetActiveInfo shows one at a time.
+	for ( int iClass = 0; iClass < SGTC_TEAMCLASS_COUNT; iClass++ )
+	{
+		m_pPortrait[iClass] = new Label( "" );
+		m_pPortrait[iClass]->setContentFitted( true );
+		m_pPortrait[iClass]->setImage( LoadTGAForRes( s_SgtcClasses[iClass].pszTga ) );
+		m_pPortrait[iClass]->setPaintBackgroundEnabled( false );
+		m_pPortrait[iClass]->setParent( this );
+		m_pPortrait[iClass]->setVisible( false );
+		int iPw = 0, iPh = 0;
+		m_pPortrait[iClass]->getSize( iPw, iPh );
+		m_pPortrait[iClass]->setPos(
+			XRES( 252 ) + ( XRES( 136 ) - iPw ) / 2,
+			YRES( 42 ) + ( YRES( 304 ) - iPh ) / 2 );
+	}
+
 	// Team buttons (ref +0xd4 Torri / +0xd8 Goauld, localised "#Torri"/"#Goauld")
 	// with the jointeam ids our server accepts (1 = Torri, 2 = Goauld).
 	for ( int iTeam = 0; iTeam < SGTC_TEAMCLASS_TEAMS; iTeam++ )
@@ -758,7 +778,8 @@ void CSgtcTeamClassPanel::Reset( void )
 		m_pTeamWindow[i]->setVisible( true );
 }
 
-// Mouse is over a class cell: bring up its blurb (ref SetActiveInfo/pcharNode)
+// Mouse is over a class cell: bring up its blurb and portrait (ref
+// SetActiveInfo FUN_1002efbc: shows m_pPortrait[i] at +0x188 + i*8 + team*4).
 void CSgtcTeamClassPanel::SetActiveInfo( int iInput )
 {
 	if ( iInput < 0 || iInput >= SGTC_TEAMCLASS_COUNT )
@@ -768,7 +789,10 @@ void CSgtcTeamClassPanel::SetActiveInfo( int iInput )
 	m_iCurrentTeam = iInput / SGTC_TEAMCLASS_PER_TEAM;
 
 	for ( int i = 0; i < SGTC_TEAMCLASS_COUNT; i++ )
+	{
 		m_pClassInfo[i]->setVisible( i == iInput );
+		m_pPortrait[i]->setVisible( i == iInput );
+	}
 
 	m_pClassInfo[iInput]->setText( m_szClassInfo[iInput] );
 }
