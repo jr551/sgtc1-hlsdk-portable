@@ -600,6 +600,9 @@ void CStargateTeamDM::SGTC_SendTeamNames( CBasePlayer *pPlayer )
 	MESSAGE_END();
 }
 
+static int SGTC_PortraitSprId( CBasePlayer *pPlayer );
+static void SGTC_EmitAddPortrait( int msgDest, edict_t *to, CBasePlayer *subject );
+
 void CStargateTeamDM::InitHUD( CBasePlayer *pPlayer )
 {
 	// ref @0x190b54 — zero the two 5-slot tables, clear portrait sel, team +
@@ -648,12 +651,8 @@ void CStargateTeamDM::InitHUD( CBasePlayer *pPlayer )
 			WRITE_SHORT( GetTeamIndex( plr->TeamID() ) + 1 );
 			WRITE_SHORT( (int)plr->pev->team );
 		MESSAGE_END();
-		// ref AddHudPortrait(param6=1): MSG_ONE to the JOINER carrying the
-		// subject player's portrait (entindex + team name).
-		MESSAGE_BEGIN( MSG_ONE, gmsgAddPortrait, NULL, pPlayer->edict() );
-			WRITE_BYTE( plr->entindex() );
-			WRITE_STRING( plr->TeamID() );
-		MESSAGE_END();
+		// ref AddHudPortrait: full client layout, about this player, to the joiner.
+		SGTC_EmitAddPortrait( MSG_ONE, pPlayer->edict(), (CBasePlayer *)plr );
 	}
 	if( sgtc_G_players_focused + sgtc_T_players_focused < 1 )
 		pPlayer->StartDeathCam();
@@ -715,10 +714,7 @@ void CStargateTeamCP::InitHUD( CBasePlayer *pPlayer )
 		CBaseEntity *plr = UTIL_PlayerByIndex( i );
 		if( plr && IsValidTeam( plr->TeamID() ) )
 		{
-			MESSAGE_BEGIN( MSG_ONE, gmsgAddPortrait, NULL, pPlayer->edict() );
-				WRITE_BYTE( plr->entindex() );
-				WRITE_STRING( plr->TeamID() );
-			MESSAGE_END();
+			SGTC_EmitAddPortrait( MSG_ONE, pPlayer->edict(), (CBasePlayer *)plr );
 		}
 	}
 
@@ -1395,14 +1391,14 @@ BOOL CStargateTeamDM::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 			return FALSE;
 		// ref: MSG_ALL fake AddPortrait — "Endo-Clone" scoreboard row.
 		MESSAGE_BEGIN( MSG_ALL, gmsgAddPortrait, NULL );
-			WRITE_BYTE( RANDOM_LONG( 1, 0xf ) );
+			WRITE_SHORT( RANDOM_LONG( 1, 10 ) );
+			WRITE_LONG( 100 );
+			WRITE_SHORT( 2 );
+			WRITE_SHORT( RANDOM_LONG( 1, 5 ) );
+			WRITE_SHORT( RANDOM_LONG( 1, 16 ) );
 			WRITE_SHORT( 100 );
-			WRITE_BYTE( 2 );
-			WRITE_BYTE( RANDOM_LONG( 1, 5 ) );
-			WRITE_BYTE( RANDOM_LONG( 1, 10 ) );
-			WRITE_BYTE( 0 );
-			WRITE_BYTE( RANDOM_LONG( 1, 5 ) );
-			WRITE_BYTE( RANDOM_LONG( 1, 5 ) );
+			WRITE_SHORT( 100 );
+			WRITE_SHORT( 0 );
 			WRITE_STRING( "Endo-Clone" );
 			WRITE_BYTE( 0 );
 		MESSAGE_END();
@@ -2020,21 +2016,54 @@ void CStargateTeamDM::GlobalText( int iTeam, int iText )
 	}
 }
 
+// ref client MsgFunc_AddPortrait @0x100768d4 reads
+// SHORT spr, LONG hpPct, SHORT team, SHORT aux, SHORT ent,
+// SHORT hp0, SHORT hp1, SHORT hp2, STRING name, BYTE colorId.
+// Team 2 tints the radar green; any other value is red.
+static int SGTC_PortraitSprId( CBasePlayer *pPlayer )
+{
+	int cls = pPlayer->m_iSgtcPortraitShown;
+	if( cls < 1 || cls > 5 )
+		cls = 1;
+	// avatar table: 1..5 Tau'ri, 6..10 Goa'uld (pev->team == 1).
+	if( (int)pPlayer->pev->team == 1 )
+		return cls + 5;
+	return cls;
+}
+
+static void SGTC_EmitAddPortrait( int msgDest, edict_t *to, CBasePlayer *subject )
+{
+	int hp = (int)subject->pev->health;
+	if( hp < 0 )
+		hp = 0;
+	if( hp > 100 )
+		hp = 100;
+	const char *name = STRING( subject->pev->netname );
+	if( !name || !name[0] )
+		name = subject->m_szTeamName[0] ? subject->m_szTeamName : "player";
+
+	MESSAGE_BEGIN( msgDest, gmsgAddPortrait, NULL, to );
+		WRITE_SHORT( SGTC_PortraitSprId( subject ) );
+		WRITE_LONG( hp );
+		WRITE_SHORT( (int)subject->pev->team );
+		WRITE_SHORT( subject->m_iSgtcPortraitShown );
+		WRITE_SHORT( subject->entindex() );
+		WRITE_SHORT( hp );
+		WRITE_SHORT( 100 );
+		WRITE_SHORT( (int)subject->pev->armorvalue );
+		WRITE_STRING( name );
+		WRITE_BYTE( 0 );
+	MESSAGE_END();
+}
+
 void CStargateTeamDM::AddPortrait( CBasePlayer *pPlayer )
 {
-	MESSAGE_BEGIN( MSG_ONE, gmsgAddPortrait, NULL, pPlayer->edict() );
-		WRITE_BYTE( pPlayer->entindex() );
-		WRITE_STRING( pPlayer->m_szTeamName );
-	MESSAGE_END();
+	SGTC_EmitAddPortrait( MSG_ONE, pPlayer->edict(), pPlayer );
 }
 
 void CStargateTeamDM::StartPortrait( CBasePlayer *pPlayer )
 {
-	// Default portrait model per team (InitHUD model table).
-	MESSAGE_BEGIN( MSG_ONE, gmsgAddPortrait, NULL, pPlayer->edict() );
-		WRITE_BYTE( pPlayer->entindex() );
-		WRITE_STRING( GetTeamIndex( pPlayer->m_szTeamName ) == 1 ? "goauld3" : "oneill" );
-	MESSAGE_END();
+	SGTC_EmitAddPortrait( MSG_ONE, pPlayer->edict(), pPlayer );
 }
 
 void CStargateTeamDM::RedrawPortrait( CBasePlayer *pPlayer )

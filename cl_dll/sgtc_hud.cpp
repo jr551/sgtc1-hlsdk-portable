@@ -1508,9 +1508,9 @@ int CHudSgtc::Draw( float flTime )
 	if( m_iHasKey )
 		SGTC_DrawSprite( "bombkey", lx + 120, ly + 100 );
 
-	cvar_t *cvRadar = SGTC_Cvar( "view_radar" );
-	if( cvRadar && cvRadar->value > 0.0f )
-		SGTC_DrawRadarFull( this, flTime );
+	// ref draws the radar unconditionally (view_radar is a no-op toggle in ref client.dll);
+	// the shared config sets view_radar "0" yet the orig renders the radar disc.
+	SGTC_DrawRadarFull( this, flTime );
 
 	SGTC_DrawAnnounceScroller( this, flTime );
 	SGTC_TickTicketDock( this, flTime );
@@ -1548,8 +1548,9 @@ int CHudSgtc::Draw( float flTime )
 		gHUD.DrawHudNumber( x0 + ( w * 3 ) / 8, y0, DHN_DRAWZERO | DHN_2DIGITS, secs, 0xa8, 0xd3, 0xff );
 	}
 
-	cvar_t *cvPort = SGTC_Cvar( "view_portraits" );
-	if( cvPort && cvPort->value > 0.0f )
+	// ref draws portraits unconditionally (view_portraits is a no-op toggle in ref client.dll);
+	// the shared config sets view_portraits "0" yet the orig renders the portrait cell.
+	if( true )
 	{
 		const int portY = ScreenHeight - 0xa1;	// ref @0x10073adc (portrait cell y)
 
