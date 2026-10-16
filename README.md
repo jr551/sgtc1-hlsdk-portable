@@ -1,4 +1,4 @@
-# Half-Life SDK for GoldSource and Xash3D [![Build Status](https://github.com/FWGS/hlsdk-portable/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/FWGS/hlsdk-portable/actions/workflows/build.yml) [![Windows Build Status](https://ci.appveyor.com/api/projects/status/github/FWGS/hlsdk-portable?svg=true)](https://ci.appveyor.com/project/a1batross/hlsdk-portable)
+# Half-Life SDK for GoldSource and Xash3D (StargateTC port) [![Build Status](https://github.com/jr551/stargatetc-hlsdk-portable/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/jr551/stargatetc-hlsdk-portable/actions/workflows/build.yml)
 
 Half-Life SDK for GoldSource & Xash3D with some bugfixes.
 
@@ -103,9 +103,9 @@ git clone --recursive https://github.com/FWGS/hlsdk-portable
 
 # CI Builds
 
-Fresh builds is always available in [artifacts](https://github.com/FWGS/hlsdk-portable/actions) for most common platforms and you can download it if you logged in to github.
+The `build` workflow (`.github/workflows/build.yml`) compiles this port on every push and pull request. It runs three jobs: Linux x86 (gcc and clang, inside a cached Steam Runtime schroot) and Windows x86 + x64 (MSVC via Ninja). The Steam Runtime sysroot tarball is cached between runs (`actions/cache` keyed on the snapshot name).
 
-Builds for all branches and more platforms eventually updates into [hlsdk-mega-build](https://github.com/FWGS/hlsdk-mega-build/releases/tag/continuous) repository.
+Built libraries are installed under `dist/`/`dist64/` and uploaded as run artifacts named `hlsdk-<branch>-<platform>` containing the `stargatetc` game directory (`dlls/` and `cl_dlls/`). Fresh artifacts for the most common platforms are available on the [Actions page](https://github.com/jr551/stargatetc-hlsdk-portable/actions); downloading requires a GitHub login.
 
 # Build Instructions
 
