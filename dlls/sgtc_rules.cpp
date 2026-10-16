@@ -236,6 +236,7 @@ extern int sgtc_count_syslord, sgtc_count_prime, sgtc_count_jaffa,
 	sgtc_count_serpent, sgtc_count_horus, sgtc_count_oniell,
 	sgtc_count_carter, sgtc_count_jackson, sgtc_count_tealc,
 	sgtc_count_commander;					// sgtc_round.cpp — BSS 0x2368f4..0x236918
+extern char sgtc_hasplayed;				// sgtc_round.cpp — BSS 0x2368f1
 
 // Team spawn classname tables (rodata 0x1d7997 block ordering).
 static const char *const s_SGTCDMSpawns[SGTC_MAX_SGTC_TEAMS] =
@@ -1131,10 +1132,151 @@ void CStargateTeamDM::PlayerSpawn( CBasePlayer *pPlayer )
 }
 
 
+// ref CStargateTeamDM::FPlayerCanRespawn @0x18ba08 (CP @0x17ea2a, identical
+// except the round-over field: DM +0x740 / CP +0x73c — see
+// rea_dump/CStargateTeam{DM,CP}__FPlayerCanRespawn.c):
+//   1. if (m_iSgtcSnapClass != m_iSgtcPortraitShown || 0 < m_iSgtcPortraitSel)
+//      { UpdateClassCount(); cap-check the effective class (pending else
+//      shown) against the +0x438 pick's team; on a cap hit re-roll
+//      RANDOM_LONG(1,5) into +0xa44 until an UNLIMITED (max_* == 0) class
+//      comes up; }
+//   2. if (0 < +0xa44) +0xa40 = +0xa44 (consume pending -> shown);
+//   3. +0xa44 = 0 (always clear the pending selection);
+//   4. +0x480 = +0xa40; +0x484 = pev->team (snapshot for the change detect);
+//   5. return the round gate: roundOver || (no-player && ?) || (early-round
+//      grace of mp_roundtime + (now - roundEnd) < 20 — ref +0x3e3 is only
+//      ever cleared (InitHUD/spawn), never set, so those clauses are dead).
+// Cap mapping: 1=syslord/oneill, 2=anubis(vs count_prime)/carter,
+// 3=jaffa/jackson, 4=serpent/tealc, 5=horus/soldier(vs count_commander).
+static BOOL SGTC_ClassCapped( int iTeam, int iClass )
+{
+	float flMax, flCount;
+	switch( iClass )
+	{
+	case 1:
+		flMax = ( iTeam == 2 ) ? sgtc_cvar_max_syslord.value : sgtc_cvar_max_oniell.value;
+		flCount = (float)( ( iTeam == 2 ) ? sgtc_count_syslord : sgtc_count_oniell );
+		break;
+	case 2:
+		flMax = ( iTeam == 2 ) ? sgtc_cvar_max_anubis.value : sgtc_cvar_max_carter.value;
+		flCount = (float)( ( iTeam == 2 ) ? sgtc_count_prime : sgtc_count_carter );
+		break;
+	case 3:
+		flMax = ( iTeam == 2 ) ? sgtc_cvar_max_jaffa.value : sgtc_cvar_max_jackson.value;
+		flCount = (float)( ( iTeam == 2 ) ? sgtc_count_jaffa : sgtc_count_jackson );
+		break;
+	case 4:
+		flMax = ( iTeam == 2 ) ? sgtc_cvar_max_serpent.value : sgtc_cvar_max_tealc.value;
+		flCount = (float)( ( iTeam == 2 ) ? sgtc_count_serpent : sgtc_count_tealc );
+		break;
+	case 5:
+		flMax = ( iTeam == 2 ) ? sgtc_cvar_max_horus.value : sgtc_cvar_max_commander.value;
+		flCount = (float)( ( iTeam == 2 ) ? sgtc_count_horus : sgtc_count_commander );
+		break;
+	default:
+		return FALSE;
+	}
+	// ref FPU-status idiom: capped iff max <= count && max != 0 (0 = unlimited).
+	return ( flMax <= flCount && flMax != 0.0f ) ? TRUE : FALSE;
+}
+
+static void SGTC_ClassReroll( int iTeam, int &iPending )
+{
+	while( iPending == 0 )
+	{
+		int iRoll = RANDOM_LONG( 1, 5 );
+		if( iTeam == 2 )
+		{
+			if( sgtc_cvar_max_syslord.value == 0.0f && iRoll == 1 )
+				iPending = 1;
+			if( sgtc_cvar_max_anubis.value == 0.0f && iRoll == 2 )
+				iPending = 2;
+			if( sgtc_cvar_max_jaffa.value == 0.0f && iRoll == 3 )
+				iPending = 3;
+			if( sgtc_cvar_max_serpent.value == 0.0f && iRoll == 4 )
+				iPending = 4;
+			if( sgtc_cvar_max_horus.value == 0.0f && iRoll == 5 )
+				iPending = 5;
+		}
+		else if( iTeam == 1 )
+		{
+			if( sgtc_cvar_max_oniell.value == 0.0f && iRoll == 1 )
+				iPending = 1;
+			if( sgtc_cvar_max_carter.value == 0.0f && iRoll == 2 )
+				iPending = 2;
+			if( sgtc_cvar_max_jackson.value == 0.0f && iRoll == 3 )
+				iPending = 3;
+			if( sgtc_cvar_max_tealc.value == 0.0f && iRoll == 4 )
+				iPending = 4;
+			if( sgtc_cvar_max_commander.value == 0.0f && iRoll == 5 )
+				iPending = 5;
+		}
+	}
+}
+
 BOOL CStargateTeamDM::FPlayerCanRespawn( CBasePlayer *pPlayer )
 {
-	(void)pPlayer;
-	return m_bRoundOver ? FALSE : TRUE;
+	if( pPlayer->m_iSgtcSnapClass != pPlayer->m_iSgtcPortraitShown ||
+		0 < pPlayer->m_iSgtcPortraitSel )
+	{
+		UpdateClassCount();	// ref vtable+0x118
+
+		int iClass = ( pPlayer->m_iSgtcPortraitSel != 0 )
+			? pPlayer->m_iSgtcPortraitSel : pPlayer->m_iSgtcPortraitShown;
+		int iTeam = pPlayer->m_iSgtcTeam;	// ref +0x438 pick numbering (1=Torri, 2=Goa'uld)
+
+		if( SGTC_ClassCapped( iTeam, iClass ) )
+		{
+			pPlayer->m_iSgtcPortraitSel = 0;
+			SGTC_ClassReroll( iTeam, pPlayer->m_iSgtcPortraitSel );
+		}
+	}
+
+	if( 0 < pPlayer->m_iSgtcPortraitSel )
+		pPlayer->m_iSgtcPortraitShown = pPlayer->m_iSgtcPortraitSel;
+	pPlayer->m_iSgtcPortraitSel = 0;
+	pPlayer->m_iSgtcSnapClass = pPlayer->m_iSgtcPortraitShown;	// +0x480
+	pPlayer->m_iSgtcSnapTeam = (int)pPlayer->pev->team;		// +0x484
+
+	// return gate over DM +0x740 (this port's m_iSgtcRoundTicks = ref +0x73c;
+	// the ref DM body reads +0x740, the sibling "round decided" state, which
+	// maps to m_bRoundOver + sgtc_hasplayed in this port — see dump note).
+	// +0x3e3 is never set in the ref, so only the first clause can fire.
+	return ( m_bRoundOver != 0 || sgtc_hasplayed != 0 ) ? TRUE : FALSE;
+}
+
+BOOL CStargateTeamCP::FPlayerCanRespawn( CBasePlayer *pPlayer )
+{
+	// ref CP FPlayerCanRespawn @0x17ea2a — identical body to DM @0x18ba08 but
+	// the round-over field is CP +0x73c (this port's m_iSgtcRoundTicks). Same
+	// consume/cap/reroll/snapshot steps; see rea_dump/CStargateTeamCP__FPlayerCanRespawn.c
+	if( pPlayer->m_iSgtcSnapClass != pPlayer->m_iSgtcPortraitShown ||
+		0 < pPlayer->m_iSgtcPortraitSel )
+	{
+		UpdateClassCount();	// ref vtable+0x118
+
+		int iClass = ( pPlayer->m_iSgtcPortraitSel != 0 )
+			? pPlayer->m_iSgtcPortraitSel : pPlayer->m_iSgtcPortraitShown;
+		int iTeam = pPlayer->m_iSgtcTeam;
+
+		if( SGTC_ClassCapped( iTeam, iClass ) )
+		{
+			pPlayer->m_iSgtcPortraitSel = 0;
+			SGTC_ClassReroll( iTeam, pPlayer->m_iSgtcPortraitSel );
+		}
+	}
+
+	if( 0 < pPlayer->m_iSgtcPortraitSel )
+		pPlayer->m_iSgtcPortraitShown = pPlayer->m_iSgtcPortraitSel;
+	pPlayer->m_iSgtcPortraitSel = 0;
+	pPlayer->m_iSgtcSnapClass = pPlayer->m_iSgtcPortraitShown;	// +0x480
+	pPlayer->m_iSgtcSnapTeam = (int)pPlayer->pev->team;		// +0x484
+
+	// return gate: ref reads CP +0x73c (round-decided latch; == 1 when a
+	// team elimination was armed). +0x3e3 is never set in the ref, so the
+	// remaining clauses are dead. In this port the +0x73c latch state lives
+	// in m_bRoundOver || sgtc_hasplayed (EndRound/Goal arming).
+	return ( m_bRoundOver != 0 || sgtc_hasplayed != 0 ) ? TRUE : FALSE;
 }
 
 BOOL CStargateTeamDM::FPlayerCanChangeInfo( CBasePlayer *pPlayer )

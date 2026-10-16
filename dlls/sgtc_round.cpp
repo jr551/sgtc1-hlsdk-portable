@@ -12,9 +12,10 @@
 //
 // Ref ABI map (verified from the decoded bodies):
 //   gamerules vtable slots: +0x18 Think, +0x28 GetPlayerSpawnSpot,
-//     +0x64 PlayerThink, +0x94 ChangePlayerTeam, +0x100 SetDefaultPlayerTeam,
-//     +0xe0 GetTeamIndex, +0x120 NewRound, +0x34 == PlayerThink forwarding
-//     (this, param_1).
+//     +0x64 FPlayerCanRespawn, +0x94 ChangePlayerTeam,
+//     +0x100 SetDefaultPlayerTeam, +0xe0 GetTeamIndex, +0x120 NewRound,
+//     +0x34 RedrawPortrait (CBasePlayer*) — PlayerThink itself is +0x64 on
+//     the PLAYER vtable, not here.
 //   CBasePlayer vtable slots: +0x18 IsAlive, +0x24 (env-probe family call,
 //     port: SendValueTo), +0x38 = per-player fade (port UTIL_ScreenFade).
 //   CBaseEntity vtable slot +0x128 (ground weapon strip) -> port: solid=NOT
@@ -669,17 +670,20 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 	}
 
 	// GiveFromMenu (0x4e5/0x4e7 + 0x4ac time gate) — ref bits 13 (IN_RELOAD)
-	// and 8 (IN_RIGHT) on pev->button.
+	// and 8 (IN_RIGHT) on pev->button. The 15s window is measured against
+	// +0x4ac (m_flSgtcMenuWindow), not +0x4b0 (the menu-10 delay).
 	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->button, IN_RELOAD ) &&
 		!FBitSet( pPlayer->pev->button, IN_RIGHT ) &&
-		( flNow > pPlayer->m_flSgtcMenuDelay + 15.0f ||
+		( flNow > pPlayer->m_flSgtcMenuWindow + 15.0f ||
 		  pPlayer->m_bSgtcMenuLockLatch != 1 ) )
 	{
 		SGTC_GiveFromMenu( pPlayer );
 	}
 
+	// ref DM PlayerThink @0x18d088: !IsAlive && !IsObserver &&
+	// deadflag == DEAD_DEAD (pev+0x170 == 2) -> StartDeathCam. NOT pev->team.
 	if( !pPlayer->IsAlive() && !pPlayer->IsObserver() &&
-		pPlayer->pev->team == 2 )
+		pPlayer->pev->deadflag == DEAD_DEAD )
 		pPlayer->StartDeathCam();
 
 	if( pPlayer->m_flSgtcMenuDelay != 0.0f && pPlayer->m_flSgtcMenuDelay < flNow )
@@ -741,12 +745,15 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 				pPlayer->m_iSgtcPrevTeam = pPlayer->m_iSgtcActiveTeam;
 				pPlayer->m_iSgtcActiveTeam = pPlayer->m_iSgtcTeam;
 			}
-			SetDefaultPlayerTeam( pPlayer );	// ref vtable+0x64
+			// ref vtable+0x64 = FPlayerCanRespawn(this,player) — the pending-class
+			// consumer (@0x18ba08), NOT SetDefaultPlayerTeam. The consume of
+			// +0xa44 -> shown class happens inside.
+			FPlayerCanRespawn( pPlayer );
 
 			if( 0 < pPlayer->m_iSgtcPortraitSel )
 				pPlayer->m_iSgtcPortraitShown = pPlayer->m_iSgtcPortraitSel;
 
-			// ref re-tests tickets on the NEW name (post-SetDefaultPlayerTeam).
+			// ref re-tests tickets on the NEW name (post-consume).
 			BOOL bJoinTickets = ( !strncmp( pPlayer->m_szTeamName, "Goa'uld", 7 ) &&
 				0 < sgtc_G_tickets ) ||
 				( !strncmp( pPlayer->m_szTeamName, "Torri", 5 ) &&
@@ -759,10 +766,12 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 				if( sgtc_GameModeSet == 0 || !bTickets )
 					iRespawn = 1;
 				// ref: respawn only dead OBSERVERS; the mp_respawntime
-				// delay applies only in modes >= 1 (mode 0 respawns at once).
+				// delay applies only in modes >= 1 (mode 0 respawns at
+				// once). Ref +0xc7c is PlayerDeathThink's m_fDeadTime —
+				// m_flSgtcDeathTime was a mislabel (that offset IS m_fDeadTime).
 				if( !pPlayer->IsAlive() && pPlayer->IsObserver() &&
 					( sgtc_GameModeSet == 0 ||
-						flNow - iRespawn > pPlayer->m_flSgtcDeathTime ) )
+						flNow - iRespawn > pPlayer->m_fDeadTime ) )
 					respawn( pPlayer->pev, 0 );
 			}
 		}
@@ -826,17 +835,20 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 		pPlayer->m_bSgtcPadA3D = 1;
 
 	// GiveFromMenu (0x4e5 + 0x4ac gate) — no supergun branch in CP.
-	// ref pev+0x168 bits 13/8 = IN_RELOAD / IN_RIGHT.
+	// ref pev+0x168 bits 13/8 = IN_RELOAD / IN_RIGHT. The 15s window is
+	// measured against +0x4ac (m_flSgtcMenuWindow), not +0x4b0.
 	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->button, IN_RELOAD ) &&
 		!FBitSet( pPlayer->pev->button, IN_RIGHT ) &&
-		( flNow > pPlayer->m_flSgtcMenuDelay + 15.0f ||
+		( flNow > pPlayer->m_flSgtcMenuWindow + 15.0f ||
 		  pPlayer->m_bSgtcMenuLockLatch != 1 ) )
 	{
 		SGTC_GiveFromMenu( pPlayer );
 	}
 
+	// ref CP PlayerThink @0x19008c: !IsAlive && !IsObserver &&
+	// deadflag == DEAD_DEAD (pev+0x170 == 2) -> StartDeathCam. NOT pev->team.
 	if( !pPlayer->IsAlive() && !pPlayer->IsObserver() &&
-		pPlayer->pev->team == 2 )
+		pPlayer->pev->deadflag == DEAD_DEAD )
 		pPlayer->StartDeathCam();
 
 	if( pPlayer->m_flSgtcMenuDelay != 0.0f && pPlayer->m_flSgtcMenuDelay < flNow )
@@ -882,7 +894,10 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 			pPlayer->m_iSgtcPrevTeam = pPlayer->m_iSgtcActiveTeam;
 			pPlayer->m_iSgtcActiveTeam = pPlayer->m_iSgtcTeam;
 		}
-		SetDefaultPlayerTeam( pPlayer );	// ref vtable+0x64
+		// ref CP vtable+0x64 = FPlayerCanRespawn(this,player) — the pending-class
+		// consumer (@0x17ea2a), NOT SetDefaultPlayerTeam. The consume of
+		// +0xa44 -> shown class happens inside.
+		FPlayerCanRespawn( pPlayer );
 
 		if( 0 < pPlayer->m_iSgtcPortraitSel )
 			pPlayer->m_iSgtcPortraitShown = pPlayer->m_iSgtcPortraitSel;

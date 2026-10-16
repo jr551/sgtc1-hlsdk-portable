@@ -1379,8 +1379,22 @@ void CBasePlayer::PlayerDeathThink( void )
 	// choose to respawn.
 	if( g_pGameRules->IsMultiplayer() && ( gpGlobals->time > ( m_fDeadTime + 6 ) ) && !( m_afPhysicsFlags & PFLAG_OBSERVER ) )
 	{
-		// go to dead camera. 
+		// go to dead camera.
 		StartDeathCam();
+	}
+
+	// ref PlayerDeathThink @0x14d248: every multiplayer dead tick in the
+	// deadflag != DEAD_DEAD branch re-runs StartObserver (trace 128 units up,
+	// cam lands on the trace end) — NOT gated on buttons, the +6s timer, or
+	// PFLAG_OBSERVER. This re-asserts iuser1/PFLAG_OBSERVER so the gamerules
+	// respawn gates (IsObserver) can fire; a dead-RESPAWNABLE player can
+	// never sit with IsObserver()==false.
+	if( g_pGameRules->IsMultiplayer() )
+	{
+		Vector vecUp = pev->origin + Vector( 0, 0, 128 );
+		TraceResult tr;
+		UTIL_TraceLine( pev->origin, vecUp, ignore_monsters, edict(), &tr );
+		StartObserver( tr.vecEndPos, UTIL_VecToAngles( tr.vecEndPos - pev->origin ) );
 	}
 
 	if( pev->iuser1 )	// player is in spectator mode

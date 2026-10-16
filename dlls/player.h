@@ -294,7 +294,12 @@ public:
 	float	m_flSgtcEnvNext;	// ref +0xc94
 	float	m_flSgtcMenuDelay;	// ref +0x4b0
 	float	m_flSgtcTeamsTick;	// ref +0x41c
-	float	m_flSgtcDeathTime;	// ref +0xc7c
+	// NOTE: ref +0xc7c is CBasePlayer::m_fDeadTime — never a separate SGTC
+	// field. PlayerDeathThink writes it when going DEAD_RESPAWNABLE and the
+	// DM respawn gate reads it. Do not use.
+	float	m_flSgtcDeathTime;	// mislabel: ref +0xc7c == m_fDeadTime
+	int	m_iSgtcSnapClass;	// ref +0x480 — last class counted (FPlayerCanRespawn gate)
+	int	m_iSgtcSnapTeam;	// ref +0x484 — last pev->team counted (FPlayerCanRespawn gate)
 	int	m_iNVGOn;		// ref +0xe18 — NVG active
 	int	m_iNVGZoom;		// ref +0xe20 — NVG zoom level 0..5
 	int	m_iSgtcSpecMode;	// ref +0x914 — special/dev mode unlock (-1 locked)
