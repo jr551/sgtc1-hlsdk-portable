@@ -1091,7 +1091,8 @@ static void SGTC_DrawRadarFull( CHudSgtc *hud, float flTime )
 	SGTC_RadarLayout( slide );
 
 	const int radarX = ScreenWidth - 0xd0;
-	const int radarY = ScreenHeight - 0xc8 - slide; // ref 200×200 @0x10073eec
+	// ref @0x10073ed6: Y is 0x70 minus the slide local, not ScreenHeight-0xc8.
+	const int radarY = 0x70 - slide;
 
 	int radarIdx = gHUD.GetSpriteIndex( "radar" );
 	if( !radarIdx )
