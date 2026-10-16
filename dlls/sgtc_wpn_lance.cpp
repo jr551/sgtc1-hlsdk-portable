@@ -120,21 +120,21 @@ void CLanceJaffa::SwingAgain( void )	// ref @0x10ffaa
 	Swing( 0 );
 }
 
+// ref FindHullIntersection(vecSrc, tr, mins, maxs, edict) — local copy
+// (crowbar.cpp's is TU-local); projects the hull hit onto the BSP face.
+static void sgtcHullIntersect( const Vector &vecSrc, TraceResult &tr,
+	const float *mins, const float *maxs, edict_t *pEntity )
+{
+	TraceResult tmpTrace;
+	Vector vecHullEnd = tr.vecEndPos;
+	Vector vecEnd = vecSrc + ( vecHullEnd - vecSrc ) * 2.0f;
+	UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, pEntity, &tmpTrace );
+	if( tmpTrace.flFraction < 1.0f )
+		tr = tmpTrace;
+}
+
 int CLanceJaffa::Swing( int fFirst )	// ref @0x10f5d0 (crowbar-derived melee)
 {
-	// ref FindHullIntersection(vecSrc, tr, mins, maxs, edict) — local copy
-	// (crowbar.cpp's is TU-local); projects the hull hit onto the BSP face.
-	static const auto sgtcHullIntersect = []( const Vector &vecSrc, TraceResult &tr,
-		const float *mins, const float *maxs, edict_t *pEntity )
-	{
-		TraceResult tmpTrace;
-		Vector vecHullEnd = tr.vecEndPos;
-		Vector vecEnd = vecSrc + ( vecHullEnd - vecSrc ) * 2.0f;
-		UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, pEntity, &tmpTrace );
-		if( tmpTrace.flFraction < 1.0f )
-			tr = tmpTrace;
-	};
-
 	int fDidHit = FALSE;
 	TraceResult tr;
 	float flVol = 1.0f;
