@@ -1,4 +1,4 @@
-# stargatetc-hlsdk-portable
+# stargatetc-hlsdk-portable [![Build Status](https://github.com/jr551/stargatetc-hlsdk-portable/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/jr551/stargatetc-hlsdk-portable/actions/workflows/build.yml)
 
 **Live** — active development. **This is the canonical repo for StargateTC game-logic work.**
 
