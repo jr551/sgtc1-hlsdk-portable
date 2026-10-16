@@ -358,7 +358,7 @@ static void SGTC_EndRoundScoreInfo( CBasePlayer *pPlayer )
 {
 	MESSAGE_BEGIN( MSG_ALL, gmsgScoreInfo );
 		WRITE_BYTE( pPlayer->entindex() );
-		WRITE_SHORT( (int)pPlayer->pev->frags );	// ref pev+0x164
+		WRITE_SHORT( SGTC_Round_roundf( pPlayer->pev->frags ) );	// ref round(pev+0x164)
 		WRITE_SHORT( pPlayer->m_iDeaths ); // ref +0xdf0
 		// ref @0x17b91a: if ((player+0x4de ^ 1) != 0) write +0xa40 else write 6.
 		WRITE_SHORT( pPlayer->m_bSnagInvisLatch != 1 ? pPlayer->m_iSgtcPortraitShown

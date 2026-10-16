@@ -1741,16 +1741,6 @@ void CHudSgtc::Reset( void )
 	m_fZatTouchActive = 0;
 	m_flZatTouchTime = 0;
 	m_iHideHud = 0;
-	m_iPortraitSprite = 0;
-	m_iPortraitEnt = 0;
-	m_flPortraitTime = 0;
-	m_iPortraitX = 0;
-	memset( m_iPortraitHp, 0, sizeof( m_iPortraitHp ) );
-	m_szPortraitName[0] = 0;
-	m_iPortraitId = 0;
-	m_iPortraitActiveTeam = 0;
-	m_iAboutMeSelf = 0;
-	m_iAboutMePlayer = 0;
 	m_iKeyMode = 0;
 	m_flKeyTime = 0;
 	m_iRoundTimerOn = 0;	// ref +0x16f0 (setter FUN_100766dd)
@@ -1776,7 +1766,10 @@ void CHudSgtc::Reset( void )
 	m_iProgressIconCursor = 0;
 	SGTC_InitProgressSlotX( this );
 	SGTC_InitAnnounceLines( this );
-	SGTC_InitPortraitSlots( this );
+	// ref reset @0x10070bbf→0x1007410c→0x10070700 clears ONLY the four 0x21-entry
+	// blip arrays (DAT_100f1140/100f134c/100f21d4 → 0, DAT_100f11c4 → 0x7d). The
+	// active-team global DAT_100f70c8 and the portrait records are never touched —
+	// the ref's full Reset() runs once at HUD init, not per respawn.
 	g_iSgtcAnnouncePending = 0;
 }
 
