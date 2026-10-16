@@ -40,7 +40,7 @@ enum shotgun_e
 	SHOTGUN_IDLE_DEEP
 };
 
-LINK_ENTITY_TO_CLASS( weapon_shotgun, CShotgun )
+// SGTC: weapon_shotgun unregistered — ref/stc_i386.so link table has no weapon_shotgun
 
 void CShotgun::Spawn()
 {

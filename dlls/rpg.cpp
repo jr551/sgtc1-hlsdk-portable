@@ -37,7 +37,7 @@ enum rpg_e
 	RPG_FIDGET_UL	// unloaded fidget
 };
 
-LINK_ENTITY_TO_CLASS( weapon_rpg, CRpg )
+// SGTC: weapon_rpg unregistered — ref/stc_i386.so link table has no weapon_rpg
 
 #if !CLIENT_DLL
 

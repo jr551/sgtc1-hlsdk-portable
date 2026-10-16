@@ -49,7 +49,7 @@ enum egon_e {
 	EGON_HOLSTER
 };
 
-LINK_ENTITY_TO_CLASS( weapon_egon, CEgon )
+// SGTC: weapon_egon unregistered — ref/stc_i386.so link table has no weapon_egon
 
 void CEgon::Spawn()
 {

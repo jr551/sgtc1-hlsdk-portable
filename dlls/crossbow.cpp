@@ -252,7 +252,7 @@ enum crossbow_e
 	CROSSBOW_HOLSTER2	// empty
 };
 
-LINK_ENTITY_TO_CLASS( weapon_crossbow, CCrossbow )
+// SGTC: weapon_crossbow unregistered — ref/stc_i386.so link table has no weapon_crossbow
 
 void CCrossbow::Spawn()
 {

@@ -40,7 +40,7 @@ enum firemode_e
 	FIREMODE_FAST
 };
 
-LINK_ENTITY_TO_CLASS( weapon_hornetgun, CHgun )
+// SGTC: weapon_hornetgun unregistered — ref/stc_i386.so link table has no weapon_hornetgun
 
 BOOL CHgun::IsUseable( void )
 {

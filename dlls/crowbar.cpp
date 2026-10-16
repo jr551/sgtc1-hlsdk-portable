@@ -25,7 +25,7 @@
 #define	CROWBAR_BODYHIT_VOLUME 128
 #define	CROWBAR_WALLHIT_VOLUME 512
 
-LINK_ENTITY_TO_CLASS( weapon_crowbar, CCrowbar )
+// SGTC: weapon_crowbar unregistered — ref/stc_i386.so link table has no weapon_crowbar
 
 enum crowbar_e
 {

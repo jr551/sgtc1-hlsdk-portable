@@ -370,7 +370,7 @@ void CTripmineGrenade::DelayDeathThink( void )
 }
 #endif
 
-LINK_ENTITY_TO_CLASS( weapon_tripmine, CTripmine )
+// SGTC: weapon_tripmine unregistered — ref/stc_i386.so link table has no weapon_tripmine
 
 void CTripmine::Spawn()
 {

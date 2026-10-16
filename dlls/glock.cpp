@@ -35,8 +35,8 @@ enum glock_e
 	GLOCK_ADD_SILENCER
 };
 
-LINK_ENTITY_TO_CLASS( weapon_glock, CGlock )
-LINK_ENTITY_TO_CLASS( weapon_9mmhandgun, CGlock )
+// SGTC: weapon_glock unregistered — ref/stc_i386.so link table has no weapon_glock
+// SGTC: weapon_9mmhandgun unregistered — ref/stc_i386.so link table has no weapon_9mmhandgun
 
 void CGlock::Spawn()
 {

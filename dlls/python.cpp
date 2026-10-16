@@ -34,8 +34,8 @@ enum python_e
 	PYTHON_IDLE3
 };
 
-LINK_ENTITY_TO_CLASS( weapon_python, CPython )
-LINK_ENTITY_TO_CLASS( weapon_357, CPython )
+// SGTC: weapon_python unregistered — ref/stc_i386.so link table has no weapon_python
+// SGTC: weapon_357 unregistered — ref/stc_i386.so link table has no weapon_357
 
 int CPython::GetItemInfo( ItemInfo *p )
 {

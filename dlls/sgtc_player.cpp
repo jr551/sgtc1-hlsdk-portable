@@ -2047,12 +2047,15 @@ void SGTC_GiveFromMenu( CBasePlayer *pPlayer )
 	}
 
 	// ref: solid && !observer players get a team base weapon.
+	// Wire teams (ref pev+0x1ac): 1 = Goa'uld -> weapon_coujaf,
+	// 2 = Torri -> weapon_couteau — same mapping as the
+	// CStargateTeam{DM,CP}::PlayerSpawn tail (ref @0x1dbabc/0x1dbacb).
 	if( !pPlayer->IsObserver() && pPlayer->pev->solid != 0 )
 	{
-		if( (int)pPlayer->pev->team == 1 )	// ref +0x1ac == 1
-			pPlayer->GiveNamedItem( "weapon_couteau" );	// ref @0x1dbabc
+		if( (int)pPlayer->pev->team == 1 )
+			pPlayer->GiveNamedItem( "weapon_coujaf" );
 		else
-			pPlayer->GiveNamedItem( "weapon_coujaf" );	// ref @0x1dbacb
+			pPlayer->GiveNamedItem( "weapon_couteau" );
 	}
 
 	pPlayer->m_bSgtcMenuLock = 0;			// ref +0x4e5

@@ -533,12 +533,14 @@ void CHalfLifeMultiplay::PlayerSpawn( CBasePlayer *pPlayer )
 		addDefault = FALSE;
 	}
 
-	if( addDefault )
-	{
-		pPlayer->GiveNamedItem( "weapon_crowbar" );
-		pPlayer->GiveNamedItem( "weapon_9mmhandgun" );
-		pPlayer->GiveAmmo( 68, "9mm", _9MM_MAX_CARRY );// 4 full reloads
-	}
+	// SGTC: no stock default grant. ref/stc_i386.so registers no
+	// weapon_crowbar/weapon_9mmhandgun (its link table has only the 31 SGTC
+	// names), so the stock crowbar+glock block is a silent NULL-ent no-op in
+	// the orig — the SGTC melee (couteau/coujaf, iWeight 0) granted by the
+	// gamerules tail then deploys as the first weapon. Kept registered here
+	// the grant would arm the glock (iWeight 5), which then always wins
+	// FShouldSwitchWeapon over the melee — the stock 9mm viewmodel bug.
+	(void)addDefault;
 
 	pPlayer->m_iAutoWepSwitch = iOldAutoWepSwitch;
 }

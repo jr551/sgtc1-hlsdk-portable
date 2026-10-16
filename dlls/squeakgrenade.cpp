@@ -408,7 +408,7 @@ void CSqueakGrenade::SuperBounceTouch( CBaseEntity *pOther )
 }
 #endif
 
-LINK_ENTITY_TO_CLASS( weapon_snark, CSqueak )
+// SGTC: weapon_snark unregistered — ref/stc_i386.so link table has no weapon_snark
 
 void CSqueak::Spawn()
 {

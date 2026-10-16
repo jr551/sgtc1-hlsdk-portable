@@ -185,7 +185,7 @@ void CSatchelCharge::BounceSound( void )
 	}
 }
 
-LINK_ENTITY_TO_CLASS( weapon_satchel, CSatchel )
+// SGTC: weapon_satchel unregistered — ref/stc_i386.so link table has no weapon_satchel
 
 //=========================================================
 // CALLED THROUGH the newly-touched weapon's instance. The existing player weapon is pOriginal

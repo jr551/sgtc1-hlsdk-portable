@@ -42,7 +42,7 @@ enum gauss_e
 	GAUSS_DRAW
 };
 
-LINK_ENTITY_TO_CLASS( weapon_gauss, CGauss )
+// SGTC: weapon_gauss unregistered — ref/stc_i386.so link table has no weapon_gauss
 
 float CGauss::GetFullChargeTime( void )
 {
