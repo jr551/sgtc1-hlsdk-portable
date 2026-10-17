@@ -311,8 +311,43 @@ void W_Precache( void )
 
 	UTIL_PrecacheOther( "ammo_9mmclip" );	// glock ammo
 
-	// mp5
+	// SGTC: precache the full ref weapon link table so each weapon's
+	// GetItemInfo lands in ItemInfoArray and the WeaponList fan-out names it —
+	// the client needs WeaponList to build the per-weapon sprite/icon record
+	// (sgtcweapon HUD icon, slot buckets, ammo bars). 9mmAR and handgrenade
+	// were already precached; the rest of the ref's 31-name table was missing,
+	// which left ItemInfoArray empty for the SGTC arsenal (empty client record,
+	// no weapon icon in the HUD panel).
 	UTIL_PrecacheOtherWeapon( "weapon_9mmAR" );
+	UTIL_PrecacheOtherWeapon( "weapon_batsup" );
+	UTIL_PrecacheOtherWeapon( "weapon_c4" );
+	UTIL_PrecacheOtherWeapon( "weapon_coujaf" );
+	UTIL_PrecacheOtherWeapon( "weapon_couteau" );
+	UTIL_PrecacheOtherWeapon( "weapon_flashbang" );
+	UTIL_PrecacheOtherWeapon( "weapon_gacgoa" );
+	UTIL_PrecacheOtherWeapon( "weapon_glstaff" );
+	UTIL_PrecacheOtherWeapon( "weapon_goaregen" );
+	UTIL_PrecacheOtherWeapon( "weapon_invis" );
+	UTIL_PrecacheOtherWeapon( "weapon_lance" );
+	UTIL_PrecacheOtherWeapon( "weapon_larve" );
+	UTIL_PrecacheOtherWeapon( "weapon_m16" );
+	UTIL_PrecacheOtherWeapon( "weapon_m92s" );
+	UTIL_PrecacheOtherWeapon( "weapon_main" );
+	UTIL_PrecacheOtherWeapon( "weapon_medic" );
+	UTIL_PrecacheOtherWeapon( "weapon_mine" );
+	UTIL_PrecacheOtherWeapon( "weapon_mp5" );
+	UTIL_PrecacheOtherWeapon( "weapon_mustardgrenade" );
+	UTIL_PrecacheOtherWeapon( "weapon_narcogrenade" );
+	UTIL_PrecacheOtherWeapon( "weapon_nervegrenade" );
+	UTIL_PrecacheOtherWeapon( "weapon_p90" );
+	UTIL_PrecacheOtherWeapon( "weapon_psg1" );
+	UTIL_PrecacheOtherWeapon( "weapon_reetou" );
+	UTIL_PrecacheOtherWeapon( "weapon_smokegrenade" );
+	UTIL_PrecacheOtherWeapon( "weapon_spas" );
+	UTIL_PrecacheOtherWeapon( "weapon_tacgun" );
+	UTIL_PrecacheOtherWeapon( "weapon_usas" );
+	UTIL_PrecacheOtherWeapon( "weapon_zat" );
+	UTIL_PrecacheOtherWeapon( "weapon_zatarc" );
 	UTIL_PrecacheOther( "ammo_9mmAR" );
 // SGTC: ammo_ARgrenades precache dropped — name unregistered (no ref link)
 

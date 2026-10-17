@@ -27,6 +27,7 @@
 #include <stdio.h>
 
 #include "ammohistory.h"
+#include "sgtc_weapons_client.h"
 #include "vgui_TeamFortressViewport.h"
 
 WEAPON *gpActiveSel;	// NULL means off, 1 means just the menu bar, otherwise
@@ -599,6 +600,25 @@ int CHudAmmo::MsgFunc_CurWeapon( const char *pszName, int iSize, void *pbuf )
 
 	if( !pWeapon )
 		return 0;
+
+	// SGTC: the ref's weapons register via WeaponList, but a late join or a
+	// missed slot can leave the record empty; fall back to the SGTC client
+	// table so the icon/ammo HUD still works. Without this m_pWeapon->szName
+	// stays "" and CHudSgtc::Think never loads the sgtcweapon icon.
+	if( !pWeapon->iId )
+	{
+		const SGTCClientWeaponInfo *pSgtc = SGTC_ClientWeaponById( iId );
+		if( pSgtc )
+		{
+			strlcpy( pWeapon->szName, pSgtc->linkName, sizeof( pWeapon->szName ) );
+			pWeapon->iId = iId;
+			pWeapon->iSlot = pSgtc->iSlot;
+			pWeapon->iSlotPos = pSgtc->iPos;
+			pWeapon->iMax1 = pSgtc->iMaxAmmo1;
+			pWeapon->iMax2 = pSgtc->iMaxAmmo2;
+			gWR.LoadWeaponSprites( pWeapon );
+		}
+	}
 
 	if( iClip < -1 )
 		pWeapon->iClip = abs( iClip );

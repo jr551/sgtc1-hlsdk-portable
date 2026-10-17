@@ -1234,11 +1234,14 @@ BOOL CStargateTeamDM::FPlayerCanRespawn( CBasePlayer *pPlayer )
 	pPlayer->m_iSgtcSnapClass = pPlayer->m_iSgtcPortraitShown;	// +0x480
 	pPlayer->m_iSgtcSnapTeam = (int)pPlayer->pev->team;		// +0x484
 
-	// return gate over DM +0x740 (this port's m_iSgtcRoundTicks = ref +0x73c;
-	// the ref DM body reads +0x740, the sibling "round decided" state, which
-	// maps to m_bRoundOver + sgtc_hasplayed in this port — see dump note).
-	// +0x3e3 is never set in the ref, so only the first clause can fire.
-	return ( m_bRoundOver != 0 || sgtc_hasplayed != 0 ) ? TRUE : FALSE;
+	// return gate (ref DM FPlayerCanRespawn @0x17c122, REA-verified 2026-10-17):
+	// TRUE when +0x740==1, OR (+0x740==0 && +0x3e3!=0), OR (+0x3e3==0 &&
+	// now >= (now - +0x724) + +0x728 + 20.0). The +0x724/+0x728 pair is the
+	// rules round-start/duration pair (this+0x72c-roundstart + mp_roundtime in
+	// this port), so the third clause is roundstart + mp_roundtime + 20s.
+	return ( m_bRoundOver != 0 ||
+		( sgtc_hasplayed == 0 && gpGlobals->time >=
+			sgtc_roundstart + m_flSgtcRoundTime + 20.0f ) ) ? TRUE : FALSE;
 }
 
 BOOL CStargateTeamCP::FPlayerCanRespawn( CBasePlayer *pPlayer )
@@ -1268,11 +1271,14 @@ BOOL CStargateTeamCP::FPlayerCanRespawn( CBasePlayer *pPlayer )
 	pPlayer->m_iSgtcSnapClass = pPlayer->m_iSgtcPortraitShown;	// +0x480
 	pPlayer->m_iSgtcSnapTeam = (int)pPlayer->pev->team;		// +0x484
 
-	// return gate: ref reads CP +0x73c (round-decided latch; == 1 when a
-	// team elimination was armed). +0x3e3 is never set in the ref, so the
-	// remaining clauses are dead. In this port the +0x73c latch state lives
-	// in m_bRoundOver || sgtc_hasplayed (EndRound/Goal arming).
-	return ( m_bRoundOver != 0 || sgtc_hasplayed != 0 ) ? TRUE : FALSE;
+	// return gate (ref CP FPlayerCanRespawn @0x16f144, REA-verified 2026-10-17):
+	// TRUE when +0x73c==1, OR (+0x73c==0 && +0x3e3!=0), OR (+0x3e3==0 &&
+	// now >= (now - +0x724) + +0x728 + 20.0) — the +0x724/+0x728 pair is the
+	// rules round-start/duration pair (this+0x72c-roundstart + mp_roundtime in
+	// this port), so the third clause is roundstart + mp_roundtime + 20s.
+	return ( m_bRoundOver != 0 ||
+		( sgtc_hasplayed == 0 && gpGlobals->time >=
+			sgtc_roundstart + m_flSgtcRoundTime + 20.0f ) ) ? TRUE : FALSE;
 }
 
 BOOL CStargateTeamDM::FPlayerCanChangeInfo( CBasePlayer *pPlayer )

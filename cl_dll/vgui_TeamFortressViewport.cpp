@@ -1835,6 +1835,17 @@ int TeamFortressViewport::KeyInput( int down, int keynum, const char *pszCurrent
 				HideTopMenu();
 				return 0;
 			}
+
+			// SGTC panels: briefing(10), team+class(11), loadout(12), pack(60).
+			// The ref client closes these the same way through its KeyInput
+			// fall-through (FUN_1005aa30 shows the same HideTopMenu shape for
+			// its own ids); without this the briefing Ok button is the only
+			// dismissal path and mouse-release races leave it stuck.
+			if( iMenuID == 10 || iMenuID == 12 || iMenuID == 60 )
+			{
+				HideTopMenu();
+				return 0;
+			}
 		}
 
 		// Grab jump key on Team Menu as autoassign

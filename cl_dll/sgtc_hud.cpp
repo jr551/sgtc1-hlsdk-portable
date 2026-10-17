@@ -1370,7 +1370,10 @@ static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, floa
 	const int ent = hud->m_iPortraitSlotEnt[slot];
 	const char *label = hud->m_szPortraitSlotName[slot];
 	const int colorId = hud->m_iPortraitSlotColor[slot];
-
+	// ref Draw @0x100718df: the own cell is column-excluded (DAT_100f134c[i] !=
+	// DAT_100f21cc) and rendered by the VGUI cell manager (FUN_100736d0), which
+	// draws the face only — no name line, no HP bar. Match: self -> avatar only.
+	const int bSelf = ( ent != 0 && ent == hud->m_iPortraitEnt );
 	if( !sprId || !ent || !label || !label[0] )
 	{
 		const char *err = CHudTextMessage::BufferedLocaliseTextString( "! ERROR !" );
@@ -1383,8 +1386,11 @@ static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, floa
 	if( dimName )
 		r = g = b = 0;
 
-	const char *text = CHudTextMessage::BufferedLocaliseTextString( label );
-	gHUD.DrawHudString( px + 0x48, py - 0x10, ScreenWidth, text, r, g, b );
+	if( !bSelf )
+	{
+		const char *text = CHudTextMessage::BufferedLocaliseTextString( label );
+		gHUD.DrawHudString( px + 0x48, py - 0x10, ScreenWidth, text, r, g, b );
+	}
 
 	SGTC_PortraitColorFlags flags;
 	SGTC_DecodePortraitColorId( colorId, &flags );
@@ -1446,7 +1452,7 @@ static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, floa
 		frac = 0.0f;
 	if( frac > 1.0f )
 		frac = 1.0f;
-	if( frac <= 0.0f || dimName )
+	if( frac <= 0.0f || dimName || bSelf )
 		return;
 
 	const int barW = 0x40;
